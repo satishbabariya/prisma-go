@@ -11,8 +11,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	_ "github.com/lib/pq"
 	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/satishbabariya/prisma-go/migrate/converter"
@@ -149,9 +149,9 @@ func dbPushCommand(args []string) error {
 	if len(args) > 0 {
 		schemaPath = args[0]
 	}
-	
+
 	fmt.Println("🚀 Pushing schema changes to database...")
-	
+
 	// Read schema file
 	content, err := os.ReadFile(schemaPath)
 	if err != nil {
@@ -166,16 +166,16 @@ func dbPushCommand(args []string) error {
 		fmt.Fprintf(os.Stderr, "❌ Error parsing schema:\n%s\n", diags.ToPrettyString(schemaPath, string(content)))
 		return fmt.Errorf("schema parsing failed")
 	}
-	
+
 	// Get connection info
 	provider, connStr := extractConnectionInfo(parsed)
 	if connStr == "" {
 		fmt.Fprintf(os.Stderr, "❌ No connection string found in schema\n")
 		return fmt.Errorf("no connection string")
 	}
-	
+
 	driverProvider := normalizeProviderForDriver(provider)
-	
+
 	// Connect to database
 	db, err := sql.Open(driverProvider, connStr)
 	if err != nil {
@@ -183,37 +183,37 @@ func dbPushCommand(args []string) error {
 		return err
 	}
 	defer db.Close()
-	
+
 	ctx := context.Background()
-	
+
 	// Introspect current database
 	introspector, err := introspect.NewIntrospector(db, provider)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to create introspector: %v\n", err)
 		return err
 	}
-	
+
 	currentSchema, err := introspector.Introspect(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to introspect database: %v\n", err)
 		return err
 	}
-	
+
 	fmt.Printf("📊 Current database has %d tables\n", len(currentSchema.Tables))
-	
+
 	// Convert schema AST to database schema
 	targetSchema, err := converter.ConvertASTToDBSchema(parsed, provider)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to convert schema: %v\n", err)
 		return err
 	}
-	
+
 	fmt.Printf("📋 Schema defines %d tables\n", len(targetSchema.Tables))
-	
+
 	// Compare schemas
 	differ := diff.NewSimpleDiffer(provider)
 	diffResult := differ.CompareSchemas(currentSchema, targetSchema)
-	
+
 	// Show differences
 	fmt.Println("\n📝 Schema differences:")
 	if len(diffResult.TablesToCreate) > 0 {
@@ -234,12 +234,12 @@ func dbPushCommand(args []string) error {
 			fmt.Printf("    - %s\n", change.Name)
 		}
 	}
-	
+
 	if len(diffResult.TablesToCreate) == 0 && len(diffResult.TablesToAlter) == 0 && len(diffResult.TablesToDrop) == 0 {
 		fmt.Println("  ✓ No differences found - database is up to date!")
 		return nil
 	}
-	
+
 	// Generate SQL
 	var sqlGenerator sqlgen.MigrationGenerator
 	switch provider {
@@ -252,33 +252,33 @@ func dbPushCommand(args []string) error {
 	default:
 		return fmt.Errorf("unsupported provider: %s", provider)
 	}
-	
+
 	sql, err := sqlGenerator.GenerateMigrationSQL(diffResult, targetSchema)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to generate SQL: %v\n", err)
 		return err
 	}
-	
+
 	// Show preview
 	fmt.Println("\n📄 Generated SQL:")
 	fmt.Println("─────────────────────────────────────────")
 	fmt.Println(sql)
 	fmt.Println("─────────────────────────────────────────")
-	
+
 	// Prompt for confirmation
 	fmt.Print("\n❓ Apply these changes to the database? (y/N): ")
 	var confirmation string
 	fmt.Scanln(&confirmation)
-	
+
 	confirmation = strings.TrimSpace(strings.ToLower(confirmation))
 	if confirmation != "y" && confirmation != "yes" {
 		fmt.Println("✋ Aborted. No changes applied.")
 		return nil
 	}
-	
+
 	// Apply changes directly (prototype mode - no migration history)
 	fmt.Println("\n🚀 Applying schema changes...")
-	
+
 	// Execute SQL statements - split by semicolon but handle multi-line statements properly
 	// First, normalize the SQL by removing comments and extra whitespace
 	lines := strings.Split(sql, "\n")
@@ -291,18 +291,18 @@ func dbPushCommand(args []string) error {
 		}
 		cleanLines = append(cleanLines, trimmed)
 	}
-	
+
 	// Join lines and split by semicolon
 	fullSQL := strings.Join(cleanLines, " ")
 	statements := strings.Split(fullSQL, ";")
-	
+
 	stmtNum := 0
 	for _, stmt := range statements {
 		stmt = strings.TrimSpace(stmt)
 		if stmt == "" {
 			continue
 		}
-		
+
 		stmtNum++
 		// Execute each statement individually
 		_, err = db.ExecContext(ctx, stmt)
@@ -313,13 +313,13 @@ func dbPushCommand(args []string) error {
 		}
 		fmt.Printf("  ✓ Executed statement %d\n", stmtNum)
 	}
-	
+
 	fmt.Println("\n✅ Schema changes pushed successfully!")
 	fmt.Println("\n💡 Note: db push applies changes directly without migration history.")
 	fmt.Println("   For production, use migrations instead:")
 	fmt.Println("   prisma-go migrate diff schema.prisma --create-only")
 	fmt.Println("   prisma-go migrate apply migrations/.../migration.sql")
-	
+
 	return nil
 }
 
@@ -330,20 +330,20 @@ func dbPullCommand(args []string) error {
 	}
 
 	outputPath := args[0]
-	
+
 	fmt.Println("🔍 Pulling schema from database...")
-	
+
 	// Get connection string from environment
 	connStr := os.Getenv("DATABASE_URL")
 	if connStr == "" {
 		fmt.Fprintf(os.Stderr, "❌ DATABASE_URL environment variable not set\n")
 		return fmt.Errorf("no connection string")
 	}
-	
+
 	// Detect provider
 	provider := detectProvider(connStr)
 	driverProvider := normalizeProviderForDriver(provider)
-	
+
 	// Connect to database
 	db, err := sql.Open(driverProvider, connStr)
 	if err != nil {
@@ -351,46 +351,46 @@ func dbPullCommand(args []string) error {
 		return err
 	}
 	defer db.Close()
-	
+
 	ctx := context.Background()
-	
+
 	// Introspect database
 	introspector, err := introspect.NewIntrospector(db, provider)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to create introspector: %v\n", err)
 		return err
 	}
-	
+
 	schema, err := introspector.Introspect(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to introspect database: %v\n", err)
 		return err
 	}
-	
+
 	fmt.Printf("✓ Found %d tables\n", len(schema.Tables))
-	
+
 	// Generate Prisma schema file
 	schemaContent := generatePrismaSchemaFromDB(schema, provider)
-	
+
 	// Write to file
 	err = os.WriteFile(outputPath, []byte(schemaContent), 0644)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to write schema: %v\n", err)
 		return err
 	}
-	
+
 	fmt.Printf("\n✅ Schema written to %s\n", outputPath)
 	fmt.Println("\n💡 Next steps:")
 	fmt.Println("  1. Review the generated schema")
 	fmt.Println("  2. Add relations if needed")
 	fmt.Println("  3. Run 'prisma-go generate' to create the client")
-	
+
 	return nil
 }
 
 func dbSeedCommand(args []string) error {
 	fmt.Println("🌱 Seeding database...")
-	
+
 	// Look for seed script in common locations
 	seedPaths := []string{
 		"seed.go",
@@ -398,7 +398,7 @@ func dbSeedCommand(args []string) error {
 		"scripts/seed.go",
 		"db/seed.go",
 	}
-	
+
 	var seedPath string
 	for _, path := range seedPaths {
 		if _, err := os.Stat(path); err == nil {
@@ -406,7 +406,7 @@ func dbSeedCommand(args []string) error {
 			break
 		}
 	}
-	
+
 	if seedPath == "" {
 		fmt.Println("⚠️  No seed script found in common locations:")
 		for _, path := range seedPaths {
@@ -441,27 +441,29 @@ func dbSeedCommand(args []string) error {
 		fmt.Println("\n✅ Then run: prisma-go db seed")
 		return nil
 	}
-	
+
 	fmt.Printf("📝 Found seed script: %s\n", seedPath)
 	fmt.Println("🚀 Running seed script...")
-	
+
 	// Execute seed script
-	cmd := exec.Command("go", "run", seedPath)
+	// Use just the filename when changing directory
+	scriptName := filepath.Base(seedPath)
+	cmd := exec.Command("go", "run", scriptName)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	
-	// Set working directory to script's directory
-	scriptDir := filepath.Dir(seedPath)
-	if scriptDir != "." {
-		cmd.Dir = scriptDir
+
+	// Set working directory to script's directory for proper module resolution
+	cmd.Dir = filepath.Dir(seedPath)
+	if cmd.Dir == "" {
+		cmd.Dir = "."
 	}
-	
+
 	err := cmd.Run()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "\n❌ Seed script failed: %v\n", err)
 		return fmt.Errorf("seed script execution failed: %w", err)
 	}
-	
+
 	fmt.Println("\n✅ Database seeded successfully!")
 	return nil
 }
@@ -473,19 +475,19 @@ func dbExecuteCommand(args []string) error {
 	}
 
 	sqlInput := args[0]
-	
+
 	fmt.Println("🔧 Executing SQL command...")
-	
+
 	// Get connection string from environment
 	connStr := os.Getenv("DATABASE_URL")
 	if connStr == "" {
 		fmt.Fprintf(os.Stderr, "❌ DATABASE_URL environment variable not set\n")
 		return fmt.Errorf("no connection string")
 	}
-	
+
 	provider := detectProvider(connStr)
 	driverProvider := normalizeProviderForDriver(provider)
-	
+
 	// Connect to database
 	db, err := sql.Open(driverProvider, connStr)
 	if err != nil {
@@ -493,9 +495,9 @@ func dbExecuteCommand(args []string) error {
 		return err
 	}
 	defer db.Close()
-	
+
 	ctx := context.Background()
-	
+
 	// Read SQL from file or use as-is
 	var sql string
 	if _, err := os.Stat(sqlInput); err == nil {
@@ -511,7 +513,7 @@ func dbExecuteCommand(args []string) error {
 		// It's a direct SQL command
 		sql = sqlInput
 	}
-	
+
 	// Execute SQL
 	rows, err := db.QueryContext(ctx, sql)
 	if err != nil {
@@ -519,14 +521,14 @@ func dbExecuteCommand(args []string) error {
 		return err
 	}
 	defer rows.Close()
-	
+
 	// Get column names
 	columns, err := rows.Columns()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to get columns: %v\n", err)
 		return err
 	}
-	
+
 	// Print header
 	fmt.Println("\n📊 Results:")
 	fmt.Println("─────────────────────────────────────────")
@@ -538,7 +540,7 @@ func dbExecuteCommand(args []string) error {
 	}
 	fmt.Println()
 	fmt.Println("─────────────────────────────────────────")
-	
+
 	// Print rows
 	rowCount := 0
 	for rows.Next() {
@@ -548,12 +550,12 @@ func dbExecuteCommand(args []string) error {
 		for i := range values {
 			valuePtrs[i] = &values[i]
 		}
-		
+
 		if err := rows.Scan(valuePtrs...); err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Failed to scan row: %v\n", err)
 			continue
 		}
-		
+
 		// Print row
 		for i, val := range values {
 			if i > 0 {
@@ -568,17 +570,14 @@ func dbExecuteCommand(args []string) error {
 		fmt.Println()
 		rowCount++
 	}
-	
+
 	if err := rows.Err(); err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Error iterating rows: %v\n", err)
 		return err
 	}
-	
+
 	fmt.Println("─────────────────────────────────────────")
 	fmt.Printf("✅ Executed successfully (%d row(s))\n", rowCount)
-	
+
 	return nil
 }
-
-
-
