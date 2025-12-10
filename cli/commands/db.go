@@ -145,10 +145,7 @@ EXAMPLES:
 }
 
 func dbPushCommand(args []string) error {
-	schemaPath := "schema.prisma"
-	if len(args) > 0 {
-		schemaPath = args[0]
-	}
+	schemaPath := getSchemaPath("", args)
 
 	fmt.Println("🚀 Pushing schema changes to database...")
 
@@ -334,9 +331,10 @@ func dbPullCommand(args []string) error {
 	fmt.Println("🔍 Pulling schema from database...")
 
 	// Get connection string from environment
-	connStr := os.Getenv("DATABASE_URL")
+	connStr := getDatabaseURLFromEnv()
 	if connStr == "" {
-		fmt.Fprintf(os.Stderr, "❌ DATABASE_URL environment variable not set\n")
+		fmt.Fprintf(os.Stderr, "❌ DATABASE_URL not found in environment or .env files\n")
+		fmt.Fprintf(os.Stderr, "💡 Set DATABASE_URL environment variable or add it to .env file\n")
 		return fmt.Errorf("no connection string")
 	}
 
@@ -479,9 +477,10 @@ func dbExecuteCommand(args []string) error {
 	fmt.Println("🔧 Executing SQL command...")
 
 	// Get connection string from environment
-	connStr := os.Getenv("DATABASE_URL")
+	connStr := getDatabaseURLFromEnv()
 	if connStr == "" {
-		fmt.Fprintf(os.Stderr, "❌ DATABASE_URL environment variable not set\n")
+		fmt.Fprintf(os.Stderr, "❌ DATABASE_URL not found in environment or .env files\n")
+		fmt.Fprintf(os.Stderr, "💡 Set DATABASE_URL environment variable or add it to .env file\n")
 		return fmt.Errorf("no connection string")
 	}
 

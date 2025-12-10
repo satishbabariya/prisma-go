@@ -236,6 +236,9 @@ func migrateDevCommand(args []string) error {
 		}
 	}
 	
+	// Use standardized schema path resolution
+	schemaPath = getSchemaPath("", []string{schemaPath})
+	
 	// Generate default migration name if not provided
 	if migrationName == "" {
 		migrationName = fmt.Sprintf("migration_%d", time.Now().Unix())
@@ -407,10 +410,11 @@ func migrateDevCommand(args []string) error {
 func migrateDeployCommand(args []string) error {
 	fmt.Println("🚀 Deploying pending migrations...")
 	
-	// Get connection string from environment
-	connStr := os.Getenv("DATABASE_URL")
+	// Get connection string from environment or .env files
+	connStr := getDatabaseURLFromEnv()
 	if connStr == "" {
-		fmt.Fprintf(os.Stderr, "❌ DATABASE_URL environment variable not set\n")
+		fmt.Fprintf(os.Stderr, "❌ DATABASE_URL not found in environment or .env files\n")
+		fmt.Fprintf(os.Stderr, "💡 Set DATABASE_URL environment variable or add it to .env file\n")
 		return fmt.Errorf("no connection string")
 	}
 	
@@ -569,6 +573,9 @@ func migrateDiffCommand(args []string) error {
 			schemaPath = arg
 		}
 	}
+	
+	// Use standardized schema path resolution
+	schemaPath = getSchemaPath("", []string{schemaPath})
 	
 	fmt.Println("🔍 Analyzing schema differences...")
 	
@@ -754,10 +761,11 @@ func migrateApplyCommand(args []string) error {
 		return err
 	}
 	
-	// Get connection string from environment
-	connStr := os.Getenv("DATABASE_URL")
+	// Get connection string from environment or .env files
+	connStr := getDatabaseURLFromEnv()
 	if connStr == "" {
-		fmt.Fprintf(os.Stderr, "❌ DATABASE_URL environment variable not set\n")
+		fmt.Fprintf(os.Stderr, "❌ DATABASE_URL not found in environment or .env files\n")
+		fmt.Fprintf(os.Stderr, "💡 Set DATABASE_URL environment variable or add it to .env file\n")
 		return fmt.Errorf("no connection string")
 	}
 	
@@ -806,10 +814,11 @@ func migrateApplyCommand(args []string) error {
 func migrateStatusCommand(args []string) error {
 	fmt.Println("📊 Migration Status")
 	
-	// Get connection string from environment
-	connStr := os.Getenv("DATABASE_URL")
+	// Get connection string from environment or .env files
+	connStr := getDatabaseURLFromEnv()
 	if connStr == "" {
-		fmt.Fprintf(os.Stderr, "❌ DATABASE_URL environment variable not set\n")
+		fmt.Fprintf(os.Stderr, "❌ DATABASE_URL not found in environment or .env files\n")
+		fmt.Fprintf(os.Stderr, "💡 Set DATABASE_URL environment variable or add it to .env file\n")
 		return fmt.Errorf("no connection string")
 	}
 	
@@ -883,10 +892,11 @@ func migrateResolveCommand(args []string) error {
 	fmt.Printf("🔧 Resolving migration: %s\n", migrationName)
 	fmt.Printf("📝 Action: %s\n", action)
 	
-	// Get connection string from environment
-	connStr := os.Getenv("DATABASE_URL")
+	// Get connection string from environment or .env files
+	connStr := getDatabaseURLFromEnv()
 	if connStr == "" {
-		fmt.Fprintf(os.Stderr, "❌ DATABASE_URL environment variable not set\n")
+		fmt.Fprintf(os.Stderr, "❌ DATABASE_URL not found in environment or .env files\n")
+		fmt.Fprintf(os.Stderr, "💡 Set DATABASE_URL environment variable or add it to .env file\n")
 		return fmt.Errorf("no connection string")
 	}
 	

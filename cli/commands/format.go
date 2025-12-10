@@ -42,10 +42,7 @@ func init() {
 }
 
 func runFormat(cmd *cobra.Command, args []string) error {
-	schemaPath := formatSchemaPath
-	if len(args) > 0 {
-		schemaPath = args[0]
-	}
+	schemaPath := getSchemaPath(formatSchemaPath, args)
 
 	// Check if file exists
 	if _, err := os.Stat(schemaPath); os.IsNotExist(err) {

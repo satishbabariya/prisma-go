@@ -36,10 +36,7 @@ func init() {
 }
 
 func runValidate(cmd *cobra.Command, args []string) error {
-	schemaPath := validateSchemaPath
-	if len(args) > 0 {
-		schemaPath = args[0]
-	}
+	schemaPath := getSchemaPath(validateSchemaPath, args)
 
 	ui.PrintHeader("Prisma-Go", "Validate Schema")
 
@@ -71,9 +68,6 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "\n%s\n", diags.WarningsToPrettyString(schemaPath, string(content)))
 	}
 
-	absPath, _ := filepath.Abs(schemaPath)
-	ui.PrintSuccess("Schema is valid: %s", absPath)
-
 	// Count models, enums, datasources, generators
 	modelCount := 0
 	enumCount := 0
@@ -91,6 +85,22 @@ func runValidate(cmd *cobra.Command, args []string) error {
 			generatorCount++
 		}
 	}
+
+	// Validate minimum requirements: datasource and generator are required
+	if datasourceCount == 0 {
+		ui.PrintError("Schema validation failed:")
+		fmt.Fprintf(os.Stderr, "\n❌ A datasource must be defined in the schema.\n")
+		return fmt.Errorf("schema missing required datasource")
+	}
+
+	if generatorCount == 0 {
+		ui.PrintError("Schema validation failed:")
+		fmt.Fprintf(os.Stderr, "\n❌ A generator must be defined in the schema.\n")
+		return fmt.Errorf("schema missing required generator")
+	}
+
+	absPath, _ := filepath.Abs(schemaPath)
+	ui.PrintSuccess("Schema is valid: %s", absPath)
 
 	// Print summary
 	fmt.Println()

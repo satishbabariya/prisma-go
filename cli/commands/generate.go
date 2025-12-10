@@ -41,10 +41,7 @@ func init() {
 }
 
 func runGenerate(cmd *cobra.Command, args []string) error {
-	schemaPath := generateSchemaPath
-	if len(args) > 0 {
-		schemaPath = args[0]
-	}
+	schemaPath := getSchemaPath(generateSchemaPath, args)
 
 	// Watch mode
 	if generateWatch || generateWatchOnly {
