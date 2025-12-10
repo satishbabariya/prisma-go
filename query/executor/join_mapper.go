@@ -35,7 +35,7 @@ func (e *Executor) scanJoinResults(
 
 	// Build column mapping: prefix -> column indices
 	columnMap := e.buildColumnMap(columns, mainTable, joins)
-	
+
 	// Validate that we have columns for main table
 	if len(columnMap[mainTable]) == 0 {
 		return fmt.Errorf("no columns found for main table %s", mainTable)
@@ -78,7 +78,7 @@ func (e *Executor) scanJoinResults(
 // buildColumnMap builds a map of table prefix -> column indices
 func (e *Executor) buildColumnMap(columns []string, mainTable string, joins []sqlgen.Join) map[string][]int {
 	columnMap := make(map[string][]int)
-	
+
 	// Build set of valid table names/aliases
 	validTables := make(map[string]bool)
 	validTables[mainTable] = true
@@ -90,7 +90,7 @@ func (e *Executor) buildColumnMap(columns []string, mainTable string, joins []sq
 			validTables[tableName] = true
 		}
 	}
-	
+
 	// Map columns to tables
 	for i, col := range columns {
 		if !strings.Contains(col, ".") {
@@ -128,7 +128,7 @@ func (e *Executor) scanJoinResultsSimple(
 ) error {
 	destValue := reflect.ValueOf(dest).Elem()
 	var sliceValue reflect.Value
-	
+
 	if isSlice {
 		sliceValue = destValue
 		destValue = reflect.New(reflect.TypeOf(nil)) // Will be set per row
@@ -148,7 +148,7 @@ func (e *Executor) scanJoinResultsSimple(
 
 		// Create new element
 		elem := reflect.New(elementType).Interface()
-		
+
 		// Map main table columns
 		if err := e.mapColumnsToStruct(columns, values, columnMap[mainTable], mainTable, elem); err != nil {
 			return err
@@ -160,7 +160,7 @@ func (e *Executor) scanJoinResultsSimple(
 			if join.Alias != "" {
 				tableName = join.Alias
 			}
-			
+
 			// Find relation for this join
 			var relMeta RelationMetadata
 			var relationName string
@@ -212,7 +212,7 @@ func (e *Executor) scanJoinResultsGrouped(
 ) error {
 	// Group rows by main table ID
 	grouped := make(map[interface{}]*groupedRow)
-	
+
 	for rows.Next() {
 		values := make([]interface{}, len(columns))
 		valuePtrs := make([]interface{}, len(columns))
@@ -267,7 +267,7 @@ func (e *Executor) scanJoinResultsGrouped(
 				relations:   make(map[string][]interface{}),
 			}
 			grouped[mainID] = group
-			
+
 			// Map main table columns
 			if err := e.mapColumnsToStruct(columns, values, columnMap[mainTable], mainTable, group.mainElement); err != nil {
 				return err
@@ -311,7 +311,7 @@ func (e *Executor) scanJoinResultsGrouped(
 				if found {
 					relElementType := relField.Type.Elem() // []Post -> Post
 					relElement := reflect.New(relElementType).Interface()
-					
+
 					if err := e.mapColumnsToStruct(columns, values, columnMap[tableName], tableName, relElement); err != nil {
 						return err
 					}
@@ -322,7 +322,7 @@ func (e *Executor) scanJoinResultsGrouped(
 					if !relIDField.IsValid() {
 						relIDField = relElemValue.FieldByName("ID")
 					}
-					
+
 					isDuplicate := false
 					if relIDField.IsValid() {
 						relID := relIDField.Interface()
@@ -351,7 +351,7 @@ func (e *Executor) scanJoinResultsGrouped(
 	sliceValue := reflect.MakeSlice(reflect.TypeOf(dest).Elem(), 0, len(grouped))
 	for _, group := range grouped {
 		elem := reflect.ValueOf(group.mainElement).Elem()
-		
+
 		// Set relation fields
 		for relationName, relElements := range group.relations {
 			field := elem.FieldByName(toPascalCase(relationName))
@@ -363,7 +363,7 @@ func (e *Executor) scanJoinResultsGrouped(
 				field.Set(slice)
 			}
 		}
-		
+
 		// Initialize empty slices for relations that weren't included
 		// This ensures empty relations are [] instead of nil
 		for relationName := range relations {
@@ -545,4 +545,3 @@ func (e *Executor) mapValuesToStructFromMap(columnMap map[string]int, values []i
 
 	return nil
 }
-

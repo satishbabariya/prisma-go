@@ -23,15 +23,15 @@ func (e *Executor) Count(ctx context.Context, table string, where *sqlgen.WhereC
 	aggregates := []sqlgen.AggregateFunction{
 		{Function: "COUNT", Field: "*", Alias: "count"},
 	}
-	
+
 	query := e.generator.GenerateAggregate(table, aggregates, where, nil, nil)
-	
+
 	var count int64
 	err := e.db.QueryRowContext(ctx, query.SQL, query.Args...).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("count query failed: %w", err)
 	}
-	
+
 	return count, nil
 }
 
@@ -40,19 +40,19 @@ func (e *Executor) Sum(ctx context.Context, table string, field string, where *s
 	aggregates := []sqlgen.AggregateFunction{
 		{Function: "SUM", Field: field, Alias: "sum"},
 	}
-	
+
 	query := e.generator.GenerateAggregate(table, aggregates, where, nil, nil)
-	
+
 	var sum sql.NullFloat64
 	err := e.db.QueryRowContext(ctx, query.SQL, query.Args...).Scan(&sum)
 	if err != nil {
 		return 0, fmt.Errorf("sum query failed: %w", err)
 	}
-	
+
 	if !sum.Valid {
 		return 0, nil
 	}
-	
+
 	return sum.Float64, nil
 }
 
@@ -61,19 +61,19 @@ func (e *Executor) Avg(ctx context.Context, table string, field string, where *s
 	aggregates := []sqlgen.AggregateFunction{
 		{Function: "AVG", Field: field, Alias: "avg"},
 	}
-	
+
 	query := e.generator.GenerateAggregate(table, aggregates, where, nil, nil)
-	
+
 	var avg sql.NullFloat64
 	err := e.db.QueryRowContext(ctx, query.SQL, query.Args...).Scan(&avg)
 	if err != nil {
 		return 0, fmt.Errorf("avg query failed: %w", err)
 	}
-	
+
 	if !avg.Valid {
 		return 0, nil
 	}
-	
+
 	return avg.Float64, nil
 }
 
@@ -82,19 +82,19 @@ func (e *Executor) Min(ctx context.Context, table string, field string, where *s
 	aggregates := []sqlgen.AggregateFunction{
 		{Function: "MIN", Field: field, Alias: "min"},
 	}
-	
+
 	query := e.generator.GenerateAggregate(table, aggregates, where, nil, nil)
-	
+
 	var min sql.NullFloat64
 	err := e.db.QueryRowContext(ctx, query.SQL, query.Args...).Scan(&min)
 	if err != nil {
 		return 0, fmt.Errorf("min query failed: %w", err)
 	}
-	
+
 	if !min.Valid {
 		return 0, nil
 	}
-	
+
 	return min.Float64, nil
 }
 
@@ -103,37 +103,37 @@ func (e *Executor) Max(ctx context.Context, table string, field string, where *s
 	aggregates := []sqlgen.AggregateFunction{
 		{Function: "MAX", Field: field, Alias: "max"},
 	}
-	
+
 	query := e.generator.GenerateAggregate(table, aggregates, where, nil, nil)
-	
+
 	var max sql.NullFloat64
 	err := e.db.QueryRowContext(ctx, query.SQL, query.Args...).Scan(&max)
 	if err != nil {
 		return 0, fmt.Errorf("max query failed: %w", err)
 	}
-	
+
 	if !max.Valid {
 		return 0, nil
 	}
-	
+
 	return max.Float64, nil
 }
 
 // Aggregate executes multiple aggregations in a single query
 func (e *Executor) Aggregate(ctx context.Context, table string, aggregates []sqlgen.AggregateFunction, where *sqlgen.WhereClause, groupBy *sqlgen.GroupBy) ([]map[string]interface{}, error) {
 	query := e.generator.GenerateAggregate(table, aggregates, where, groupBy, nil)
-	
+
 	rows, err := e.db.QueryContext(ctx, query.SQL, query.Args...)
 	if err != nil {
 		return nil, fmt.Errorf("aggregate query failed: %w", err)
 	}
 	defer rows.Close()
-	
+
 	columns, err := rows.Columns()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get columns: %w", err)
 	}
-	
+
 	var results []map[string]interface{}
 	for rows.Next() {
 		// Create a slice of interface{} to hold each column value
@@ -142,11 +142,11 @@ func (e *Executor) Aggregate(ctx context.Context, table string, aggregates []sql
 		for i := range values {
 			valuePtrs[i] = &values[i]
 		}
-		
+
 		if err := rows.Scan(valuePtrs...); err != nil {
 			return nil, fmt.Errorf("scan failed: %w", err)
 		}
-		
+
 		// Build result map
 		result := make(map[string]interface{})
 		for i, col := range columns {
@@ -154,7 +154,6 @@ func (e *Executor) Aggregate(ctx context.Context, table string, aggregates []sql
 		}
 		results = append(results, result)
 	}
-	
+
 	return results, rows.Err()
 }
-

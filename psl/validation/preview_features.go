@@ -68,61 +68,61 @@ const (
 func (pf PreviewFeature) ParseOpt(s string) *PreviewFeature {
 	// Normalize to lowercase for case-insensitive matching
 	s = strings.ToLower(s)
-	
+
 	// Map of lowercase feature names to their enum values
 	featureMap := map[string]PreviewFeature{
-		"aggregateapi":                  PreviewFeatureAggregateApi,
-		"atomicnumberoperations":       PreviewFeatureAtomicNumberOperations,
-		"clientextensions":              PreviewFeatureClientExtensions,
-		"cockroachdb":                   PreviewFeatureCockroachdb,
-		"connectorcreate":               PreviewFeatureConnectOrCreate,
-		"createmany":                    PreviewFeatureCreateMany,
-		"dataproxy":                     PreviewFeatureDataProxy,
-		"deno":                          PreviewFeatureDeno,
-		"distinct":                      PreviewFeatureDistinct,
-		"driveradapters":                PreviewFeatureDriverAdapters,
-		"extendedindexes":               PreviewFeatureExtendedIndexes,
-		"extendedwhereunique":           PreviewFeatureExtendedWhereUnique,
-		"fieldreference":                PreviewFeatureFieldReference,
-		"filterjson":                    PreviewFeatureFilterJson,
-		"filteredrelationcount":         PreviewFeatureFilteredRelationCount,
-		"fulltextindex":                 PreviewFeatureFullTextIndex,
-		"fulltextsearch":                PreviewFeatureFullTextSearch,
-		"fulltextsearchpostgres":        PreviewFeatureFullTextSearchPostgres,
-		"groupby":                       PreviewFeatureGroupBy,
-		"improvedqueryraw":              PreviewFeatureImprovedQueryRaw,
-		"interactivetransactions":       PreviewFeatureInteractiveTransactions,
-		"jsonprotocol":                  PreviewFeatureJsonProtocol,
-		"microsoftsqlserver":            PreviewFeatureMicrosoftSqlServer,
-		"middlewares":                   PreviewFeatureMiddlewares,
-		"mongodb":                       PreviewFeatureMongoDb,
-		"multischema":                   PreviewFeatureMultiSchema,
-		"napi":                          PreviewFeatureNApi,
-		"namedconstraints":               PreviewFeatureNamedConstraints,
-		"nativedistinct":                PreviewFeatureNativeDistinct,
-		"nativetypes":                   PreviewFeatureNativeTypes,
-		"omitapi":                       PreviewFeatureOmitApi,
-		"orderbyaggregategroup":          PreviewFeatureOrderByAggregateGroup,
-		"orderbynulls":                  PreviewFeatureOrderByNulls,
-		"orderbyrelation":               PreviewFeatureOrderByRelation,
-		"postgresqlextensions":          PreviewFeaturePostgresqlExtensions,
-		"prismaschemafolder":            PreviewFeaturePrismaSchemaFolder,
-		"querycompiler":                 PreviewFeatureQueryCompiler,
-		"reactnative":                   PreviewFeatureReactNative,
-		"referentialactions":           PreviewFeatureReferentialActions,
-		"referentialintegrity":           PreviewFeatureReferentialIntegrity,
-		"relationjoins":                 PreviewFeatureRelationJoins,
-		"schemaenginedriveradapters":     PreviewFeatureSchemaEngineDriverAdapters,
-		"selectrelationcount":           PreviewFeatureSelectRelationCount,
-		"shardkeys":                     PreviewFeatureShardKeys,
-		"strictundefinedchecks":         PreviewFeatureStrictUndefinedChecks,
-		"tracing":                       PreviewFeatureTracing,
-		"transactionapi":               PreviewFeatureTransactionApi,
-		"typedsql":                       PreviewFeatureTypedSql,
-		"uncheckedscalarinputs":         PreviewFeatureUncheckedScalarInputs,
-		"views":                         PreviewFeatureViews,
+		"aggregateapi":               PreviewFeatureAggregateApi,
+		"atomicnumberoperations":     PreviewFeatureAtomicNumberOperations,
+		"clientextensions":           PreviewFeatureClientExtensions,
+		"cockroachdb":                PreviewFeatureCockroachdb,
+		"connectorcreate":            PreviewFeatureConnectOrCreate,
+		"createmany":                 PreviewFeatureCreateMany,
+		"dataproxy":                  PreviewFeatureDataProxy,
+		"deno":                       PreviewFeatureDeno,
+		"distinct":                   PreviewFeatureDistinct,
+		"driveradapters":             PreviewFeatureDriverAdapters,
+		"extendedindexes":            PreviewFeatureExtendedIndexes,
+		"extendedwhereunique":        PreviewFeatureExtendedWhereUnique,
+		"fieldreference":             PreviewFeatureFieldReference,
+		"filterjson":                 PreviewFeatureFilterJson,
+		"filteredrelationcount":      PreviewFeatureFilteredRelationCount,
+		"fulltextindex":              PreviewFeatureFullTextIndex,
+		"fulltextsearch":             PreviewFeatureFullTextSearch,
+		"fulltextsearchpostgres":     PreviewFeatureFullTextSearchPostgres,
+		"groupby":                    PreviewFeatureGroupBy,
+		"improvedqueryraw":           PreviewFeatureImprovedQueryRaw,
+		"interactivetransactions":    PreviewFeatureInteractiveTransactions,
+		"jsonprotocol":               PreviewFeatureJsonProtocol,
+		"microsoftsqlserver":         PreviewFeatureMicrosoftSqlServer,
+		"middlewares":                PreviewFeatureMiddlewares,
+		"mongodb":                    PreviewFeatureMongoDb,
+		"multischema":                PreviewFeatureMultiSchema,
+		"napi":                       PreviewFeatureNApi,
+		"namedconstraints":           PreviewFeatureNamedConstraints,
+		"nativedistinct":             PreviewFeatureNativeDistinct,
+		"nativetypes":                PreviewFeatureNativeTypes,
+		"omitapi":                    PreviewFeatureOmitApi,
+		"orderbyaggregategroup":      PreviewFeatureOrderByAggregateGroup,
+		"orderbynulls":               PreviewFeatureOrderByNulls,
+		"orderbyrelation":            PreviewFeatureOrderByRelation,
+		"postgresqlextensions":       PreviewFeaturePostgresqlExtensions,
+		"prismaschemafolder":         PreviewFeaturePrismaSchemaFolder,
+		"querycompiler":              PreviewFeatureQueryCompiler,
+		"reactnative":                PreviewFeatureReactNative,
+		"referentialactions":         PreviewFeatureReferentialActions,
+		"referentialintegrity":       PreviewFeatureReferentialIntegrity,
+		"relationjoins":              PreviewFeatureRelationJoins,
+		"schemaenginedriveradapters": PreviewFeatureSchemaEngineDriverAdapters,
+		"selectrelationcount":        PreviewFeatureSelectRelationCount,
+		"shardkeys":                  PreviewFeatureShardKeys,
+		"strictundefinedchecks":      PreviewFeatureStrictUndefinedChecks,
+		"tracing":                    PreviewFeatureTracing,
+		"transactionapi":             PreviewFeatureTransactionApi,
+		"typedsql":                   PreviewFeatureTypedSql,
+		"uncheckedscalarinputs":      PreviewFeatureUncheckedScalarInputs,
+		"views":                      PreviewFeatureViews,
 	}
-	
+
 	if feature, ok := featureMap[s]; ok {
 		return &feature
 	}
@@ -299,7 +299,7 @@ func (pf PreviewFeatures) String() string {
 	if pf.IsEmpty() {
 		return "[]"
 	}
-	
+
 	var features []string
 	for i := uint(0); i < 64; i++ {
 		feature := PreviewFeature(1 << i)
@@ -307,7 +307,7 @@ func (pf PreviewFeatures) String() string {
 			features = append(features, feature.String())
 		}
 	}
-	
+
 	return fmt.Sprintf("[%s]", strings.Join(features, ", "))
 }
 
@@ -330,7 +330,7 @@ type RenamedFeatureKey struct {
 
 // RenamedFeatureValue represents a renamed feature value.
 type RenamedFeatureValue struct {
-	To                PreviewFeature
+	To                 PreviewFeature
 	PrislyLinkEndpoint string
 }
 
@@ -353,11 +353,11 @@ func NewFeatureMapWithProvider(connectorProvider *string) *FeatureMapWithProvide
 		PreviewFeatureStrictUndefinedChecks,
 		PreviewFeatureViews,
 	)
-	
+
 	// Native features (provider-specific)
 	native := make(map[string]PreviewFeatures)
 	native["postgresql"] = NewPreviewFeatures(PreviewFeatureFullTextSearchPostgres)
-	
+
 	// Stabilized features (no longer preview, but kept for compatibility)
 	stabilized := NewPreviewFeatures(
 		PreviewFeatureAggregateApi,
@@ -401,10 +401,10 @@ func NewFeatureMapWithProvider(connectorProvider *string) *FeatureMapWithProvide
 		PreviewFeatureTransactionApi,
 		PreviewFeatureUncheckedScalarInputs,
 	)
-	
+
 	// Deprecated features (currently none)
 	deprecated := EmptyPreviewFeatures()
-	
+
 	// Renamed features
 	renamed := make(map[RenamedFeatureKey]RenamedFeatureValue)
 	postgresProvider := "postgresql"
@@ -412,16 +412,16 @@ func NewFeatureMapWithProvider(connectorProvider *string) *FeatureMapWithProvide
 		From:     PreviewFeatureFullTextSearch,
 		Provider: &postgresProvider,
 	}] = RenamedFeatureValue{
-		To:                PreviewFeatureFullTextSearchPostgres,
+		To:                 PreviewFeatureFullTextSearchPostgres,
 		PrislyLinkEndpoint: "fts-postgres",
 	}
-	
+
 	// Hidden features (valid but not shown in tooling)
 	hidden := NewPreviewFeatures(
 		PreviewFeatureReactNative,
 		PreviewFeatureTypedSql,
 	)
-	
+
 	return &FeatureMapWithProvider{
 		provider:   connectorProvider,
 		active:     active,
@@ -429,7 +429,7 @@ func NewFeatureMapWithProvider(connectorProvider *string) *FeatureMapWithProvide
 		stabilized: stabilized,
 		deprecated: deprecated,
 		renamed:    renamed,
-		hidden:    hidden,
+		hidden:     hidden,
 	}
 }
 
@@ -486,7 +486,7 @@ func (fmp *FeatureMapWithProvider) IsRenamed(flag PreviewFeature) *RenamedFeatur
 			}
 		}
 	}
-	
+
 	// Check for all-providers rename
 	key := RenamedFeatureKey{
 		From:     flag,
@@ -498,7 +498,6 @@ func (fmp *FeatureMapWithProvider) IsRenamed(flag PreviewFeature) *RenamedFeatur
 			Value:         value,
 		}
 	}
-	
+
 	return nil
 }
-

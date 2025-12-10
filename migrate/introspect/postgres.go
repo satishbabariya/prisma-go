@@ -458,4 +458,3 @@ func isAutoIncrement(defaultValue, dataType string) bool {
 
 	return false
 }
-

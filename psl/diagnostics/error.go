@@ -338,4 +338,3 @@ func (e DatamodelError) Error() string {
 func (e DatamodelError) PrettyPrint(w io.Writer, fileName, text string) error {
 	return PrettyPrint(w, fileName, text, e.span, e.message, ErrorColorer{})
 }
-

@@ -28,4 +28,3 @@ func (s *SelectBuilder) GetFields() map[string]bool {
 func (s *SelectBuilder) HasFields() bool {
 	return len(s.fields) > 0
 }
-

@@ -638,4 +638,3 @@ func (g *SQLiteGenerator) buildWhere(where *WhereClause, argIndex *int) (string,
 func quoteIdentifierSQLite(name string) string {
 	return fmt.Sprintf(`"%s"`, name)
 }
-

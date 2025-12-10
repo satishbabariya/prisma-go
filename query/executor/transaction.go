@@ -20,9 +20,9 @@ func NewTxExecutor(tx *sql.Tx, provider string) *TxExecutor {
 	generator := sqlgen.NewGenerator(provider)
 	return &TxExecutor{
 		Executor: &Executor{
-			db:       nil, // Not used in tx mode
+			db:        nil, // Not used in tx mode
 			generator: generator,
-			provider: provider,
+			provider:  provider,
 		},
 		tx: tx,
 	}
@@ -39,21 +39,21 @@ func (e *TxExecutor) FindManyWithRelations(ctx context.Context, table string, se
 			columns = append(columns, field)
 		}
 	}
-	
+
 	var query *sqlgen.Query
-	
+
 	// Build JOINs if relations are included
 	var joins []sqlgen.Join
 	if include != nil && len(include) > 0 && relations != nil {
 		joins = buildJoinsFromIncludes(table, include, relations)
 	}
-	
+
 	if len(joins) > 0 {
 		query = e.generator.GenerateSelectWithJoins(table, columns, joins, where, orderBy, limit, offset)
 	} else {
 		query = e.generator.GenerateSelect(table, columns, where, orderBy, limit, offset)
 	}
-	
+
 	rows, err := e.tx.QueryContext(ctx, query.SQL, query.Args...)
 	if err != nil {
 		return fmt.Errorf("query execution failed: %w", err)
@@ -87,13 +87,13 @@ func (e *TxExecutor) Create(ctx context.Context, table string, data interface{})
 	}
 
 	query := e.generator.GenerateInsert(table, columns, values)
-	
+
 	// For PostgreSQL, use RETURNING
 	if e.provider == "postgresql" || e.provider == "postgres" {
 		row := e.tx.QueryRowContext(ctx, query.SQL, query.Args...)
 		return e.scanRowToStruct(row, data)
 	}
-	
+
 	// For other databases, execute insert then query back
 	result, err := e.tx.ExecContext(ctx, query.SQL, query.Args...)
 	if err != nil {
@@ -122,13 +122,13 @@ func (e *TxExecutor) Create(ctx context.Context, table string, data interface{})
 // Update executes an UPDATE query within a transaction
 func (e *TxExecutor) Update(ctx context.Context, table string, set map[string]interface{}, where *sqlgen.WhereClause, dest interface{}) error {
 	query := e.generator.GenerateUpdate(table, set, where)
-	
+
 	// For PostgreSQL, use RETURNING
 	if e.provider == "postgresql" || e.provider == "postgres" {
 		row := e.tx.QueryRowContext(ctx, query.SQL, query.Args...)
 		return e.scanRow(row, dest)
 	}
-	
+
 	// For other databases, execute update
 	_, err := e.tx.ExecContext(ctx, query.SQL, query.Args...)
 	if err != nil {
@@ -141,7 +141,7 @@ func (e *TxExecutor) Update(ctx context.Context, table string, set map[string]in
 // Delete executes a DELETE query within a transaction
 func (e *TxExecutor) Delete(ctx context.Context, table string, where *sqlgen.WhereClause) error {
 	query := e.generator.GenerateDelete(table, where)
-	
+
 	_, err := e.tx.ExecContext(ctx, query.SQL, query.Args...)
 	if err != nil {
 		return fmt.Errorf("delete failed: %w", err)
@@ -155,15 +155,14 @@ func (e *TxExecutor) Count(ctx context.Context, table string, where *sqlgen.Wher
 	aggregates := []sqlgen.AggregateFunction{
 		{Function: "COUNT", Field: "*", Alias: "count"},
 	}
-	
+
 	query := e.generator.GenerateAggregate(table, aggregates, where, nil, nil)
-	
+
 	var count int64
 	err := e.tx.QueryRowContext(ctx, query.SQL, query.Args...).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("count query failed: %w", err)
 	}
-	
+
 	return count, nil
 }
-

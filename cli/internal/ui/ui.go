@@ -253,4 +253,3 @@ func GetColorPrinters() map[string]*color.Color {
 		"primary": color.New(color.FgCyan, color.Bold),
 	}
 }
-

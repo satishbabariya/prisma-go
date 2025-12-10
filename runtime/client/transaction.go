@@ -80,4 +80,3 @@ func (c *PrismaClient) ReadOnlyTransaction(ctx context.Context, fn TransactionFu
 	}
 	return c.TransactionWithOptions(ctx, opts, fn)
 }
-

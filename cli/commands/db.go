@@ -98,29 +98,45 @@ func initDBCommands() {
 	}
 }
 
-func dbCommand(args []string) error {
-	if len(args) == 0 {
-		printDBHelp()
-		return nil
+// splitSQLStatements splits SQL into statements, handling semicolons inside string literals
+func splitSQLStatements(sql string) []string {
+	var statements []string
+	var current strings.Builder
+	inString := false
+	stringChar := rune(0)
+	prevChar := rune(0)
+
+	for _, r := range sql {
+		// Track if we're entering/exiting a string literal
+		if !inString && (r == '\'' || r == '"') {
+			inString = true
+			stringChar = r
+		} else if inString && r == stringChar && prevChar != '\\' {
+			// Exit string literal (handle escaped quotes)
+			inString = false
+			stringChar = 0
+		}
+
+		// Split on semicolon only if not inside a string
+		if r == ';' && !inString {
+			stmt := strings.TrimSpace(current.String())
+			if stmt != "" {
+				statements = append(statements, stmt)
+			}
+			current.Reset()
+		} else {
+			current.WriteRune(r)
+		}
+
+		prevChar = r
 	}
 
-	subcommand := args[0]
-
-	switch subcommand {
-	case "push":
-		return dbPushCommand(args[1:])
-	case "pull":
-		return dbPullCommand(args[1:])
-	case "seed":
-		return dbSeedCommand(args[1:])
-	case "execute":
-		return dbExecuteCommand(args[1:])
-	default:
-		fmt.Fprintf(os.Stderr, "Unknown db subcommand: %s\n\n", subcommand)
-		printDBHelp()
-		os.Exit(1)
-		return nil
+	// Handle last statement without trailing semicolon
+	if stmt := strings.TrimSpace(current.String()); stmt != "" {
+		statements = append(statements, stmt)
 	}
+
+	return statements
 }
 
 func printDBHelp() {
@@ -208,7 +224,11 @@ func dbPushCommand(args []string) error {
 	fmt.Printf("📋 Schema defines %d tables\n", len(targetSchema.Tables))
 
 	// Compare schemas
-	differ := diff.NewSimpleDiffer(provider)
+	differ, err := diff.NewDiffer(provider)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to create differ: %v\n", err)
+		return err
+	}
 	diffResult := differ.CompareSchemas(currentSchema, targetSchema)
 
 	// Show differences
@@ -277,21 +297,7 @@ func dbPushCommand(args []string) error {
 	fmt.Println("\n🚀 Applying schema changes...")
 
 	// Execute SQL statements - split by semicolon but handle multi-line statements properly
-	// First, normalize the SQL by removing comments and extra whitespace
-	lines := strings.Split(sql, "\n")
-	var cleanLines []string
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		// Skip empty lines and comments
-		if trimmed == "" || strings.HasPrefix(trimmed, "--") {
-			continue
-		}
-		cleanLines = append(cleanLines, trimmed)
-	}
-
-	// Join lines and split by semicolon
-	fullSQL := strings.Join(cleanLines, " ")
-	statements := strings.Split(fullSQL, ";")
+	statements := splitSQLStatements(sql)
 
 	stmtNum := 0
 	for _, stmt := range statements {
@@ -513,7 +519,23 @@ func dbExecuteCommand(args []string) error {
 		sql = sqlInput
 	}
 
-	// Execute SQL
+	// Detect if this is a SELECT query
+	trimmedSQL := strings.TrimSpace(strings.ToUpper(sql))
+	isSelect := strings.HasPrefix(trimmedSQL, "SELECT") || strings.HasPrefix(trimmedSQL, "WITH")
+
+	if !isSelect {
+		// Use ExecContext for non-SELECT statements (INSERT, UPDATE, DELETE, DDL)
+		result, err := db.ExecContext(ctx, sql)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Failed to execute SQL: %v\n", err)
+			return err
+		}
+		rowsAffected, _ := result.RowsAffected()
+		fmt.Printf("✅ Executed successfully (%d row(s) affected)\n", rowsAffected)
+		return nil
+	}
+
+	// Use QueryContext for SELECT queries
 	rows, err := db.QueryContext(ctx, sql)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to execute SQL: %v\n", err)

@@ -60,4 +60,3 @@ func (w *WhereClause) HasConditions() bool {
 func (w *WhereClause) HasGroups() bool {
 	return len(w.Groups) > 0
 }
-

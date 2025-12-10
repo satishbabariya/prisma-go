@@ -36,4 +36,3 @@ func (c *Compiler) compileFindMany(query *ast.FindManyQuery) (string, []interfac
 	// TODO: Implement findMany compilation
 	return "", []interface{}{}, nil
 }
-

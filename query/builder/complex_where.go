@@ -9,7 +9,7 @@ import (
 func (w *WhereBuilder) AND(builders ...*WhereBuilder) *WhereBuilder {
 	group := sqlgen.NewWhereClause()
 	group.SetOperator("AND")
-	
+
 	for _, builder := range builders {
 		if builder != nil {
 			subClause := builder.Build()
@@ -18,13 +18,13 @@ func (w *WhereBuilder) AND(builders ...*WhereBuilder) *WhereBuilder {
 			}
 		}
 	}
-	
+
 	// Add this group to the current builder
 	if w.whereClause == nil {
 		w.whereClause = sqlgen.NewWhereClause()
 	}
 	w.whereClause.AddGroup(group)
-	
+
 	return w
 }
 
@@ -32,7 +32,7 @@ func (w *WhereBuilder) AND(builders ...*WhereBuilder) *WhereBuilder {
 func (w *WhereBuilder) OR(builders ...*WhereBuilder) *WhereBuilder {
 	group := sqlgen.NewWhereClause()
 	group.SetOperator("OR")
-	
+
 	for _, builder := range builders {
 		if builder != nil {
 			subClause := builder.Build()
@@ -41,13 +41,13 @@ func (w *WhereBuilder) OR(builders ...*WhereBuilder) *WhereBuilder {
 			}
 		}
 	}
-	
+
 	// Add this group to the current builder
 	if w.whereClause == nil {
 		w.whereClause = sqlgen.NewWhereClause()
 	}
 	w.whereClause.AddGroup(group)
-	
+
 	return w
 }
 
@@ -57,23 +57,22 @@ func (w *WhereBuilder) NOT(builder *WhereBuilder) *WhereBuilder {
 		subClause := builder.Build()
 		if subClause != nil && !subClause.IsEmpty() {
 			subClause.SetNot(true)
-			
+
 			if w.whereClause == nil {
 				w.whereClause = sqlgen.NewWhereClause()
 			}
 			w.whereClause.AddGroup(subClause)
 		}
 	}
-	
+
 	return w
 }
 
 // NewSubWhereBuilder creates a new independent WHERE builder for use in AND/OR/NOT
 func NewSubWhereBuilder() *WhereBuilder {
 	return &WhereBuilder{
-		conditions: []sqlgen.Condition{},
-		operator:   "AND",
+		conditions:  []sqlgen.Condition{},
+		operator:    "AND",
 		whereClause: nil,
 	}
 }
-

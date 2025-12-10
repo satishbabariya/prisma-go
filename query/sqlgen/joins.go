@@ -32,7 +32,7 @@ func (g *PostgresGenerator) GenerateSelectWithJoins(
 	if len(joins) > 0 {
 		// Build column list with table prefixes
 		var selectCols []string
-		
+
 		// Main table columns
 		if len(columns) == 0 {
 			// Select all columns from main table
@@ -42,14 +42,14 @@ func (g *PostgresGenerator) GenerateSelectWithJoins(
 				selectCols = append(selectCols, fmt.Sprintf("%s.%s", quoteIdentifier(table), quoteIdentifier(col)))
 			}
 		}
-		
+
 		// Joined table columns
 		for _, join := range joins {
 			tableName := join.Table
 			if join.Alias != "" {
 				tableName = join.Alias
 			}
-			
+
 			if len(join.Columns) > 0 {
 				for _, col := range join.Columns {
 					selectCols = append(selectCols, fmt.Sprintf("%s.%s", quoteIdentifier(tableName), quoteIdentifier(col)))
@@ -59,7 +59,7 @@ func (g *PostgresGenerator) GenerateSelectWithJoins(
 				selectCols = append(selectCols, fmt.Sprintf("%s.*", quoteIdentifier(tableName)))
 			}
 		}
-		
+
 		parts = append(parts, fmt.Sprintf("SELECT %s", strings.Join(selectCols, ", ")))
 	} else {
 		// No JOINs, use simple SELECT
@@ -227,7 +227,7 @@ func (g *SQLiteGenerator) GenerateSelectWithJoins(
 	if len(joins) > 0 {
 		// Build column list with table prefixes
 		var selectCols []string
-		
+
 		// Main table columns
 		if len(columns) == 0 {
 			// Select all columns from main table
@@ -237,14 +237,14 @@ func (g *SQLiteGenerator) GenerateSelectWithJoins(
 				selectCols = append(selectCols, fmt.Sprintf("%s.%s", quoteIdentifierSQLite(table), quoteIdentifierSQLite(col)))
 			}
 		}
-		
+
 		// Joined table columns
 		for _, join := range joins {
 			tableName := join.Table
 			if join.Alias != "" {
 				tableName = join.Alias
 			}
-			
+
 			if len(join.Columns) > 0 {
 				for _, col := range join.Columns {
 					selectCols = append(selectCols, fmt.Sprintf("%s.%s", quoteIdentifierSQLite(tableName), quoteIdentifierSQLite(col)))
@@ -254,7 +254,7 @@ func (g *SQLiteGenerator) GenerateSelectWithJoins(
 				selectCols = append(selectCols, fmt.Sprintf("%s.*", quoteIdentifierSQLite(tableName)))
 			}
 		}
-		
+
 		parts = append(parts, fmt.Sprintf("SELECT %s", strings.Join(selectCols, ", ")))
 	} else {
 		// No JOINs, use simple SELECT
@@ -324,4 +324,3 @@ func (g *SQLiteGenerator) GenerateSelectWithJoins(
 		Args: args,
 	}
 }
-

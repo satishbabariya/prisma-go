@@ -19,16 +19,16 @@ type ManyToManyRelationId struct {
 // of "model A", and the other is "model B". The meaning of "model A" and
 // "model B" depends on the type of relation.
 //
-// - In implicit many-to-many relations, model A and model B are ordered
-//   lexicographically, by model name, and failing that by relation field
-//   name. This order must be stable in order for the columns in the
-//   implicit many-to-many relation table columns and the data in them to
-//   keep their meaning.
-// - In one-to-one and one-to-many relations, model A is the one carrying
-//   the referencing information and possible constraint. For example, on a
-//   SQL database, model A would correspond to the table with the foreign
-//   key constraint, while model B would correspond to the table referenced
-//   by the foreign key.
+//   - In implicit many-to-many relations, model A and model B are ordered
+//     lexicographically, by model name, and failing that by relation field
+//     name. This order must be stable in order for the columns in the
+//     implicit many-to-many relation table columns and the data in them to
+//     keep their meaning.
+//   - In one-to-one and one-to-many relations, model A is the one carrying
+//     the referencing information and possible constraint. For example, on a
+//     SQL database, model A would correspond to the table with the foreign
+//     key constraint, while model B would correspond to the table referenced
+//     by the foreign key.
 type Relations struct {
 	// Storage. Private. Do not use directly.
 	relationsStorage []Relation
@@ -159,8 +159,8 @@ func NewRelations() Relations {
 	return Relations{
 		relationsStorage: make([]Relation, 0),
 		fields:           make(map[RelationFieldId]RelationId),
-		forward:           make([]RelationIndexEntry, 0),
-		back:              make([]RelationIndexEntry, 0),
+		forward:          make([]RelationIndexEntry, 0),
+		back:             make([]RelationIndexEntry, 0),
 	}
 }
 
@@ -266,4 +266,3 @@ func (r *Relations) FindRelationsToModel(modelID ModelId) []RelationId {
 	}
 	return result
 }
-

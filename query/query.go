@@ -30,4 +30,3 @@ type Result struct {
 	Rows     []map[string]interface{}
 	RowCount int
 }
-

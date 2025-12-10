@@ -43,4 +43,3 @@ func (p *Planner) Plan(diffResult *diff.DiffResult, migrationName string) (*Migr
 
 	return plan, nil
 }
-

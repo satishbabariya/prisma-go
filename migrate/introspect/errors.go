@@ -7,4 +7,3 @@ var (
 	ErrConnectionFailed    = errors.New("failed to connect to database")
 	ErrIntrospectionFailed = errors.New("database introspection failed")
 )
-

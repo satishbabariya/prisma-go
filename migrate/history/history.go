@@ -9,12 +9,12 @@ import (
 
 // MigrationRecord represents a migration in the history
 type MigrationRecord struct {
-	ID          string
-	Name        string
-	AppliedAt   time.Time
+	ID            string
+	Name          string
+	AppliedAt     time.Time
 	ExecutionTime int64 // milliseconds
-	Checksum    string
-	RolledBack  bool
+	Checksum      string
+	RolledBack    bool
 }
 
 // Manager manages migration history
@@ -50,4 +50,3 @@ func (m *Manager) GetPending(ctx context.Context, availableMigrations []string) 
 	// TODO: Compare available vs applied migrations
 	return []string{}, nil
 }
-

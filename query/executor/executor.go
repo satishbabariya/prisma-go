@@ -13,16 +13,16 @@ import (
 
 // Executor executes queries and maps results
 type Executor struct {
-	db       *sql.DB
-	provider string
+	db        *sql.DB
+	provider  string
 	generator sqlgen.Generator
 }
 
 // NewExecutor creates a new query executor
 func NewExecutor(db *sql.DB, provider string) *Executor {
 	return &Executor{
-		db:       db,
-		provider: provider,
+		db:        db,
+		provider:  provider,
 		generator: sqlgen.NewGenerator(provider),
 	}
 }
@@ -41,21 +41,21 @@ func (e *Executor) FindManyWithRelations(ctx context.Context, table string, sele
 			columns = append(columns, field)
 		}
 	}
-	
+
 	var query *sqlgen.Query
-	
+
 	// Build JOINs if relations are included
 	var joins []sqlgen.Join
 	if include != nil && len(include) > 0 && relations != nil {
 		joins = buildJoinsFromIncludes(table, include, relations)
 	}
-	
+
 	if len(joins) > 0 {
 		query = e.generator.GenerateSelectWithJoins(table, columns, joins, where, orderBy, limit, offset)
 	} else {
 		query = e.generator.GenerateSelect(table, columns, where, orderBy, limit, offset)
 	}
-	
+
 	rows, err := e.db.QueryContext(ctx, query.SQL, query.Args...)
 	if err != nil {
 		return fmt.Errorf("query execution failed: %w", err)
@@ -103,22 +103,22 @@ func (e *Executor) FindFirstWithRelations(ctx context.Context, table string, sel
 			columns = append(columns, field)
 		}
 	}
-	
+
 	var query *sqlgen.Query
 	limit := 1
-	
+
 	// Build JOINs if relations are included
 	var joins []sqlgen.Join
 	if include != nil && len(include) > 0 && relations != nil {
 		joins = buildJoinsFromIncludes(table, include, relations)
 	}
-	
+
 	if len(joins) > 0 {
 		query = e.generator.GenerateSelectWithJoins(table, columns, joins, where, orderBy, &limit, nil)
 	} else {
 		query = e.generator.GenerateSelect(table, columns, where, orderBy, &limit, nil)
 	}
-	
+
 	rows, err := e.db.QueryContext(ctx, query.SQL, query.Args...)
 	if err != nil {
 		return fmt.Errorf("query execution failed: %w", err)
@@ -136,12 +136,12 @@ func (e *Executor) FindFirstWithRelations(ctx context.Context, table string, sel
 		if !rows.Next() {
 			return fmt.Errorf("no rows found")
 		}
-		
+
 		columns, err := rows.Columns()
 		if err != nil {
 			return fmt.Errorf("failed to get columns: %w", err)
 		}
-		
+
 		err = e.scanRowIntoStruct(rows, columns, dest)
 		if err != nil {
 			return err
@@ -166,13 +166,13 @@ func (e *Executor) Create(ctx context.Context, table string, data interface{}) (
 	}
 
 	query := e.generator.GenerateInsert(table, columns, values)
-	
+
 	// For PostgreSQL, we can use RETURNING
 	if e.provider == "postgresql" || e.provider == "postgres" {
 		row := e.db.QueryRowContext(ctx, query.SQL, query.Args...)
 		return e.scanRowToStruct(row, data)
 	}
-	
+
 	// For other databases, execute insert then query back
 	result, err := e.db.ExecContext(ctx, query.SQL, query.Args...)
 	if err != nil {
@@ -201,13 +201,13 @@ func (e *Executor) Create(ctx context.Context, table string, data interface{}) (
 // Update executes an UPDATE query
 func (e *Executor) Update(ctx context.Context, table string, set map[string]interface{}, where *sqlgen.WhereClause, dest interface{}) error {
 	query := e.generator.GenerateUpdate(table, set, where)
-	
+
 	// For PostgreSQL, we can use RETURNING
 	if e.provider == "postgresql" || e.provider == "postgres" {
 		row := e.db.QueryRowContext(ctx, query.SQL, query.Args...)
 		return e.scanRow(row, dest)
 	}
-	
+
 	// For other databases, execute update then query back
 	_, err := e.db.ExecContext(ctx, query.SQL, query.Args...)
 	if err != nil {
@@ -226,7 +226,7 @@ func (e *Executor) Update(ctx context.Context, table string, set map[string]inte
 // Delete executes a DELETE query
 func (e *Executor) Delete(ctx context.Context, table string, where *sqlgen.WhereClause) error {
 	query := e.generator.GenerateDelete(table, where)
-	
+
 	_, err := e.db.ExecContext(ctx, query.SQL, query.Args...)
 	if err != nil {
 		return fmt.Errorf("delete failed: %w", err)
@@ -496,4 +496,3 @@ func (e *Executor) toSnakeCase(s string) string {
 	}
 	return strings.ToLower(result.String())
 }
-

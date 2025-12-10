@@ -38,11 +38,11 @@ func (n *NestedInclude) flattenRecursive(prefix string, result map[string]bool) 
 	if prefix != "" {
 		currentPath = prefix + "." + n.Relation
 	}
-	
+
 	if currentPath != "" {
 		result[currentPath] = true
 	}
-	
+
 	for _, nested := range n.Nested {
 		nested.flattenRecursive(currentPath, result)
 	}
@@ -65,4 +65,3 @@ func (n *NestedInclude) HasNested() bool {
 func (n *NestedInclude) GetNestedIncludes() map[string]*NestedInclude {
 	return n.Nested
 }
-

@@ -34,4 +34,3 @@ func (e *Executor) Rollback(ctx context.Context, migrationID string) error {
 	// TODO: Implement migration rollback
 	return nil
 }
-

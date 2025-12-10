@@ -61,4 +61,3 @@ var reservedNames = map[string]bool{
 	"with":       true,
 	"yield":      true,
 }
-

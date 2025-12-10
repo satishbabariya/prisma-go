@@ -31,4 +31,3 @@ type MigrationPlan struct {
 	IsSafe     bool
 	Warnings   []string
 }
-

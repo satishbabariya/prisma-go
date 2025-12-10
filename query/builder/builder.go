@@ -147,12 +147,12 @@ func (w *WhereBuilder) Build() *sqlgen.WhereClause {
 		}
 		return w.whereClause
 	}
-	
+
 	// Simple case: just direct conditions
 	if len(w.conditions) == 0 {
 		return nil
 	}
-	
+
 	clause := sqlgen.NewWhereClause()
 	clause.SetOperator(w.operator)
 	for _, cond := range w.conditions {
@@ -276,4 +276,3 @@ func (q *QueryBuilder) GetLimit() *int {
 func (q *QueryBuilder) GetOffset() *int {
 	return q.offset
 }
-

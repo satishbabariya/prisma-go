@@ -50,7 +50,7 @@ func convertModelToTable(model *ast.Model, parsed *ast.SchemaAst, provider strin
 		"int": true, "bigint": true, "string": true, "boolean": true, "bool": true,
 		"datetime": true, "float": true, "decimal": true, "json": true, "bytes": true,
 	}
-	
+
 	for _, field := range model.Fields {
 		// Skip relation fields (they don't become columns)
 		// Relation fields are either list types (one-to-many) or model types (many-to-one)
@@ -58,7 +58,7 @@ func convertModelToTable(model *ast.Model, parsed *ast.SchemaAst, provider strin
 			// List fields are relations, skip them
 			continue
 		}
-		
+
 		// Check if field type is a model name (relation)
 		typeName := strings.ToLower(field.FieldType.TypeName())
 		if !scalarTypes[typeName] {
@@ -213,7 +213,7 @@ func extractForeignKeys(model *ast.Model, tableName string) []introspect.Foreign
 
 	// Build a map of relation fields to their foreign keys
 	relationMap := make(map[string]string) // relation field name -> foreign key field name
-	
+
 	for _, field := range model.Fields {
 		// Look for @relation attributes to find foreign keys
 		for _, attr := range field.Attributes {
@@ -236,7 +236,7 @@ func extractForeignKeys(model *ast.Model, tableName string) []introspect.Foreign
 		if field.Arity.IsList() {
 			continue
 		}
-		
+
 		typeName := field.FieldType.TypeName()
 		scalarTypes := map[string]bool{
 			"int": true, "bigint": true, "string": true, "boolean": true, "bool": true,
@@ -259,7 +259,6 @@ func extractForeignKeys(model *ast.Model, tableName string) []introspect.Foreign
 }
 
 // Helper functions
-
 
 func hasAttribute(field *ast.Field, attrName string) bool {
 	for _, attr := range field.Attributes {
@@ -340,4 +339,3 @@ func toSnakeCase(s string) string {
 	}
 	return strings.ToLower(result.String())
 }
-

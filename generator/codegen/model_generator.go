@@ -17,26 +17,26 @@ type ModelInfo struct {
 
 // RelationInfo represents a relation between models
 type RelationInfo struct {
-	FieldName      string // Name of the relation field (e.g., "posts", "author")
-	RelatedModel   string // Name of the related model (e.g., "Post", "User")
-	IsList         bool   // true if one-to-many or many-to-many
-	ForeignKey     string // Foreign key field name (e.g., "authorId")
+	FieldName       string // Name of the relation field (e.g., "posts", "author")
+	RelatedModel    string // Name of the related model (e.g., "Post", "User")
+	IsList          bool   // true if one-to-many or many-to-many
+	ForeignKey      string // Foreign key field name (e.g., "authorId")
 	ForeignKeyTable string // Table name of the model with the foreign key
-	LocalKey       string // Local key field name (usually "id")
+	LocalKey        string // Local key field name (usually "id")
 }
 
 // FieldInfo represents information about a field
 type FieldInfo struct {
-	Name        string
-	GoName      string
-	GoType      string
-	Tags        string
-	IsID        bool
-	IsUnique    bool
-	IsRelation  bool
-	RelationTo  string // Model name if this is a relation field
-	IsList      bool   // true if relation is a list (one-to-many or many-to-many)
-	IsForeignKey bool  // true if this is a foreign key field (e.g., authorId)
+	Name         string
+	GoName       string
+	GoType       string
+	Tags         string
+	IsID         bool
+	IsUnique     bool
+	IsRelation   bool
+	RelationTo   string // Model name if this is a relation field
+	IsList       bool   // true if relation is a list (one-to-many or many-to-many)
+	IsForeignKey bool   // true if this is a foreign key field (e.g., authorId)
 	ForeignKeyTo string // Model name this foreign key references
 }
 
@@ -82,12 +82,12 @@ func GenerateModelsFromAST(schemaAST *ast.SchemaAst) []ModelInfo {
 
 		for j := range model.Fields {
 			field := &model.Fields[j]
-			
+
 			// If this is a relation field, find the foreign key
 			if field.IsRelation {
 				relatedModel := modelMap[field.RelationTo]
 				relatedASTModel := astModelMap[field.RelationTo]
-				
+
 				if relatedModel != nil {
 					// Find the corresponding AST field
 					var astRelationField *ast.Field
@@ -128,7 +128,7 @@ func GenerateModelsFromAST(schemaAST *ast.SchemaAst) []ModelInfo {
 								relation.ForeignKey = fkField
 								relation.ForeignKeyTable = model.TableName
 								relation.LocalKey = refField
-								
+
 								// Mark the foreign key field
 								for k := range model.Fields {
 									if model.Fields[k].Name == fkField {
@@ -145,7 +145,7 @@ func GenerateModelsFromAST(schemaAST *ast.SchemaAst) []ModelInfo {
 					if relation.ForeignKey == "" {
 						var foreignKeyField *FieldInfo
 						localKeyField := "id" // default
-						
+
 						// Check current model for foreign keys pointing to related model (many-to-one)
 						if !field.IsList {
 							for k := range model.Fields {
@@ -163,7 +163,7 @@ func GenerateModelsFromAST(schemaAST *ast.SchemaAst) []ModelInfo {
 								}
 							}
 						}
-						
+
 						if foreignKeyField != nil {
 							if field.IsList {
 								// One-to-many: foreign key is on the related model
@@ -194,7 +194,7 @@ func GenerateModelsFromAST(schemaAST *ast.SchemaAst) []ModelInfo {
 							}
 						}
 					}
-					
+
 					if relation.ForeignKey != "" {
 						model.Relations = append(model.Relations, relation)
 					}
@@ -212,26 +212,26 @@ func generateFieldInfo(field *ast.Field, modelName string) FieldInfo {
 	if field.FieldType.Type != nil {
 		typeName = field.FieldType.Type.Name()
 	}
-	
+
 	// Check if this is a relation field (type is a model name, not a scalar)
 	isRelation := false
 	relationTo := ""
 	isList := false
-	
+
 	// Check if field type is a model (relation) by checking if it's not a scalar type
 	scalarTypes := map[string]bool{
 		"Int": true, "BigInt": true, "String": true, "Boolean": true,
 		"DateTime": true, "Float": true, "Decimal": true, "Json": true, "Bytes": true,
 	}
-	
+
 	if typeName != "" && !scalarTypes[typeName] {
 		// This might be a relation field (model name)
 		isRelation = true
 		relationTo = typeName
 	}
-	
+
 	goType := mapPrismaTypeToGo(&field.FieldType)
-	
+
 	// Check for optional/list fields using Arity
 	switch field.Arity {
 	case ast.Optional:
@@ -299,7 +299,7 @@ func mapPrismaTypeToGo(fieldType *ast.FieldType) string {
 
 func generateFieldTags(field *ast.Field, isRelation bool) string {
 	tags := []string{}
-	
+
 	// JSON tag
 	jsonTag := fmt.Sprintf(`json:"%s"`, toSnakeCase(field.Name.Name))
 	tags = append(tags, jsonTag)
@@ -353,4 +353,3 @@ func toSnakeCase(s string) string {
 	}
 	return strings.ToLower(result.String())
 }
-

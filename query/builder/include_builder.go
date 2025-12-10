@@ -4,7 +4,7 @@ package builder
 // IncludeBuilder builds include clauses for relations
 type IncludeBuilder struct {
 	includes map[string]*NestedInclude // Map of top-level includes
-	current  *NestedInclude             // Current include being built
+	current  *NestedInclude            // Current include being built
 }
 
 // NewIncludeBuilder creates a new include builder
@@ -59,4 +59,3 @@ func (i *IncludeBuilder) GetFlattenedIncludes() map[string]bool {
 func (i *IncludeBuilder) HasIncludes() bool {
 	return len(i.includes) > 0
 }
-

@@ -14,7 +14,7 @@ func buildJoinsFromIncludes(
 	relations map[string]RelationMetadata,
 ) []sqlgen.Join {
 	var joins []sqlgen.Join
-	
+
 	for relationName := range includes {
 		if relMeta, ok := relations[relationName]; ok && relMeta.ForeignKey != "" {
 			join := sqlgen.Join{
@@ -23,7 +23,7 @@ func buildJoinsFromIncludes(
 				Alias:   relMeta.RelatedTable, // Use table name as alias
 				Columns: nil,                  // Will select all columns
 			}
-			
+
 			// Build JOIN condition
 			// For one-to-many: related_table.foreign_key = main_table.id
 			// For many-to-one: main_table.foreign_key = related_table.id
@@ -44,11 +44,11 @@ func buildJoinsFromIncludes(
 					quoteIdentifier(relMeta.RelatedTable),
 					quoteIdentifier(relMeta.LocalKey))
 			}
-			
+
 			joins = append(joins, join)
 		}
 	}
-	
+
 	return joins
 }
 
@@ -63,4 +63,3 @@ type RelationMetadata struct {
 func quoteIdentifier(name string) string {
 	return fmt.Sprintf(`"%s"`, name)
 }
-

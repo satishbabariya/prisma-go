@@ -86,4 +86,3 @@ func (w DatamodelWarning) Span() Span {
 func (w DatamodelWarning) PrettyPrint(writer io.Writer, fileName, text string) error {
 	return PrettyPrint(writer, fileName, text, w.span, w.message, WarningColorer{})
 }
-
