@@ -67,12 +67,10 @@ EXAMPLES:
 }
 
 func dbPushCommand(args []string) error {
-	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Error: schema file required (use: prisma-go db push <schema-path>)")
-		return fmt.Errorf("schema file required")
+	schemaPath := "schema.prisma"
+	if len(args) > 0 {
+		schemaPath = args[0]
 	}
-
-	schemaPath := args[0]
 	
 	fmt.Println("🚀 Pushing schema changes to database...")
 	
@@ -203,20 +201,39 @@ func dbPushCommand(args []string) error {
 	// Apply changes directly (prototype mode - no migration history)
 	fmt.Println("\n🚀 Applying schema changes...")
 	
-	// Execute SQL statements
-	statements := strings.Split(sql, ";")
-	for i, stmt := range statements {
+	// Execute SQL statements - split by semicolon but handle multi-line statements properly
+	// First, normalize the SQL by removing comments and extra whitespace
+	lines := strings.Split(sql, "\n")
+	var cleanLines []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Skip empty lines and comments
+		if trimmed == "" || strings.HasPrefix(trimmed, "--") {
+			continue
+		}
+		cleanLines = append(cleanLines, trimmed)
+	}
+	
+	// Join lines and split by semicolon
+	fullSQL := strings.Join(cleanLines, " ")
+	statements := strings.Split(fullSQL, ";")
+	
+	stmtNum := 0
+	for _, stmt := range statements {
 		stmt = strings.TrimSpace(stmt)
-		if stmt == "" || strings.HasPrefix(stmt, "--") {
+		if stmt == "" {
 			continue
 		}
 		
+		stmtNum++
+		// Execute each statement individually
 		_, err = db.ExecContext(ctx, stmt)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Failed to execute statement %d: %v\n", i+1, err)
+			fmt.Fprintf(os.Stderr, "❌ Failed to execute statement %d: %v\n", stmtNum, err)
 			fmt.Fprintf(os.Stderr, "   SQL: %s\n", stmt)
 			return fmt.Errorf("failed to apply schema changes")
 		}
+		fmt.Printf("  ✓ Executed statement %d\n", stmtNum)
 	}
 	
 	fmt.Println("\n✅ Schema changes pushed successfully!")
@@ -496,11 +513,16 @@ func detectProvider(connStr string) string {
 
 // normalizeProviderForDriver normalizes provider name for sql.Open
 // PostgreSQL driver uses "postgres", not "postgresql"
+// SQLite driver uses "sqlite3", not "sqlite"
 func normalizeProviderForDriver(provider string) string {
-	if provider == "postgresql" || provider == "postgres" {
+	switch provider {
+	case "postgresql", "postgres":
 		return "postgres"
+	case "sqlite":
+		return "sqlite3"
+	default:
+		return provider
 	}
-	return provider
 }
 
 func generatePrismaSchemaFromDB(schema *introspect.DatabaseSchema, provider string) string {

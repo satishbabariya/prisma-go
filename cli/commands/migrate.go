@@ -77,22 +77,24 @@ EXAMPLES:
 }
 
 func migrateDevCommand(args []string) error {
-	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Error: schema file required (use: prisma-go migrate dev <schema-path> [--name migration-name] [--apply])")
-		return fmt.Errorf("schema file required")
-	}
-
-	schemaPath := args[0]
+	schemaPath := "schema.prisma"
 	migrationName := ""
 	autoApply := false
 	
-	// Parse flags
-	for i, arg := range args {
-		if arg == "--name" && i+1 < len(args) {
-			migrationName = args[i+1]
-		}
-		if arg == "--apply" {
-			autoApply = true
+	// Parse arguments - first non-flag arg is schema path, rest are flags
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if strings.HasPrefix(arg, "--") {
+			// It's a flag
+			if arg == "--name" && i+1 < len(args) {
+				migrationName = args[i+1]
+				i++ // Skip next arg as it's the flag value
+			} else if arg == "--apply" {
+				autoApply = true
+			}
+		} else if schemaPath == "schema.prisma" {
+			// First non-flag argument is schema path
+			schemaPath = arg
 		}
 	}
 	
@@ -219,9 +221,32 @@ func migrateDevCommand(args []string) error {
 	// Step 4: Apply migration (if --apply flag)
 	if autoApply {
 		fmt.Println("\n🚀 Step 4: Applying migration...")
-		if err := migrateApplyCommand([]string{sqlPath, "--name", migrationName}); err != nil {
+		// Apply migration directly using the same connection
+		migrationExecutor := executor.NewMigrationExecutor(db, provider)
+		
+		// Ensure migration table exists
+		err = migrationExecutor.EnsureMigrationTable(ctx)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Failed to setup migration table: %v\n", err)
 			return err
 		}
+		
+		// Read migration SQL
+		migrationSQL, err := os.ReadFile(sqlPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Failed to read migration file: %v\n", err)
+			return err
+		}
+		
+		// Execute migration
+		fmt.Println("📝 Executing migration SQL...")
+		err = migrationExecutor.ExecuteMigration(ctx, string(migrationSQL), migrationName)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Failed to apply migration: %v\n", err)
+			return err
+		}
+		
+		fmt.Printf("✅ Migration '%s' applied successfully!\n", migrationName)
 	} else {
 		fmt.Println("\n💡 Migration generated but not applied.")
 		fmt.Printf("   Apply it with: prisma-go migrate apply %s\n", sqlPath)
@@ -386,22 +411,24 @@ func migrateDeployCommand(args []string) error {
 }
 
 func migrateDiffCommand(args []string) error {
-	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "Error: schema file required (use: prisma-go migrate diff <schema-path> [--create-only])")
-		return fmt.Errorf("schema file required")
-	}
-
-	schemaPath := args[0]
+	schemaPath := "schema.prisma"
 	createOnly := false
 	migrationName := ""
 	
-	// Parse flags
-	for i, arg := range args {
-		if arg == "--create-only" || arg == "--create" {
-			createOnly = true
-		}
-		if arg == "--name" && i+1 < len(args) {
-			migrationName = args[i+1]
+	// Parse arguments - first non-flag arg is schema path, rest are flags
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if strings.HasPrefix(arg, "--") {
+			// It's a flag
+			if arg == "--create-only" || arg == "--create" {
+				createOnly = true
+			} else if arg == "--name" && i+1 < len(args) {
+				migrationName = args[i+1]
+				i++ // Skip next arg as it's the flag value
+			}
+		} else if schemaPath == "schema.prisma" {
+			// First non-flag argument is schema path
+			schemaPath = arg
 		}
 	}
 	
