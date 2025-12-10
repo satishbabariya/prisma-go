@@ -4,6 +4,10 @@ package client
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	_ "github.com/lib/pq"     // PostgreSQL driver
+	_ "github.com/go-sql-driver/mysql" // MySQL driver
+	_ "github.com/mattn/go-sqlite3"    // SQLite driver
 )
 
 // PrismaClient is the main database client
@@ -14,7 +18,12 @@ type PrismaClient struct {
 
 // NewPrismaClient creates a new Prisma client
 func NewPrismaClient(provider string, connectionString string) (*PrismaClient, error) {
-	db, err := sql.Open(provider, connectionString)
+	driverName := getDriverName(provider)
+	if driverName == "" {
+		return nil, fmt.Errorf("unsupported provider: %s", provider)
+	}
+
+	db, err := sql.Open(driverName, connectionString)
 	if err != nil {
 		return nil, err
 	}
@@ -23,6 +32,20 @@ func NewPrismaClient(provider string, connectionString string) (*PrismaClient, e
 		db:       db,
 		provider: provider,
 	}, nil
+}
+
+// getDriverName maps Prisma provider names to Go database driver names
+func getDriverName(provider string) string {
+	switch provider {
+	case "postgresql", "postgres":
+		return "postgres"
+	case "mysql":
+		return "mysql"
+	case "sqlite":
+		return "sqlite3"
+	default:
+		return ""
+	}
 }
 
 // Connect establishes the database connection
