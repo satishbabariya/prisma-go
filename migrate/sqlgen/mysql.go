@@ -183,8 +183,15 @@ func (g *MySQLMigrationGenerator) generateAlterTable(change diff.TableChange) st
 		switch ch.Type {
 		case "AddColumn":
 			sql.WriteString(fmt.Sprintf("-- Add column %s.%s\n", change.Name, ch.Column))
-			sql.WriteString(fmt.Sprintf("ALTER TABLE `%s` ADD COLUMN `%s` TEXT;\n", 
-				change.Name, ch.Column))
+			if ch.ColumnMetadata != nil {
+				colDef := g.generateColumnDefinitionFromMetadata(ch.ColumnMetadata, ch.Column)
+				sql.WriteString(fmt.Sprintf("ALTER TABLE `%s` ADD COLUMN `%s` %s;\n", 
+					change.Name, ch.Column, colDef))
+			} else {
+				// Fallback to TEXT if metadata is missing
+				sql.WriteString(fmt.Sprintf("ALTER TABLE `%s` ADD COLUMN `%s` TEXT;\n", 
+					change.Name, ch.Column))
+			}
 
 		case "DropColumn":
 			sql.WriteString(fmt.Sprintf("-- WARNING: Dropping column %s.%s will delete all data!\n", change.Name, ch.Column))
@@ -194,7 +201,14 @@ func (g *MySQLMigrationGenerator) generateAlterTable(change diff.TableChange) st
 		case "AlterColumn":
 			sql.WriteString(fmt.Sprintf("-- Alter column %s.%s\n", change.Name, ch.Column))
 			sql.WriteString(fmt.Sprintf("-- %s\n", ch.Description))
-			// Note: MySQL uses MODIFY COLUMN for alterations
+			if ch.ColumnMetadata != nil {
+				colDef := g.generateColumnDefinitionFromMetadata(ch.ColumnMetadata, ch.Column)
+				sql.WriteString(fmt.Sprintf("ALTER TABLE `%s` MODIFY COLUMN `%s` %s;\n", 
+					change.Name, ch.Column, colDef))
+			} else {
+				// Fallback: just a comment if metadata is missing
+				sql.WriteString(fmt.Sprintf("-- TODO: Column metadata missing, manual review required\n"))
+			}
 
 		case "CreateIndex":
 			sql.WriteString(fmt.Sprintf("-- Create index %s\n", ch.Index))
@@ -252,5 +266,24 @@ func (g *MySQLMigrationGenerator) generateAddForeignKey(tableName string, fk int
 	sql += ";"
 
 	return sql
+}
+
+// generateColumnDefinitionFromMetadata generates a column definition from ColumnMetadata
+func (g *MySQLMigrationGenerator) generateColumnDefinitionFromMetadata(meta *diff.ColumnMetadata, columnName string) string {
+	// Map generic types to MySQL types
+	mysqlType := g.mapToMySQLType(meta.Type)
+	def := mysqlType
+
+	if !meta.Nullable {
+		def += " NOT NULL"
+	}
+
+	if meta.AutoIncrement {
+		def += " AUTO_INCREMENT"
+	} else if meta.DefaultValue != nil && *meta.DefaultValue != "" {
+		def += fmt.Sprintf(" DEFAULT %s", *meta.DefaultValue)
+	}
+
+	return def
 }
 

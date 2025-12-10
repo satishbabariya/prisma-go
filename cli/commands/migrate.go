@@ -159,36 +159,6 @@ func initMigrateFlags() {
 	migrateApplyCmd.Flags().StringP("name", "n", "", "Migration name")
 }
 
-func migrateCommand(args []string) error {
-	if len(args) == 0 {
-		printMigrateHelp()
-		return nil
-	}
-
-	subcommand := args[0]
-
-	switch subcommand {
-	case "dev":
-		return migrateDevCommand(args[1:])
-	case "deploy":
-		return migrateDeployCommand(args[1:])
-	case "diff":
-		return migrateDiffCommand(args[1:])
-	case "apply":
-		return migrateApplyCommand(args[1:])
-	case "status":
-		return migrateStatusCommand(args[1:])
-	case "resolve":
-		return migrateResolveCommand(args[1:])
-	case "reset":
-		return migrateResetCommand(args[1:])
-	default:
-		fmt.Fprintf(os.Stderr, "Unknown migrate subcommand: %s\n\n", subcommand)
-		printMigrateHelp()
-		os.Exit(1)
-		return nil
-	}
-}
 
 func printMigrateHelp() {
 	help := `

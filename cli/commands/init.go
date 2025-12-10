@@ -100,7 +100,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 				Message: "Overwrite existing schema.prisma?",
 				Default: false,
 			}
-			survey.AskOne(prompt, &overwrite)
+			if err := survey.AskOne(prompt, &overwrite); err != nil {
+				// User cancelled or error occurred - treat as "don't overwrite"
+				ui.PrintInfo("Skipping schema overwrite")
+			}
 		}
 		if !overwrite {
 			ui.PrintInfo("Skipping schema creation...")

@@ -19,13 +19,24 @@ type Change struct {
 	SQL         string
 	IsSafe      bool
 	Warnings    []string
+	// ColumnMetadata contains column information for AddColumn and AlterColumn changes
+	ColumnMetadata *ColumnMetadata
+}
+
+// ColumnMetadata contains column definition information
+type ColumnMetadata struct {
+	Type          string  // Column type (e.g., "INTEGER", "VARCHAR(255)", "TEXT")
+	Nullable      bool    // Whether column allows NULL
+	DefaultValue  *string // Default value (nil if no default)
+	AutoIncrement bool    // Whether column is auto-increment
+	OldType       string  // For AlterColumn: the old type (empty for AddColumn)
+	OldNullable   *bool   // For AlterColumn: the old nullable state (nil for AddColumn)
 }
 
 // TableChange represents a change to a table
 type TableChange struct {
 	Name    string
-	Action  string // "CREATE", "DROP", "ALTER"
+	Action  string      // "CREATE", "DROP", "ALTER"
 	Model   interface{} // Can be *ast.Model
 	Changes []Change
 }
-

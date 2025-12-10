@@ -132,8 +132,15 @@ func (g *PostgresMigrationGenerator) generateAlterTable(change diff.TableChange)
 		switch ch.Type {
 		case "AddColumn":
 			sql.WriteString(fmt.Sprintf("-- Add column %s.%s\n", change.Name, ch.Column))
-			sql.WriteString(fmt.Sprintf("ALTER TABLE \"%s\" ADD COLUMN \"%s\" %s;\n", 
-				change.Name, ch.Column, "TEXT")) // Default type, should be improved
+			if ch.ColumnMetadata != nil {
+				colDef := g.generateColumnDefinitionFromMetadata(ch.ColumnMetadata, ch.Column)
+				sql.WriteString(fmt.Sprintf("ALTER TABLE \"%s\" ADD COLUMN \"%s\" %s;\n", 
+					change.Name, ch.Column, colDef))
+			} else {
+				// Fallback to TEXT if metadata is missing
+				sql.WriteString(fmt.Sprintf("ALTER TABLE \"%s\" ADD COLUMN \"%s\" TEXT;\n", 
+					change.Name, ch.Column))
+			}
 
 		case "DropColumn":
 			sql.WriteString(fmt.Sprintf("-- WARNING: Dropping column %s.%s will delete all data!\n", change.Name, ch.Column))
@@ -143,7 +150,36 @@ func (g *PostgresMigrationGenerator) generateAlterTable(change diff.TableChange)
 		case "AlterColumn":
 			sql.WriteString(fmt.Sprintf("-- Alter column %s.%s\n", change.Name, ch.Column))
 			sql.WriteString(fmt.Sprintf("-- %s\n", ch.Description))
-			// Note: Actual ALTER COLUMN syntax depends on the specific change
+			if ch.ColumnMetadata != nil {
+				// PostgreSQL requires separate ALTER COLUMN statements for different changes
+				// Type change
+				if ch.ColumnMetadata.OldType != "" && ch.ColumnMetadata.OldType != ch.ColumnMetadata.Type {
+					sql.WriteString(fmt.Sprintf("ALTER TABLE \"%s\" ALTER COLUMN \"%s\" TYPE %s;\n", 
+						change.Name, ch.Column, ch.ColumnMetadata.Type))
+				}
+				// Nullable change
+				if ch.ColumnMetadata.OldNullable != nil && *ch.ColumnMetadata.OldNullable != ch.ColumnMetadata.Nullable {
+					if ch.ColumnMetadata.Nullable {
+						sql.WriteString(fmt.Sprintf("ALTER TABLE \"%s\" ALTER COLUMN \"%s\" DROP NOT NULL;\n", 
+							change.Name, ch.Column))
+					} else {
+						sql.WriteString(fmt.Sprintf("ALTER TABLE \"%s\" ALTER COLUMN \"%s\" SET NOT NULL;\n", 
+							change.Name, ch.Column))
+					}
+				}
+				// Default change
+				if ch.ColumnMetadata.DefaultValue != nil && *ch.ColumnMetadata.DefaultValue != "" {
+					sql.WriteString(fmt.Sprintf("ALTER TABLE \"%s\" ALTER COLUMN \"%s\" SET DEFAULT %s;\n", 
+						change.Name, ch.Column, *ch.ColumnMetadata.DefaultValue))
+				} else if ch.ColumnMetadata.OldNullable != nil {
+					// Only remove default if we're sure it changed (heuristic: if old nullable is set, we're modifying)
+					sql.WriteString(fmt.Sprintf("-- ALTER TABLE \"%s\" ALTER COLUMN \"%s\" DROP DEFAULT;\n", 
+						change.Name, ch.Column))
+				}
+			} else {
+				// Fallback: just a comment if metadata is missing
+				sql.WriteString(fmt.Sprintf("-- TODO: Column metadata missing, manual review required\n"))
+			}
 
 		case "CreateIndex":
 			sql.WriteString(fmt.Sprintf("-- Create index %s\n", ch.Index))
@@ -201,5 +237,20 @@ func (g *PostgresMigrationGenerator) generateAddForeignKey(tableName string, fk 
 	sql += ";"
 
 	return sql
+}
+
+// generateColumnDefinitionFromMetadata generates a column definition from ColumnMetadata
+func (g *PostgresMigrationGenerator) generateColumnDefinitionFromMetadata(meta *diff.ColumnMetadata, columnName string) string {
+	def := meta.Type
+
+	if !meta.Nullable {
+		def += " NOT NULL"
+	}
+
+	if meta.DefaultValue != nil && *meta.DefaultValue != "" {
+		def += fmt.Sprintf(" DEFAULT %s", *meta.DefaultValue)
+	}
+
+	return def
 }
 

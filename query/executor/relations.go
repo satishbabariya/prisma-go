@@ -23,6 +23,10 @@ func (e *Executor) loadRelations(ctx context.Context, table string, include map[
 		for i := 0; i < sliceValue.Len(); i++ {
 			elem := sliceValue.Index(i)
 			if elem.Kind() == reflect.Ptr {
+				if elem.IsNil() {
+					// Nothing to load for this element
+					continue
+				}
 				elem = elem.Elem()
 			}
 			if err := e.loadRelationsForStruct(ctx, table, include, relations, elem); err != nil {
@@ -97,23 +101,18 @@ func (e *Executor) loadOneToMany(ctx context.Context, relMeta RelationMetadata, 
 		Operator: "AND",
 	}
 
-	// Query related records
-	elementType := fieldValue.Type().Elem()
-	if elementType.Kind() == reflect.Ptr {
-		elementType = elementType.Elem()
+	// Validate field is a slice
+	if fieldValue.Kind() != reflect.Slice {
+		return fmt.Errorf("expected slice field for one-to-many relation on %s", relMeta.RelatedTable)
 	}
 
-	// Create a slice to hold results
-	sliceType := reflect.SliceOf(elementType)
-	results := reflect.New(sliceType).Interface()
-
-	if err := e.FindMany(ctx, relMeta.RelatedTable, nil, where, nil, nil, nil, nil, results); err != nil {
+	// Create a slice of the same type as the field and query into it
+	resultsPtr := reflect.New(fieldValue.Type())
+	if err := e.FindMany(ctx, relMeta.RelatedTable, nil, where, nil, nil, nil, nil, resultsPtr.Interface()); err != nil {
 		return err
 	}
 
-	// Set the field value
-	resultsValue := reflect.ValueOf(results).Elem()
-	fieldValue.Set(resultsValue)
+	fieldValue.Set(resultsPtr.Elem())
 
 	return nil
 }

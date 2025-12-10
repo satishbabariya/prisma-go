@@ -185,10 +185,30 @@ func (g *SQLiteMigrationGenerator) generateAlterTable(change diff.TableChange, d
 	}
 
 	// Handle ADD COLUMN (supported)
+	// Find the table in dbSchema to get primary key info
+	var targetTable *introspect.Table
+	for i := range dbSchema.Tables {
+		if dbSchema.Tables[i].Name == change.Name {
+			targetTable = &dbSchema.Tables[i]
+			break
+		}
+	}
+
 	for _, ch := range addColumns {
 		sql.WriteString(fmt.Sprintf("-- Add column %s.%s\n", change.Name, ch.Column))
-		sql.WriteString(fmt.Sprintf("ALTER TABLE \"%s\" ADD COLUMN \"%s\" TEXT;\n", 
-			change.Name, ch.Column))
+		if ch.ColumnMetadata != nil {
+			var pk *introspect.PrimaryKey
+			if targetTable != nil {
+				pk = targetTable.PrimaryKey
+			}
+			colDef := g.generateColumnDefinitionFromMetadata(ch.ColumnMetadata, ch.Column, pk)
+			sql.WriteString(fmt.Sprintf("ALTER TABLE \"%s\" ADD COLUMN \"%s\" %s;\n", 
+				change.Name, ch.Column, colDef))
+		} else {
+			// Fallback to TEXT if metadata is missing
+			sql.WriteString(fmt.Sprintf("ALTER TABLE \"%s\" ADD COLUMN \"%s\" TEXT;\n", 
+				change.Name, ch.Column))
+		}
 	}
 
 	// Handle other changes (require table recreation)
@@ -247,5 +267,35 @@ func (g *SQLiteMigrationGenerator) generateForeignKeyDefinition(fk introspect.Fo
 	}
 
 	return sql
+}
+
+// generateColumnDefinitionFromMetadata generates a column definition from ColumnMetadata for SQLite
+func (g *SQLiteMigrationGenerator) generateColumnDefinitionFromMetadata(meta *diff.ColumnMetadata, columnName string, pk *introspect.PrimaryKey) string {
+	// Map generic types to SQLite types
+	sqliteType := g.mapToSQLiteType(meta.Type)
+	def := sqliteType
+
+	// Check if this column is a single-column primary key
+	isSinglePK := false
+	if pk != nil && len(pk.Columns) == 1 && pk.Columns[0] == columnName {
+		isSinglePK = true
+	}
+
+	if isSinglePK {
+		def += " PRIMARY KEY"
+		if meta.AutoIncrement {
+			def += " AUTOINCREMENT"
+		}
+	}
+
+	if !meta.Nullable && !isSinglePK {
+		def += " NOT NULL"
+	}
+
+	if meta.DefaultValue != nil && *meta.DefaultValue != "" && !meta.AutoIncrement {
+		def += fmt.Sprintf(" DEFAULT %s", *meta.DefaultValue)
+	}
+
+	return def
 }
 

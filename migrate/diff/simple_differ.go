@@ -60,7 +60,7 @@ func (d *SimpleDiffer) CompareSchemas(source, target *introspect.DatabaseSchema)
 	systemTables := map[string]bool{
 		"_prisma_migrations": true,
 	}
-	
+
 	for _, sourceTable := range source.Tables {
 		if _, exists := targetTables[sourceTable.Name]; !exists {
 			// Skip system tables
@@ -123,6 +123,12 @@ func (d *SimpleDiffer) compareTables(source, target *introspect.Table) []Change 
 				Column:      colName,
 				Description: fmt.Sprintf("Add column '%s.%s' %s", target.Name, colName, targetCol.Type),
 				IsSafe:      true,
+				ColumnMetadata: &ColumnMetadata{
+					Type:          targetCol.Type,
+					Nullable:      targetCol.Nullable,
+					DefaultValue:  targetCol.DefaultValue,
+					AutoIncrement: targetCol.AutoIncrement,
+				},
 			})
 		}
 	}
@@ -160,34 +166,86 @@ func (d *SimpleDiffer) compareTables(source, target *introspect.Table) []Change 
 func (d *SimpleDiffer) compareColumns(source, target *introspect.Column, tableName, columnName string) []Change {
 	var changes []Change
 
-	// Type changes
-	if !d.typesEqual(source.Type, target.Type) {
-		changes = append(changes, Change{
-			Type:        "AlterColumn",
-			Table:       tableName,
-			Column:      columnName,
-			Description: fmt.Sprintf("Change type of '%s.%s' from %s to %s", tableName, columnName, source.Type, target.Type),
-			IsSafe:      false,
-			Warnings:    []string{"Changing column type may cause data loss"},
-		})
-	}
+	// Check if type, nullable, default, or auto-increment changed
+	typeChanged := !d.typesEqual(source.Type, target.Type)
+	nullableChanged := source.Nullable != target.Nullable
+	defaultChanged := !d.defaultValuesEqual(source.DefaultValue, target.DefaultValue)
+	autoIncrementChanged := source.AutoIncrement != target.AutoIncrement
 
-	// Nullable changes
-	if source.Nullable != target.Nullable {
-		action := "make nullable"
-		if !target.Nullable {
-			action = "make required"
-		}
-		changes = append(changes, Change{
+	// If multiple properties changed, create a single AlterColumn change
+	if typeChanged || nullableChanged || defaultChanged || autoIncrementChanged {
+		oldNullable := source.Nullable
+		change := Change{
 			Type:        "AlterColumn",
 			Table:       tableName,
 			Column:      columnName,
-			Description: fmt.Sprintf("%s column '%s.%s'", strings.Title(action), tableName, columnName),
-			IsSafe:      target.Nullable, // Making nullable is safe
-		})
+			Description: d.buildAlterColumnDescription(source, target, tableName, columnName, typeChanged, nullableChanged, defaultChanged, autoIncrementChanged),
+			IsSafe:      !typeChanged && target.Nullable, // Only safe if not changing type and making nullable
+			ColumnMetadata: &ColumnMetadata{
+				Type:          target.Type,
+				Nullable:      target.Nullable,
+				DefaultValue:  target.DefaultValue,
+				AutoIncrement: target.AutoIncrement,
+				OldType:       source.Type,
+				OldNullable:   &oldNullable,
+			},
+		}
+
+		if typeChanged {
+			change.Warnings = append(change.Warnings, "Changing column type may cause data loss")
+		}
+		if nullableChanged && !target.Nullable {
+			change.Warnings = append(change.Warnings, "Making column required may fail if NULL values exist")
+		}
+
+		changes = append(changes, change)
 	}
 
 	return changes
+}
+
+// buildAlterColumnDescription builds a description for AlterColumn changes
+func (d *SimpleDiffer) buildAlterColumnDescription(source, target *introspect.Column, tableName, columnName string, typeChanged, nullableChanged, defaultChanged, autoIncrementChanged bool) string {
+	var parts []string
+
+	if typeChanged {
+		parts = append(parts, fmt.Sprintf("change type from %s to %s", source.Type, target.Type))
+	}
+	if nullableChanged {
+		if target.Nullable {
+			parts = append(parts, "make nullable")
+		} else {
+			parts = append(parts, "make required")
+		}
+	}
+	if defaultChanged {
+		if target.DefaultValue != nil {
+			parts = append(parts, fmt.Sprintf("set default to %s", *target.DefaultValue))
+		} else {
+			parts = append(parts, "remove default")
+		}
+	}
+	if autoIncrementChanged {
+		if target.AutoIncrement {
+			parts = append(parts, "enable auto-increment")
+		} else {
+			parts = append(parts, "disable auto-increment")
+		}
+	}
+
+	description := fmt.Sprintf("%s column '%s.%s'", strings.Join(parts, ", "), tableName, columnName)
+	return strings.Title(description)
+}
+
+// defaultValuesEqual compares two default values
+func (d *SimpleDiffer) defaultValuesEqual(val1, val2 *string) bool {
+	if val1 == nil && val2 == nil {
+		return true
+	}
+	if val1 == nil || val2 == nil {
+		return false
+	}
+	return *val1 == *val2
 }
 
 // compareIndexes compares indexes between tables
@@ -246,14 +304,14 @@ func (d *SimpleDiffer) typesEqual(type1, type2 string) bool {
 
 	// Common equivalents
 	equivalents := map[string][]string{
-		"INTEGER":    {"INT", "INT4", "SERIAL"},
-		"BIGINT":     {"INT8", "BIGSERIAL"},
-		"VARCHAR":    {"CHARACTER VARYING", "TEXT"},
-		"BOOLEAN":    {"BOOL"},
-		"TIMESTAMP":  {"TIMESTAMP WITHOUT TIME ZONE"},
+		"INTEGER":     {"INT", "INT4", "SERIAL"},
+		"BIGINT":      {"INT8", "BIGSERIAL"},
+		"VARCHAR":     {"CHARACTER VARYING", "TEXT"},
+		"BOOLEAN":     {"BOOL"},
+		"TIMESTAMP":   {"TIMESTAMP WITHOUT TIME ZONE"},
 		"TIMESTAMPTZ": {"TIMESTAMP WITH TIME ZONE"},
-		"FLOAT":      {"DOUBLE PRECISION", "FLOAT8", "REAL"},
-		"DECIMAL":    {"NUMERIC"},
+		"FLOAT":       {"DOUBLE PRECISION", "FLOAT8", "REAL"},
+		"DECIMAL":     {"NUMERIC"},
 	}
 
 	for key, variants := range equivalents {
@@ -282,4 +340,3 @@ func contains(slice []string, item string) bool {
 	}
 	return false
 }
-
