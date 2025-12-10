@@ -80,7 +80,8 @@ func GenerateClientFile(models []ModelInfo, provider string, outputDir string) e
 	
 	// Imports
 	sb.WriteString("import (\n")
-	sb.WriteString("\t\"context\"\n\n")
+	sb.WriteString("\t\"context\"\n")
+	sb.WriteString("\t\"time\"\n\n")
 	sb.WriteString("\t\"github.com/satishbabariya/prisma-go/query/builder\"\n")
 	sb.WriteString("\t\"github.com/satishbabariya/prisma-go/query/executor\"\n")
 	sb.WriteString("\t\"github.com/satishbabariya/prisma-go/query/sqlgen\"\n")
