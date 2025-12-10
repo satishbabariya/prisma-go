@@ -224,7 +224,11 @@ func dbPushCommand(args []string) error {
 	fmt.Printf("📋 Schema defines %d tables\n", len(targetSchema.Tables))
 
 	// Compare schemas
-	differ := diff.NewSimpleDiffer(provider)
+	differ, err := diff.NewDiffer(provider)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to create differ: %v\n", err)
+		return err
+	}
 	diffResult := differ.CompareSchemas(currentSchema, targetSchema)
 
 	// Show differences

@@ -28,7 +28,7 @@ func (e *MigrationExecutor) ExecuteMigration(ctx context.Context, migrationSQL s
 	if err := e.EnsureMigrationTable(ctx); err != nil {
 		return fmt.Errorf("failed to ensure migration table exists: %w", err)
 	}
-	
+
 	// Start transaction
 	tx, err := e.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -113,7 +113,7 @@ func (e *MigrationExecutor) ExecuteMigrationStatements(ctx context.Context, stat
 // EnsureMigrationTable ensures the migration history table exists
 func (e *MigrationExecutor) EnsureMigrationTable(ctx context.Context) error {
 	createTableSQL := e.getMigrationTableSQL()
-	
+
 	_, err := e.db.ExecContext(ctx, createTableSQL)
 	if err != nil {
 		return fmt.Errorf("failed to create migration table: %w", err)
@@ -215,4 +215,3 @@ type Migration struct {
 	AppliedAt time.Time
 	Checksum  string
 }
-

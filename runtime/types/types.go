@@ -33,4 +33,3 @@ type Filter interface {
 type WhereInput struct{}
 
 func (WhereInput) isFilter() {}
-

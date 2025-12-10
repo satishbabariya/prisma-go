@@ -2,8 +2,6 @@
 package formatting
 
 import (
-
-
 	"strings"
 )
 
@@ -202,5 +200,3 @@ func (tf *TableFormat) Write(text string) {
 func (tf *TableFormat) EndLine() {
 	// Table format handles line endings in Render()
 }
-
-

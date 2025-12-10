@@ -102,4 +102,3 @@ func SaveConfig(cfg *Config) error {
 	configFile := filepath.Join(configPath, ".prisma-go.yaml")
 	return viper.WriteConfigAs(configFile)
 }
-

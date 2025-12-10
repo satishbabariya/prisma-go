@@ -69,4 +69,3 @@ func (w *UniqueCriteriaWalker) HasUnsupportedFields() bool {
 	}
 	return false
 }
-

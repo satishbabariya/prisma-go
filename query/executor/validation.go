@@ -54,4 +54,3 @@ func validateRelations(relations map[string]RelationMetadata) error {
 	}
 	return nil
 }
-

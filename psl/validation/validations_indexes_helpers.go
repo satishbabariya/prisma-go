@@ -10,7 +10,7 @@ func validateModelIndexes(ctx *ValidationContext) {
 		}
 
 		validateIndexNameClashes(model, ctx)
-		
+
 		indexes := model.Indexes()
 		for _, index := range indexes {
 			validateIndexFields(index, model, ctx)
@@ -26,10 +26,10 @@ func validateModelIndexes(ctx *ValidationContext) {
 			validateCompositeTypeInCompoundUniqueIndex(index, model, ctx)
 			validateUniqueIndexClientNameDoesNotClashWithField(index, model, ctx)
 			validateIndexFieldLengthPrefix(index, model, ctx)
-			
+
 			// View-specific index validations
 			validateViewIndex(index, model, ctx)
-			
+
 			// Validate index field attributes for views
 			for _, field := range index.Fields() {
 				validateViewIndexFieldAttribute(index, field, ctx)
@@ -37,4 +37,3 @@ func validateModelIndexes(ctx *ValidationContext) {
 		}
 	}
 }
-

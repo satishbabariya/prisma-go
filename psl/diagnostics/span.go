@@ -45,4 +45,3 @@ func (s Span) Contains(position int) bool {
 func (s Span) Overlaps(other Span) bool {
 	return s.FileID == other.FileID && (s.Contains(other.Start) || s.Contains(other.End))
 }
-

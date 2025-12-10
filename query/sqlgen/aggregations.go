@@ -45,14 +45,14 @@ func (g *PostgresGenerator) GenerateAggregate(
 			selectParts[i] = fmt.Sprintf("%s(%s) AS %s", agg.Function, quoteIdentifier(agg.Field), quoteIdentifier(agg.Alias))
 		}
 	}
-	
+
 	// Add GROUP BY fields to SELECT if present
 	if groupBy != nil && len(groupBy.Fields) > 0 {
 		for _, field := range groupBy.Fields {
 			selectParts = append(selectParts, quoteIdentifier(field))
 		}
 	}
-	
+
 	parts = append(parts, "SELECT "+strings.Join(selectParts, ", "))
 
 	// FROM table
@@ -132,14 +132,14 @@ func (g *MySQLGenerator) GenerateAggregate(
 			selectParts[i] = fmt.Sprintf("%s(%s) AS %s", agg.Function, quoteIdentifierMySQL(agg.Field), quoteIdentifierMySQL(agg.Alias))
 		}
 	}
-	
+
 	// Add GROUP BY fields to SELECT if present
 	if groupBy != nil && len(groupBy.Fields) > 0 {
 		for _, field := range groupBy.Fields {
 			selectParts = append(selectParts, quoteIdentifierMySQL(field))
 		}
 	}
-	
+
 	parts = append(parts, "SELECT "+strings.Join(selectParts, ", "))
 
 	// FROM table
@@ -218,14 +218,14 @@ func (g *SQLiteGenerator) GenerateAggregate(
 			selectParts[i] = fmt.Sprintf("%s(%s) AS %s", agg.Function, quoteIdentifierSQLite(agg.Field), quoteIdentifierSQLite(agg.Alias))
 		}
 	}
-	
+
 	// Add GROUP BY fields to SELECT if present
 	if groupBy != nil && len(groupBy.Fields) > 0 {
 		for _, field := range groupBy.Fields {
 			selectParts = append(selectParts, quoteIdentifierSQLite(field))
 		}
 	}
-	
+
 	parts = append(parts, "SELECT "+strings.Join(selectParts, ", "))
 
 	// FROM table
@@ -283,4 +283,3 @@ func (g *SQLiteGenerator) buildHavingSQLite(having *Having) (string, []interface
 
 	return strings.Join(conditions, " "+op+" "), args
 }
-

@@ -53,4 +53,3 @@ func GetDownloadURL(version string) string {
 	// This is a placeholder - adjust based on your release structure
 	return fmt.Sprintf("https://github.com/satishbabariya/prisma-go/releases/download/v%s/prisma-go-%s-%s", version, os, arch)
 }
-

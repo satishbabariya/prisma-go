@@ -14,9 +14,9 @@ type StringId uint32
 
 // StringInterner provides string interning functionality.
 type StringInterner struct {
-	mu   sync.RWMutex
+	mu      sync.RWMutex
 	strings []string
-	index  map[string]StringId
+	index   map[string]StringId
 }
 
 // NewStringInterner creates a new StringInterner.
@@ -31,7 +31,7 @@ func NewStringInterner() *StringInterner {
 func (si *StringInterner) Get(id StringId) string {
 	si.mu.RLock()
 	defer si.mu.RUnlock()
-	
+
 	if int(id) < len(si.strings) {
 		return si.strings[id]
 	}
@@ -42,7 +42,7 @@ func (si *StringInterner) Get(id StringId) string {
 func (si *StringInterner) Lookup(s string) (StringId, bool) {
 	si.mu.RLock()
 	defer si.mu.RUnlock()
-	
+
 	id, ok := si.index[s]
 	return id, ok
 }
@@ -52,14 +52,13 @@ func (si *StringInterner) Lookup(s string) (StringId, bool) {
 func (si *StringInterner) Intern(s string) StringId {
 	si.mu.Lock()
 	defer si.mu.Unlock()
-	
+
 	if id, ok := si.index[s]; ok {
 		return id
 	}
-	
+
 	id := StringId(len(si.strings))
 	si.strings = append(si.strings, s)
 	si.index[s] = id
 	return id
 }
-

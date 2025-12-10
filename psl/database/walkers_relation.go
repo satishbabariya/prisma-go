@@ -86,16 +86,16 @@ func (w *RelationWalker) Refine() *RefinedRelationWalker {
 	if rel.IsImplicitManyToMany() {
 		return &RefinedRelationWalker{
 			IsImplicitManyToMany: true,
-		ImplicitManyToMany: &ImplicitManyToManyRelationWalker{
-			RelationWalker: w,
-		},
+			ImplicitManyToMany: &ImplicitManyToManyRelationWalker{
+				RelationWalker: w,
+			},
 		}
 	} else if rel.IsTwoWayEmbeddedManyToMany() {
 		return &RefinedRelationWalker{
 			IsTwoWayEmbeddedManyToMany: true,
-		TwoWayEmbeddedManyToMany: &TwoWayEmbeddedManyToManyRelationWalker{
-			RelationWalker: w,
-		},
+			TwoWayEmbeddedManyToMany: &TwoWayEmbeddedManyToManyRelationWalker{
+				RelationWalker: w,
+			},
 		}
 	} else {
 		return &RefinedRelationWalker{
@@ -137,12 +137,12 @@ func (w *RelationWalker) astRelation() *Relation {
 
 // RefinedRelationWalker represents a relation that has been refined to a specific type.
 type RefinedRelationWalker struct {
-	IsInline                  bool
-	Inline                    *InlineRelationWalker
-	IsImplicitManyToMany      bool
-	ImplicitManyToMany        *ImplicitManyToManyRelationWalker
+	IsInline                   bool
+	Inline                     *InlineRelationWalker
+	IsImplicitManyToMany       bool
+	ImplicitManyToMany         *ImplicitManyToManyRelationWalker
 	IsTwoWayEmbeddedManyToMany bool
-	TwoWayEmbeddedManyToMany  *TwoWayEmbeddedManyToManyRelationWalker
+	TwoWayEmbeddedManyToMany   *TwoWayEmbeddedManyToManyRelationWalker
 }
 
 // AsInline returns the inline relation walker if this is an inline relation.
@@ -339,4 +339,3 @@ func (pd *ParserDatabase) WalkRelations() []*RelationWalker {
 	}
 	return result
 }
-

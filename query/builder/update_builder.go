@@ -44,4 +44,3 @@ func (u *UpdateBuilder) GetWhere() *sqlgen.WhereClause {
 	}
 	return u.where.Build()
 }
-

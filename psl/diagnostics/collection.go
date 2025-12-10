@@ -87,7 +87,7 @@ func (d *Diagnostics) writePrettyError(buf *bytes.Buffer, fileName, text string,
 	startLineNum := d.getLineNumber(text, err.Span().Start)
 	endLineNum := d.getLineNumber(text, err.Span().End)
 	lines := d.getLines(text)
-	
+
 	bytesInLineBefore := d.getLineStart(text, startLineNum)
 	line := lines[startLineNum]
 	startInLine := err.Span().Start - bytesInLineBefore
@@ -154,7 +154,7 @@ func (d *Diagnostics) writePrettyWarning(buf *bytes.Buffer, fileName, text strin
 	startLineNum := d.getLineNumber(text, warn.Span().Start)
 	endLineNum := d.getLineNumber(text, warn.Span().End)
 	lines := d.getLines(text)
-	
+
 	bytesInLineBefore := d.getLineStart(text, startLineNum)
 	line := lines[startLineNum]
 	startInLine := warn.Span().Start - bytesInLineBefore
@@ -248,4 +248,3 @@ func FromWarning(warning DatamodelWarning) Diagnostics {
 	d.PushWarning(warning)
 	return d
 }
-

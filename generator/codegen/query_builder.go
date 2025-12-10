@@ -92,4 +92,3 @@ func isNumericType(goType string) bool {
 	}
 	return false
 }
-

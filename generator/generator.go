@@ -43,4 +43,3 @@ func (g *Generator) GenerateClient(outputDir string) error {
 
 	return nil
 }
-

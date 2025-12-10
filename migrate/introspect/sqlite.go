@@ -269,4 +269,3 @@ func (i *SQLiteIntrospector) mapSQLiteType(sqliteType string) string {
 		return sqliteType
 	}
 }
-

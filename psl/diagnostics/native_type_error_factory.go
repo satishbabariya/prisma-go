@@ -45,4 +45,3 @@ func (f NativeTypeErrorFactory) NewArgumentMOutOfRangeError(message string, span
 func (f NativeTypeErrorFactory) NativeTypeNameUnknown(span Span) DatamodelError {
 	return NewDatamodelError(fmt.Sprintf("Native type %s is not supported for %s connector.", f.nativeType, f.connector), span)
 }
-

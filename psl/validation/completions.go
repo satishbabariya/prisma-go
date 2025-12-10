@@ -20,13 +20,13 @@ import (
 //	)
 func FormatCompletionDocs(example, description string, params map[string]string) string {
 	var paramDocs strings.Builder
-	
+
 	if params != nil && len(params) > 0 {
 		for paramLabel, paramDoc := range params {
 			fmt.Fprintf(&paramDocs, "_@param_ %s %s\n", paramLabel, paramDoc)
 		}
 	}
-	
+
 	paramDocsStr := paramDocs.String()
 	if paramDocsStr != "" {
 		return fmt.Sprintf("```prisma\n%s\n```\n___\n%s\n\n%s", example, description, paramDocsStr)
@@ -99,4 +99,3 @@ type SchemaPosition struct {
 	// Position details would be added here based on actual usage
 	// For now, this is a placeholder structure
 }
-

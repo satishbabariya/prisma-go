@@ -47,4 +47,3 @@ Git Commit: %s
 Platform: %s
 Go Version: %s`, i.Version, i.BuildDate, i.GitCommit, i.Platform, i.GoVersion)
 }
-

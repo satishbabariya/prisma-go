@@ -182,7 +182,7 @@ func findSchemaFile() string {
 		"prisma/schema.prisma",
 		"./schema.prisma",
 	}
-	
+
 	for _, path := range commonPaths {
 		if _, err := os.Stat(path); err == nil {
 			absPath, _ := filepath.Abs(path)
@@ -201,7 +201,7 @@ func getDatabaseURLFromEnv() string {
 	if url := os.Getenv("DATABASE_URL"); url != "" {
 		return url
 	}
-	
+
 	// Check .env.local file first (higher priority)
 	if data, err := os.ReadFile(".env.local"); err == nil {
 		lines := strings.Split(string(data), "\n")
@@ -220,7 +220,7 @@ func getDatabaseURLFromEnv() string {
 			}
 		}
 	}
-	
+
 	// Check .env file
 	if data, err := os.ReadFile(".env"); err == nil {
 		lines := strings.Split(string(data), "\n")
@@ -239,7 +239,6 @@ func getDatabaseURLFromEnv() string {
 			}
 		}
 	}
-	
+
 	return ""
 }
-

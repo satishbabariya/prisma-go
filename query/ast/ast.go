@@ -99,4 +99,3 @@ type RelationInclude struct {
 type SelectClause struct {
 	Fields []string
 }
-

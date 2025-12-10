@@ -88,4 +88,3 @@ func findForeignKeyFromRelation(model *ast.Model, relationField *ast.Field) (str
 
 	return "", "", fmt.Errorf("could not determine foreign key for relation field %s", relationField.Name.Name)
 }
-

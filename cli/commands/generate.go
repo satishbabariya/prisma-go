@@ -8,8 +8,8 @@ import (
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 
-	"github.com/satishbabariya/prisma-go/generator"
 	"github.com/satishbabariya/prisma-go/cli/internal/ui"
+	"github.com/satishbabariya/prisma-go/generator"
 	psl "github.com/satishbabariya/prisma-go/psl"
 )
 
@@ -28,8 +28,8 @@ This command will:
 
 var (
 	generateSchemaPath string
-	generateWatch     bool
-	generateWatchOnly bool
+	generateWatch      bool
+	generateWatchOnly  bool
 )
 
 func init() {
@@ -164,4 +164,3 @@ func runGenerateWatch(schemaPath string, generateInitially bool) error {
 func generateCommand(args []string) error {
 	return runGenerate(nil, args)
 }
-

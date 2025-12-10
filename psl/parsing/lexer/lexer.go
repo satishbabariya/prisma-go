@@ -259,4 +259,3 @@ func (l *Lexer) tokenizeNumber() {
 	value := l.input[start:l.pos]
 	l.addToken(TokenNumber, value)
 }
-

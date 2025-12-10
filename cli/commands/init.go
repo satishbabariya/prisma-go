@@ -27,11 +27,11 @@ This command will:
 }
 
 var (
-	initProjectName   string
-	initProvider      string
-	initDatabaseURL   string
-	initSkipEnv       bool
-	initInteractive   bool
+	initProjectName string
+	initProvider    string
+	initDatabaseURL string
+	initSkipEnv     bool
+	initInteractive bool
 )
 
 func init() {
@@ -303,4 +303,3 @@ generated/
 Thumbs.db
 `
 }
-

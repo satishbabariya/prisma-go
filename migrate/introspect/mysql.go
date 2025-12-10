@@ -323,4 +323,3 @@ func (i *MySQLIntrospector) mapMySQLType(mysqlType string) string {
 		return mysqlType
 	}
 }
-

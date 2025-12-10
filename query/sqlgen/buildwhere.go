@@ -45,7 +45,7 @@ func buildWhereRecursive(where *WhereClause, argIndex *int, placeholder func(int
 	}
 
 	result := strings.Join(parts, " "+op+" ")
-	
+
 	// Apply NOT to the entire clause if needed
 	if where.IsNot {
 		result = "NOT (" + result + ")"
@@ -101,4 +101,3 @@ func buildCondition(cond Condition, argIndex *int, placeholder func(int) string,
 
 	return sql, args
 }
-

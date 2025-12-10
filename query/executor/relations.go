@@ -197,4 +197,3 @@ func fromSnakeCase(s string) string {
 	}
 	return strings.Join(parts, "")
 }
-

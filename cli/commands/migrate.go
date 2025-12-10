@@ -11,8 +11,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	_ "github.com/lib/pq"
 	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
 	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/satishbabariya/prisma-go/migrate/converter"
@@ -159,7 +159,6 @@ func initMigrateFlags() {
 	migrateApplyCmd.Flags().StringP("name", "n", "", "Migration name")
 }
 
-
 func printMigrateHelp() {
 	help := `
 USAGE:
@@ -188,7 +187,7 @@ func migrateDevCommand(args []string) error {
 	schemaPath := "schema.prisma"
 	migrationName := ""
 	autoApply := false
-	
+
 	// Parse arguments - first non-flag arg is schema path, rest are flags
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -205,21 +204,21 @@ func migrateDevCommand(args []string) error {
 			schemaPath = arg
 		}
 	}
-	
+
 	// Use standardized schema path resolution
 	schemaPath = getSchemaPath("", []string{schemaPath})
-	
+
 	// Generate default migration name if not provided
 	if migrationName == "" {
 		migrationName = fmt.Sprintf("migration_%d", time.Now().Unix())
 	}
-	
+
 	fmt.Println("🚀 Creating and applying migration in development...")
 	fmt.Printf("📝 Migration name: %s\n", migrationName)
-	
+
 	// Step 1: Generate migration SQL using migrate diff logic
 	fmt.Println("\n📋 Step 1: Analyzing schema differences...")
-	
+
 	// Read and parse schema
 	content, err := os.ReadFile(schemaPath)
 	if err != nil {
@@ -233,16 +232,16 @@ func migrateDevCommand(args []string) error {
 		fmt.Fprintf(os.Stderr, "❌ Error parsing schema:\n%s\n", diags.ToPrettyString(schemaPath, string(content)))
 		return fmt.Errorf("schema parsing failed")
 	}
-	
+
 	// Get connection info
 	provider, connStr := extractConnectionInfo(parsed)
 	if connStr == "" {
 		fmt.Fprintf(os.Stderr, "❌ No connection string found in schema\n")
 		return fmt.Errorf("no connection string")
 	}
-	
+
 	driverProvider := normalizeProviderForDriver(provider)
-	
+
 	// Connect to database
 	db, err := sql.Open(driverProvider, connStr)
 	if err != nil {
@@ -250,33 +249,37 @@ func migrateDevCommand(args []string) error {
 		return err
 	}
 	defer db.Close()
-	
+
 	ctx := context.Background()
-	
+
 	// Introspect current database
 	introspector, err := introspect.NewIntrospector(db, provider)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to create introspector: %v\n", err)
 		return err
 	}
-	
+
 	currentSchema, err := introspector.Introspect(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to introspect database: %v\n", err)
 		return err
 	}
-	
+
 	// Convert schema AST to database schema
 	targetSchema, err := converter.ConvertASTToDBSchema(parsed, provider)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to convert schema: %v\n", err)
 		return err
 	}
-	
+
 	// Compare schemas
-	differ := diff.NewSimpleDiffer(provider)
+	differ, err := diff.NewDiffer(provider)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to create differ: %v\n", err)
+		return err
+	}
 	diffResult := differ.CompareSchemas(currentSchema, targetSchema)
-	
+
 	if len(diffResult.TablesToCreate) == 0 && len(diffResult.TablesToAlter) == 0 && len(diffResult.TablesToDrop) == 0 {
 		fmt.Println("✅ No differences found - schema is up to date!")
 		fmt.Println("\n💡 Regenerating client...")
@@ -286,7 +289,7 @@ func migrateDevCommand(args []string) error {
 		}
 		return nil
 	}
-	
+
 	// Step 2: Generate SQL
 	fmt.Println("📝 Step 2: Generating migration SQL...")
 	var sqlGenerator sqlgen.MigrationGenerator
@@ -300,55 +303,55 @@ func migrateDevCommand(args []string) error {
 	default:
 		return fmt.Errorf("unsupported provider: %s", provider)
 	}
-	
+
 	sql, err := sqlGenerator.GenerateMigrationSQL(diffResult, targetSchema)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to generate SQL: %v\n", err)
 		return err
 	}
-	
+
 	// Step 3: Save migration file
 	fmt.Println("💾 Step 3: Saving migration file...")
 	if err := os.MkdirAll("migrations", 0755); err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to create migrations directory: %v\n", err)
 		return err
 	}
-	
+
 	migrationDir := fmt.Sprintf("migrations/%s", migrationName)
 	if err := os.MkdirAll(migrationDir, 0755); err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to create migration directory: %v\n", err)
 		return err
 	}
-	
+
 	sqlPath := fmt.Sprintf("%s/migration.sql", migrationDir)
 	if err := os.WriteFile(sqlPath, []byte(sql), 0644); err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to write migration file: %v\n", err)
 		return err
 	}
-	
+
 	absPath, _ := filepath.Abs(sqlPath)
 	fmt.Printf("✅ Migration SQL saved: %s\n", absPath)
-	
+
 	// Step 4: Apply migration (if --apply flag)
 	if autoApply {
 		fmt.Println("\n🚀 Step 4: Applying migration...")
 		// Apply migration directly using the same connection
 		migrationExecutor := executor.NewMigrationExecutor(db, provider)
-		
+
 		// Ensure migration table exists
 		err = migrationExecutor.EnsureMigrationTable(ctx)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Failed to setup migration table: %v\n", err)
 			return err
 		}
-		
+
 		// Read migration SQL
 		migrationSQL, err := os.ReadFile(sqlPath)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Failed to read migration file: %v\n", err)
 			return err
 		}
-		
+
 		// Execute migration
 		fmt.Println("📝 Executing migration SQL...")
 		err = migrationExecutor.ExecuteMigration(ctx, string(migrationSQL), migrationName)
@@ -356,14 +359,14 @@ func migrateDevCommand(args []string) error {
 			fmt.Fprintf(os.Stderr, "❌ Failed to apply migration: %v\n", err)
 			return err
 		}
-		
+
 		fmt.Printf("✅ Migration '%s' applied successfully!\n", migrationName)
 	} else {
 		fmt.Println("\n💡 Migration generated but not applied.")
 		fmt.Printf("   Apply it with: prisma-go migrate apply %s\n", sqlPath)
 		fmt.Println("   Or use --apply flag to auto-apply: prisma-go migrate dev <schema> --apply")
 	}
-	
+
 	// Step 5: Regenerate client
 	fmt.Println("\n🔄 Step 5: Regenerating client...")
 	if err := runGenerate(nil, []string{schemaPath}); err != nil {
@@ -372,14 +375,14 @@ func migrateDevCommand(args []string) error {
 	} else {
 		fmt.Println("✅ Client regenerated successfully!")
 	}
-	
+
 	fmt.Println("\n🎉 Migration dev workflow completed!")
 	return nil
 }
 
 func migrateDeployCommand(args []string) error {
 	fmt.Println("🚀 Deploying pending migrations...")
-	
+
 	// Get connection string from environment or .env files
 	connStr := getDatabaseURLFromEnv()
 	if connStr == "" {
@@ -387,10 +390,10 @@ func migrateDeployCommand(args []string) error {
 		fmt.Fprintf(os.Stderr, "💡 Set DATABASE_URL environment variable or add it to .env file\n")
 		return fmt.Errorf("no connection string")
 	}
-	
+
 	provider := detectProvider(connStr)
 	driverProvider := normalizeProviderForDriver(provider)
-	
+
 	// Connect to database
 	db, err := sql.Open(driverProvider, connStr)
 	if err != nil {
@@ -398,34 +401,34 @@ func migrateDeployCommand(args []string) error {
 		return err
 	}
 	defer db.Close()
-	
+
 	ctx := context.Background()
-	
+
 	// Setup migration executor
 	migrationExecutor := executor.NewMigrationExecutor(db, provider)
-	
+
 	// Ensure migration table exists
 	err = migrationExecutor.EnsureMigrationTable(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to setup migration table: %v\n", err)
 		return err
 	}
-	
+
 	// Get applied migrations
 	applied, err := migrationExecutor.GetAppliedMigrations(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to get migration history: %v\n", err)
 		return err
 	}
-	
+
 	// Build map of applied migration names
 	appliedMap := make(map[string]bool)
 	for _, m := range applied {
 		appliedMap[m.Name] = true
 	}
-	
+
 	fmt.Printf("✓ Found %d applied migrations\n", len(applied))
-	
+
 	// Scan migrations directory for pending migrations
 	migrationsDir := "migrations"
 	entries, err := os.ReadDir(migrationsDir)
@@ -437,55 +440,55 @@ func migrateDeployCommand(args []string) error {
 		fmt.Fprintf(os.Stderr, "❌ Failed to read migrations directory: %v\n", err)
 		return err
 	}
-	
+
 	var pendingMigrations []string
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
-		
+
 		migrationName := entry.Name()
 		if appliedMap[migrationName] {
 			continue // Already applied
 		}
-		
+
 		// Check if migration.sql exists
 		sqlPath := filepath.Join(migrationsDir, migrationName, "migration.sql")
 		if _, err := os.Stat(sqlPath); err == nil {
 			pendingMigrations = append(pendingMigrations, sqlPath)
 		}
 	}
-	
+
 	if len(pendingMigrations) == 0 {
 		fmt.Println("\n✅ No pending migrations found - database is up to date!")
 		return nil
 	}
-	
+
 	fmt.Printf("\n📋 Found %d pending migration(s):\n", len(pendingMigrations))
 	for _, path := range pendingMigrations {
 		migrationName := filepath.Base(filepath.Dir(path))
 		fmt.Printf("  • %s\n", migrationName)
 	}
-	
+
 	fmt.Print("\n❓ Apply these migrations? (y/N): ")
 	var confirmation string
 	fmt.Scanln(&confirmation)
-	
+
 	confirmation = strings.TrimSpace(strings.ToLower(confirmation))
 	if confirmation != "y" && confirmation != "yes" {
 		fmt.Println("✋ Aborted. No migrations applied.")
 		return nil
 	}
-	
+
 	// Apply pending migrations
 	fmt.Println("\n🚀 Applying pending migrations...")
 	successCount := 0
 	failCount := 0
-	
+
 	for _, sqlPath := range pendingMigrations {
 		migrationName := filepath.Base(filepath.Dir(sqlPath))
 		fmt.Printf("\n📝 Applying: %s\n", migrationName)
-		
+
 		// Read SQL file
 		sqlContent, err := os.ReadFile(sqlPath)
 		if err != nil {
@@ -493,7 +496,7 @@ func migrateDeployCommand(args []string) error {
 			failCount++
 			continue
 		}
-		
+
 		// Apply migration
 		err = migrationExecutor.ExecuteMigration(ctx, string(sqlContent), migrationName)
 		if err != nil {
@@ -501,24 +504,24 @@ func migrateDeployCommand(args []string) error {
 			failCount++
 			continue
 		}
-		
+
 		fmt.Printf("  ✅ Applied successfully\n")
 		successCount++
 	}
-	
+
 	fmt.Printf("\n📊 Deployment Summary:\n")
 	fmt.Printf("  ✅ Applied: %d\n", successCount)
 	if failCount > 0 {
 		fmt.Printf("  ❌ Failed: %d\n", failCount)
 	}
-	
+
 	if failCount == 0 {
 		fmt.Println("\n🎉 All migrations deployed successfully!")
 	} else {
 		fmt.Printf("\n⚠️  Some migrations failed. Please review errors above.\n")
 		return fmt.Errorf("%d migration(s) failed", failCount)
 	}
-	
+
 	return nil
 }
 
@@ -526,7 +529,7 @@ func migrateDiffCommand(args []string) error {
 	schemaPath := "schema.prisma"
 	createOnly := false
 	migrationName := ""
-	
+
 	// Parse arguments - first non-flag arg is schema path, rest are flags
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -543,12 +546,12 @@ func migrateDiffCommand(args []string) error {
 			schemaPath = arg
 		}
 	}
-	
+
 	// Use standardized schema path resolution
 	schemaPath = getSchemaPath("", []string{schemaPath})
-	
+
 	fmt.Println("🔍 Analyzing schema differences...")
-	
+
 	// Read and parse schema
 	content, err := os.ReadFile(schemaPath)
 	if err != nil {
@@ -562,16 +565,16 @@ func migrateDiffCommand(args []string) error {
 		fmt.Fprintf(os.Stderr, "❌ Error parsing schema:\n%s\n", diags.ToPrettyString(schemaPath, string(content)))
 		return fmt.Errorf("schema parsing failed")
 	}
-	
+
 	// Get connection info
 	provider, connStr := extractConnectionInfo(parsed)
 	if connStr == "" {
 		fmt.Fprintf(os.Stderr, "❌ No connection string found in schema\n")
 		return fmt.Errorf("no connection string")
 	}
-	
+
 	driverProvider := normalizeProviderForDriver(provider)
-	
+
 	// Connect to database
 	db, err := sql.Open(driverProvider, connStr)
 	if err != nil {
@@ -579,37 +582,41 @@ func migrateDiffCommand(args []string) error {
 		return err
 	}
 	defer db.Close()
-	
+
 	ctx := context.Background()
-	
+
 	// Introspect current database
 	introspector, err := introspect.NewIntrospector(db, provider)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to create introspector: %v\n", err)
 		return err
 	}
-	
+
 	currentSchema, err := introspector.Introspect(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to introspect database: %v\n", err)
 		return err
 	}
-	
+
 	fmt.Printf("\n📊 Current database has %d tables\n", len(currentSchema.Tables))
-	
+
 	// Convert schema AST to database schema
 	targetSchema, err := converter.ConvertASTToDBSchema(parsed, provider)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to convert schema: %v\n", err)
 		return err
 	}
-	
+
 	fmt.Printf("📋 Schema defines %d tables\n", len(targetSchema.Tables))
-	
+
 	// Compare schemas
-	differ := diff.NewSimpleDiffer(provider)
+	differ, err := diff.NewDiffer(provider)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to create differ: %v\n", err)
+		return err
+	}
 	diffResult := differ.CompareSchemas(currentSchema, targetSchema)
-	
+
 	// Show differences
 	fmt.Println("\n📝 Differences found:")
 	if len(diffResult.TablesToCreate) > 0 {
@@ -630,12 +637,12 @@ func migrateDiffCommand(args []string) error {
 			fmt.Printf("    - %s\n", change.Name)
 		}
 	}
-	
+
 	if len(diffResult.TablesToCreate) == 0 && len(diffResult.TablesToAlter) == 0 && len(diffResult.TablesToDrop) == 0 {
 		fmt.Println("  ✓ No differences found - schema is up to date!")
 		return nil
 	}
-	
+
 	// Generate SQL if --create-only flag is set
 	if createOnly {
 		var sqlGenerator sqlgen.MigrationGenerator
@@ -649,19 +656,19 @@ func migrateDiffCommand(args []string) error {
 		default:
 			return fmt.Errorf("unsupported provider: %s", provider)
 		}
-		
+
 		sql, err := sqlGenerator.GenerateMigrationSQL(diffResult, targetSchema)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Failed to generate SQL: %v\n", err)
 			return err
 		}
-		
+
 		// Create migrations directory
 		if err := os.MkdirAll("migrations", 0755); err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Failed to create migrations directory: %v\n", err)
 			return err
 		}
-		
+
 		// Generate migration name
 		if migrationName == "" {
 			migrationName = fmt.Sprintf("migration_%d", time.Now().Unix())
@@ -671,14 +678,14 @@ func migrateDiffCommand(args []string) error {
 			fmt.Fprintf(os.Stderr, "❌ Failed to create migration directory: %v\n", err)
 			return err
 		}
-		
+
 		// Write SQL file
 		sqlPath := fmt.Sprintf("%s/migration.sql", migrationDir)
 		if err := os.WriteFile(sqlPath, []byte(sql), 0644); err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Failed to write migration file: %v\n", err)
 			return err
 		}
-		
+
 		absPath, _ := filepath.Abs(sqlPath)
 		fmt.Printf("\n✅ Migration SQL generated: %s\n", absPath)
 		fmt.Println("\n💡 Next steps:")
@@ -688,7 +695,7 @@ func migrateDiffCommand(args []string) error {
 		fmt.Println("\n💡 To generate migration SQL file:")
 		fmt.Println("  prisma-go migrate diff <schema> --create-only [--name migration-name]")
 	}
-	
+
 	return nil
 }
 
@@ -700,14 +707,14 @@ func migrateApplyCommand(args []string) error {
 
 	migrationPath := args[0]
 	migrationName := ""
-	
+
 	// Parse flags
 	for i, arg := range args {
 		if arg == "--name" && i+1 < len(args) {
 			migrationName = args[i+1]
 		}
 	}
-	
+
 	// Extract migration name from path if not provided
 	if migrationName == "" {
 		// Extract from path like migrations/20250110_init/migration.sql
@@ -721,16 +728,16 @@ func migrateApplyCommand(args []string) error {
 			}
 		}
 	}
-	
+
 	fmt.Printf("🚀 Applying migration: %s\n", migrationName)
-	
+
 	// Read migration SQL file
 	sqlContent, err := os.ReadFile(migrationPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to read migration file: %v\n", err)
 		return err
 	}
-	
+
 	// Get connection string from environment or .env files
 	connStr := getDatabaseURLFromEnv()
 	if connStr == "" {
@@ -738,10 +745,10 @@ func migrateApplyCommand(args []string) error {
 		fmt.Fprintf(os.Stderr, "💡 Set DATABASE_URL environment variable or add it to .env file\n")
 		return fmt.Errorf("no connection string")
 	}
-	
+
 	provider := detectProvider(connStr)
 	driverProvider := normalizeProviderForDriver(provider)
-	
+
 	// Connect to database
 	db, err := sql.Open(driverProvider, connStr)
 	if err != nil {
@@ -749,19 +756,19 @@ func migrateApplyCommand(args []string) error {
 		return err
 	}
 	defer db.Close()
-	
+
 	ctx := context.Background()
-	
+
 	// Setup migration executor
 	migrationExecutor := executor.NewMigrationExecutor(db, provider)
-	
+
 	// Ensure migration table exists
 	err = migrationExecutor.EnsureMigrationTable(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to setup migration table: %v\n", err)
 		return err
 	}
-	
+
 	// Execute migration
 	fmt.Println("📝 Executing migration SQL...")
 	err = migrationExecutor.ExecuteMigration(ctx, string(sqlContent), migrationName)
@@ -769,21 +776,21 @@ func migrateApplyCommand(args []string) error {
 		fmt.Fprintf(os.Stderr, "❌ Failed to apply migration: %v\n", err)
 		return err
 	}
-	
+
 	fmt.Printf("✅ Migration '%s' applied successfully!\n", migrationName)
-	
+
 	// Show updated status
 	applied, err := migrationExecutor.GetAppliedMigrations(ctx)
 	if err == nil {
 		fmt.Printf("\n📊 Total applied migrations: %d\n", len(applied))
 	}
-	
+
 	return nil
 }
 
 func migrateStatusCommand(args []string) error {
 	fmt.Println("📊 Migration Status")
-	
+
 	// Get connection string from environment or .env files
 	connStr := getDatabaseURLFromEnv()
 	if connStr == "" {
@@ -791,10 +798,10 @@ func migrateStatusCommand(args []string) error {
 		fmt.Fprintf(os.Stderr, "💡 Set DATABASE_URL environment variable or add it to .env file\n")
 		return fmt.Errorf("no connection string")
 	}
-	
+
 	provider := detectProvider(connStr)
 	driverProvider := normalizeProviderForDriver(provider)
-	
+
 	// Connect to database
 	db, err := sql.Open(driverProvider, connStr)
 	if err != nil {
@@ -802,28 +809,28 @@ func migrateStatusCommand(args []string) error {
 		return err
 	}
 	defer db.Close()
-	
+
 	ctx := context.Background()
-	
+
 	// Setup migration executor
 	migrationExecutor := executor.NewMigrationExecutor(db, provider)
-	
+
 	// Ensure migration table exists
 	err = migrationExecutor.EnsureMigrationTable(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to setup migration table: %v\n", err)
 		return err
 	}
-	
+
 	// Get applied migrations
 	applied, err := migrationExecutor.GetAppliedMigrations(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to get migration history: %v\n", err)
 		return err
 	}
-	
+
 	fmt.Printf("\n✓ Applied migrations: %d\n\n", len(applied))
-	
+
 	if len(applied) == 0 {
 		fmt.Println("  No migrations applied yet")
 	} else {
@@ -831,9 +838,9 @@ func migrateStatusCommand(args []string) error {
 			fmt.Printf("  • %s (applied: %s)\n", m.Name, m.AppliedAt.Format("2006-01-02 15:04:05"))
 		}
 	}
-	
+
 	fmt.Println("\n✅ Migration system ready")
-	
+
 	return nil
 }
 
@@ -845,7 +852,7 @@ func migrateResolveCommand(args []string) error {
 
 	migrationName := args[0]
 	action := "applied"
-	
+
 	// Parse flags
 	for i, arg := range args {
 		if arg == "--applied" {
@@ -858,10 +865,10 @@ func migrateResolveCommand(args []string) error {
 			action = args[i+1]
 		}
 	}
-	
+
 	fmt.Printf("🔧 Resolving migration: %s\n", migrationName)
 	fmt.Printf("📝 Action: %s\n", action)
-	
+
 	// Get connection string from environment or .env files
 	connStr := getDatabaseURLFromEnv()
 	if connStr == "" {
@@ -869,10 +876,10 @@ func migrateResolveCommand(args []string) error {
 		fmt.Fprintf(os.Stderr, "💡 Set DATABASE_URL environment variable or add it to .env file\n")
 		return fmt.Errorf("no connection string")
 	}
-	
+
 	provider := detectProvider(connStr)
 	driverProvider := normalizeProviderForDriver(provider)
-	
+
 	// Connect to database
 	db, err := sql.Open(driverProvider, connStr)
 	if err != nil {
@@ -880,53 +887,53 @@ func migrateResolveCommand(args []string) error {
 		return err
 	}
 	defer db.Close()
-	
+
 	ctx := context.Background()
-	
+
 	// Setup migration executor
 	migrationExecutor := executor.NewMigrationExecutor(db, provider)
-	
+
 	// Ensure migration table exists
 	err = migrationExecutor.EnsureMigrationTable(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to setup migration table: %v\n", err)
 		return err
 	}
-	
+
 	// Check if migration already exists
 	applied, err := migrationExecutor.GetAppliedMigrations(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to get migration history: %v\n", err)
 		return err
 	}
-	
-		// Check if migration is already applied
-		for _, m := range applied {
-			if m.Name == migrationName {
-				if action == "applied" {
-					fmt.Printf("✅ Migration '%s' is already marked as applied\n", migrationName)
-					return nil
-				}
-				// Mark as rolled-back (remove from history)
-				var deleteSQL string
-				switch provider {
-				case "postgresql", "postgres":
-					deleteSQL = "DELETE FROM _prisma_migrations WHERE migration_name = $1"
-				case "mysql", "sqlite":
-					deleteSQL = "DELETE FROM _prisma_migrations WHERE migration_name = ?"
-				default:
-					return fmt.Errorf("unsupported provider: %s", provider)
-				}
-				_, err = db.ExecContext(ctx, deleteSQL, migrationName)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "❌ Failed to mark migration as rolled-back: %v\n", err)
-					return err
-				}
-				fmt.Printf("✅ Migration '%s' marked as rolled-back\n", migrationName)
+
+	// Check if migration is already applied
+	for _, m := range applied {
+		if m.Name == migrationName {
+			if action == "applied" {
+				fmt.Printf("✅ Migration '%s' is already marked as applied\n", migrationName)
 				return nil
 			}
+			// Mark as rolled-back (remove from history)
+			var deleteSQL string
+			switch provider {
+			case "postgresql", "postgres":
+				deleteSQL = "DELETE FROM _prisma_migrations WHERE migration_name = $1"
+			case "mysql", "sqlite":
+				deleteSQL = "DELETE FROM _prisma_migrations WHERE migration_name = ?"
+			default:
+				return fmt.Errorf("unsupported provider: %s", provider)
+			}
+			_, err = db.ExecContext(ctx, deleteSQL, migrationName)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "❌ Failed to mark migration as rolled-back: %v\n", err)
+				return err
+			}
+			fmt.Printf("✅ Migration '%s' marked as rolled-back\n", migrationName)
+			return nil
 		}
-	
+	}
+
 	// Migration not found - mark as applied
 	if action == "applied" {
 		// Record migration without executing SQL
@@ -942,7 +949,7 @@ func migrateResolveCommand(args []string) error {
 		default:
 			return fmt.Errorf("unsupported provider: %s", provider)
 		}
-		
+
 		_, err = db.ExecContext(ctx, insertSQL, migrationName, time.Now(), checksum)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "❌ Failed to mark migration as applied: %v\n", err)
@@ -952,7 +959,7 @@ func migrateResolveCommand(args []string) error {
 	} else {
 		fmt.Printf("✅ Migration '%s' marked as %s\n", migrationName, action)
 	}
-	
+
 	return nil
 }
 
@@ -965,7 +972,6 @@ func migrateResetCommand(args []string) error {
 	fmt.Println("     prisma-go migrate deploy")
 	fmt.Println("\n❌ Automatic reset not implemented for safety")
 	fmt.Println("   (prevents accidental data loss)")
-	
+
 	return nil
 }
-

@@ -20,7 +20,7 @@ func buildNestedJoinsFromIncludes(
 ) []sqlgen.Join {
 	var joins []sqlgen.Join
 	processed := make(map[string]bool) // Track processed relations to avoid duplicates
-	
+
 	// Build joins for each top-level include
 	for relationName, nestedInclude := range includes {
 		joins = append(joins, buildJoinsForRelation(
@@ -33,7 +33,7 @@ func buildNestedJoinsFromIncludes(
 			processed,
 		)...)
 	}
-	
+
 	return joins
 }
 
@@ -48,38 +48,38 @@ func buildJoinsForRelation(
 	processed map[string]bool,
 ) []sqlgen.Join {
 	var joins []sqlgen.Join
-	
+
 	// Get relation metadata
 	relMeta, ok := parentRelations[relationName]
 	if !ok || relMeta.ForeignKey == "" {
 		return joins
 	}
-	
+
 	// Build current path for alias
 	currentPath := relationName
 	if pathPrefix != "" {
 		currentPath = pathPrefix + "_" + relationName
 	}
-	
+
 	// Skip if already processed
 	if processed[currentPath] {
 		return joins
 	}
 	processed[currentPath] = true
-	
+
 	// Determine table alias
 	tableAlias := currentPath
 	if pathPrefix == "" {
 		tableAlias = relMeta.RelatedTable
 	}
-	
+
 	// Build JOIN for current relation
 	join := sqlgen.Join{
 		Type:  "LEFT",
 		Table: relMeta.RelatedTable,
 		Alias: tableAlias,
 	}
-	
+
 	// Build JOIN condition
 	if relMeta.IsList {
 		// One-to-many: foreign key is on the related table
@@ -96,9 +96,9 @@ func buildJoinsForRelation(
 			quoteIdentifier(tableAlias),
 			quoteIdentifier(relMeta.LocalKey))
 	}
-	
+
 	joins = append(joins, join)
-	
+
 	// Process nested includes
 	if nestedInclude.HasNested() {
 		// Get relations for the related model
@@ -118,6 +118,6 @@ func buildJoinsForRelation(
 			}
 		}
 	}
-	
+
 	return joins
 }

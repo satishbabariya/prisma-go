@@ -10,4 +10,3 @@ import (
 type MigrationGenerator interface {
 	GenerateMigrationSQL(diffResult *diff.DiffResult, dbSchema *introspect.DatabaseSchema) (string, error)
 }
-

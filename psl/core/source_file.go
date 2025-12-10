@@ -14,4 +14,3 @@ func NewSourceFile(path, data string) SourceFile {
 		Data: data,
 	}
 }
-
