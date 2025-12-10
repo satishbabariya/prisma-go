@@ -62,7 +62,8 @@ COMMANDS:
 MIGRATE COMMANDS:
     migrate dev      Create and apply migrations in development
     migrate deploy   Apply pending migrations to production
-    migrate diff     Compare schema to database
+    migrate diff     Compare schema to database (use --create-only to generate SQL)
+    migrate apply    Apply a migration SQL file
     migrate status   Check migration status
     migrate reset    Reset the database
 

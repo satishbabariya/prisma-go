@@ -24,6 +24,11 @@ func NewMigrationExecutor(db *sql.DB, provider string) *MigrationExecutor {
 
 // ExecuteMigration executes a migration SQL string
 func (e *MigrationExecutor) ExecuteMigration(ctx context.Context, migrationSQL string, migrationName string) error {
+	// Ensure migration table exists before starting transaction
+	if err := e.EnsureMigrationTable(ctx); err != nil {
+		return fmt.Errorf("failed to ensure migration table exists: %w", err)
+	}
+	
 	// Start transaction
 	tx, err := e.db.BeginTx(ctx, nil)
 	if err != nil {

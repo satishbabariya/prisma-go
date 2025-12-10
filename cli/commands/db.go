@@ -141,9 +141,10 @@ func dbPullCommand(args []string) error {
 	
 	// Detect provider
 	provider := detectProvider(connStr)
+	driverProvider := normalizeProviderForDriver(provider)
 	
 	// Connect to database
-	db, err := sql.Open(provider, connStr)
+	db, err := sql.Open(driverProvider, connStr)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ Failed to connect: %v\n", err)
 		return err
@@ -231,6 +232,15 @@ func detectProvider(connStr string) string {
 		return "sqlite"
 	}
 	return "postgresql"
+}
+
+// normalizeProviderForDriver normalizes provider name for sql.Open
+// PostgreSQL driver uses "postgres", not "postgresql"
+func normalizeProviderForDriver(provider string) string {
+	if provider == "postgresql" || provider == "postgres" {
+		return "postgres"
+	}
+	return provider
 }
 
 func generatePrismaSchemaFromDB(schema *introspect.DatabaseSchema, provider string) string {

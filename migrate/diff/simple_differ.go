@@ -56,8 +56,17 @@ func (d *SimpleDiffer) CompareSchemas(source, target *introspect.DatabaseSchema)
 	}
 
 	// Tables to drop (in source, not in target)
+	// Exclude system tables like _prisma_migrations
+	systemTables := map[string]bool{
+		"_prisma_migrations": true,
+	}
+	
 	for _, sourceTable := range source.Tables {
 		if _, exists := targetTables[sourceTable.Name]; !exists {
+			// Skip system tables
+			if systemTables[sourceTable.Name] {
+				continue
+			}
 			result.TablesToDrop = append(result.TablesToDrop, TableChange{
 				Name:   sourceTable.Name,
 				Action: "DROP",
