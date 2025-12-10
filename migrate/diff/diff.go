@@ -1,11 +1,6 @@
 // Package diff provides schema comparison and diff generation.
 package diff
 
-import (
-	"github.com/satishbabariya/prisma-go/migrate/introspect"
-	"github.com/satishbabariya/prisma-go/psl/database"
-)
-
 // DiffResult represents the differences between schema and database
 type DiffResult struct {
 	TablesToCreate []TableChange
