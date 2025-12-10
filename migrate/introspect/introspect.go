@@ -13,10 +13,10 @@ type Introspector interface {
 
 // DatabaseSchema represents the introspected database schema
 type DatabaseSchema struct {
-	Tables      []Table
-	Enums       []Enum
-	Views       []View
-	Sequences   []Sequence
+	Tables    []Table
+	Enums     []Enum
+	Views     []View
+	Sequences []Sequence
 }
 
 // Table represents a database table
@@ -31,10 +31,10 @@ type Table struct {
 
 // Column represents a table column
 type Column struct {
-	Name         string
-	Type         string
-	Nullable     bool
-	DefaultValue *string
+	Name          string
+	Type          string
+	Nullable      bool
+	DefaultValue  *string
 	AutoIncrement bool
 }
 
@@ -53,12 +53,12 @@ type Index struct {
 
 // ForeignKey represents a foreign key constraint
 type ForeignKey struct {
-	Name            string
-	Columns         []string
-	ReferencedTable string
+	Name              string
+	Columns           []string
+	ReferencedTable   string
 	ReferencedColumns []string
-	OnDelete        string
-	OnUpdate        string
+	OnDelete          string
+	OnUpdate          string
 }
 
 // Enum represents a database enum type
@@ -111,4 +111,3 @@ func (s *SQLiteIntrospector) Introspect(ctx context.Context) (*DatabaseSchema, e
 	// TODO: Implement SQLite introspection
 	return &DatabaseSchema{}, nil
 }
-
