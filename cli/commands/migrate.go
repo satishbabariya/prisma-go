@@ -36,12 +36,13 @@ This command provides subcommands for:
 }
 
 var (
-	migrateDevCmd    *cobra.Command
-	migrateDeployCmd *cobra.Command
-	migrateDiffCmd   *cobra.Command
-	migrateApplyCmd  *cobra.Command
-	migrateStatusCmd *cobra.Command
-	migrateResetCmd  *cobra.Command
+	migrateDevCmd     *cobra.Command
+	migrateDeployCmd  *cobra.Command
+	migrateDiffCmd    *cobra.Command
+	migrateApplyCmd   *cobra.Command
+	migrateStatusCmd  *cobra.Command
+	migrateResetCmd   *cobra.Command
+	migrateResolveCmd *cobra.Command
 )
 
 func init() {
@@ -55,6 +56,7 @@ func init() {
 	migrateCmd.AddCommand(migrateApplyCmd)
 	migrateCmd.AddCommand(migrateStatusCmd)
 	migrateCmd.AddCommand(migrateResetCmd)
+	migrateCmd.AddCommand(migrateResolveCmd)
 
 	rootCmd.AddCommand(migrateCmd)
 }
@@ -147,6 +149,21 @@ func initMigrateCommands() {
 			return migrateResetCommand([]string{})
 		},
 	}
+
+	migrateResolveCmd = &cobra.Command{
+		Use:   "resolve [migration-name]",
+		Short: "Resolve failed migrations",
+		Long:  "Mark a failed migration as applied or rolled-back",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			action, _ := cmd.Flags().GetString("action")
+			argsList := args
+			if action != "" {
+				argsList = append(argsList, "--action", action)
+			}
+			return migrateResolveCommand(argsList)
+		},
+	}
 }
 
 func initMigrateFlags() {
@@ -157,6 +174,8 @@ func initMigrateFlags() {
 	migrateDiffCmd.Flags().StringP("name", "n", "", "Migration name")
 
 	migrateApplyCmd.Flags().StringP("name", "n", "", "Migration name")
+
+	migrateResolveCmd.Flags().StringP("action", "a", "applied", "Action: applied or rolled-back")
 }
 
 func printMigrateHelp() {

@@ -6,12 +6,15 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	"github.com/satishbabariya/prisma-go/migrate/history"
 )
 
 // MigrationExecutor executes migrations on a database
 type MigrationExecutor struct {
 	db       *sql.DB
 	provider string
+	history  *history.Manager
 }
 
 // NewMigrationExecutor creates a new migration executor
@@ -19,6 +22,7 @@ func NewMigrationExecutor(db *sql.DB, provider string) *MigrationExecutor {
 	return &MigrationExecutor{
 		db:       db,
 		provider: provider,
+		history:  history.NewManager(db, provider),
 	}
 }
 
@@ -28,6 +32,8 @@ func (e *MigrationExecutor) ExecuteMigration(ctx context.Context, migrationSQL s
 	if err := e.EnsureMigrationTable(ctx); err != nil {
 		return fmt.Errorf("failed to ensure migration table exists: %w", err)
 	}
+
+	startTime := time.Now()
 
 	// Start transaction
 	tx, err := e.db.BeginTx(ctx, nil)
@@ -49,8 +55,12 @@ func (e *MigrationExecutor) ExecuteMigration(ctx context.Context, migrationSQL s
 		return fmt.Errorf("failed to execute migration: %w", err)
 	}
 
+	// Calculate checksum
+	checksum := history.CalculateChecksum(migrationSQL)
+	executionTime := time.Since(startTime).Milliseconds()
+
 	// Record migration in history
-	err = e.recordMigration(ctx, tx, migrationName)
+	err = e.recordMigration(ctx, tx, migrationName, checksum, executionTime)
 	if err != nil {
 		_ = tx.Rollback()
 		return fmt.Errorf("failed to record migration: %w", err)
@@ -70,6 +80,8 @@ func (e *MigrationExecutor) ExecuteMigrationStatements(ctx context.Context, stat
 	if err := e.EnsureMigrationTable(ctx); err != nil {
 		return fmt.Errorf("failed to ensure migration table exists: %w", err)
 	}
+
+	startTime := time.Now()
 
 	tx, err := e.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -96,8 +108,16 @@ func (e *MigrationExecutor) ExecuteMigrationStatements(ctx context.Context, stat
 		}
 	}
 
+	// Calculate checksum from all statements
+	combinedSQL := ""
+	for _, stmt := range statements {
+		combinedSQL += stmt + "\n"
+	}
+	checksum := history.CalculateChecksum(combinedSQL)
+	executionTime := time.Since(startTime).Milliseconds()
+
 	// Record migration
-	err = e.recordMigration(ctx, tx, migrationName)
+	err = e.recordMigration(ctx, tx, migrationName, checksum, executionTime)
 	if err != nil {
 		_ = tx.Rollback()
 		return fmt.Errorf("failed to record migration: %w", err)
@@ -112,96 +132,78 @@ func (e *MigrationExecutor) ExecuteMigrationStatements(ctx context.Context, stat
 
 // EnsureMigrationTable ensures the migration history table exists
 func (e *MigrationExecutor) EnsureMigrationTable(ctx context.Context) error {
-	createTableSQL := e.getMigrationTableSQL()
-
-	_, err := e.db.ExecContext(ctx, createTableSQL)
-	if err != nil {
-		return fmt.Errorf("failed to create migration table: %w", err)
-	}
-
-	return nil
+	return e.history.InitTable(ctx)
 }
 
 // GetAppliedMigrations returns list of applied migrations
 func (e *MigrationExecutor) GetAppliedMigrations(ctx context.Context) ([]Migration, error) {
-	query := `
-		SELECT id, migration_name, applied_at, checksum
-		FROM _prisma_migrations
-		ORDER BY applied_at ASC
-	`
-
-	rows, err := e.db.QueryContext(ctx, query)
+	records, err := e.history.GetAll(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query migrations: %w", err)
+		return nil, err
 	}
-	defer rows.Close()
 
-	var migrations []Migration
-	for rows.Next() {
-		var m Migration
-		err := rows.Scan(&m.ID, &m.Name, &m.AppliedAt, &m.Checksum)
-		if err != nil {
-			return nil, fmt.Errorf("failed to scan migration: %w", err)
+	migrations := make([]Migration, len(records))
+	for i, record := range records {
+		// Convert string ID to int (assuming it's numeric)
+		var id int
+		fmt.Sscanf(record.ID, "%d", &id)
+		migrations[i] = Migration{
+			ID:        id,
+			Name:      record.Name,
+			AppliedAt: record.AppliedAt,
+			Checksum:  record.Checksum,
 		}
-		migrations = append(migrations, m)
 	}
 
-	return migrations, rows.Err()
+	return migrations, nil
+}
+
+// GetPendingMigrations returns list of pending migrations
+func (e *MigrationExecutor) GetPendingMigrations(ctx context.Context, availableMigrations []string) ([]string, error) {
+	return e.history.GetPending(ctx, availableMigrations)
+}
+
+// MarkMigrationRolledBack marks a migration as rolled back
+func (e *MigrationExecutor) MarkMigrationRolledBack(ctx context.Context, migrationName string) error {
+	return e.history.MarkRolledBack(ctx, migrationName)
 }
 
 // recordMigration records a migration in the history table
-func (e *MigrationExecutor) recordMigration(ctx context.Context, tx *sql.Tx, migrationName string) error {
-	insertSQL := `
-		INSERT INTO _prisma_migrations (migration_name, applied_at, checksum)
-		VALUES ($1, $2, $3)
-	`
-
-	if e.provider == "mysql" {
-		insertSQL = `
-			INSERT INTO _prisma_migrations (migration_name, applied_at, checksum)
-			VALUES (?, ?, ?)
-		`
-	} else if e.provider == "sqlite" {
-		insertSQL = `
-			INSERT INTO _prisma_migrations (migration_name, applied_at, checksum)
-			VALUES (?, ?, ?)
-		`
+func (e *MigrationExecutor) recordMigration(ctx context.Context, tx *sql.Tx, migrationName string, checksum string, executionTime int64) error {
+	// Use a separate connection for history recording since we're in a transaction
+	// We'll record it after commit, or use the same transaction
+	record := &history.MigrationRecord{
+		Name:          migrationName,
+		AppliedAt:     time.Now(),
+		Checksum:      checksum,
+		ExecutionTime: executionTime,
+		RolledBack:    false,
 	}
 
-	checksum := fmt.Sprintf("%x", time.Now().UnixNano()) // Simple checksum
-	_, err := tx.ExecContext(ctx, insertSQL, migrationName, time.Now(), checksum)
+	// Insert using the transaction
+	insertSQL := e.getInsertSQL()
+	_, err := tx.ExecContext(ctx, insertSQL,
+		record.Name,
+		record.AppliedAt,
+		record.Checksum,
+		record.ExecutionTime,
+		false, // rolled_back
+	)
 	return err
 }
 
-// getMigrationTableSQL returns SQL to create migration history table
-func (e *MigrationExecutor) getMigrationTableSQL() string {
+// getInsertSQL returns SQL to insert a migration record
+func (e *MigrationExecutor) getInsertSQL() string {
 	switch e.provider {
 	case "postgresql", "postgres":
 		return `
-			CREATE TABLE IF NOT EXISTS _prisma_migrations (
-				id SERIAL PRIMARY KEY,
-				migration_name VARCHAR(255) NOT NULL UNIQUE,
-				applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-				checksum VARCHAR(64) NOT NULL
-			)
+			INSERT INTO _prisma_migrations (migration_name, applied_at, checksum, execution_time, rolled_back)
+			VALUES ($1, $2, $3, $4, $5)
 		`
-	case "mysql":
+	case "mysql", "sqlite":
 		return `
-			CREATE TABLE IF NOT EXISTS _prisma_migrations (
-				id INT AUTO_INCREMENT PRIMARY KEY,
-				migration_name VARCHAR(255) NOT NULL UNIQUE,
-				applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-				checksum VARCHAR(64) NOT NULL
-			)
-		`
-	case "sqlite":
-		return `
-			CREATE TABLE IF NOT EXISTS _prisma_migrations (
-				id INTEGER PRIMARY KEY AUTOINCREMENT,
-				migration_name TEXT NOT NULL UNIQUE,
-				applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-				checksum TEXT NOT NULL
-			)
+			INSERT INTO _prisma_migrations (migration_name, applied_at, checksum, execution_time, rolled_back)
+			VALUES (?, ?, ?, ?, ?)
 		`
 	default:
 		return ""
