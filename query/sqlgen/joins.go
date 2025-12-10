@@ -94,11 +94,14 @@ func (g *PostgresGenerator) GenerateSelectWithJoins(
 	}
 
 	// WHERE clause
-	if where != nil && len(where.Conditions) > 0 {
-		whereSQL, whereArgs := g.buildWhere(where, &argIndex)
-		parts = append(parts, "WHERE "+whereSQL)
-		args = append(args, whereArgs...)
-		argIndex += len(whereArgs)
+	if where != nil && !where.IsEmpty() {
+		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
+			return fmt.Sprintf("$%d", i)
+		}, quoteIdentifier)
+		if whereSQL != "" {
+			parts = append(parts, "WHERE "+whereSQL)
+			args = append(args, whereArgs...)
+		}
 	}
 
 	// ORDER BY
@@ -174,11 +177,14 @@ func (g *MySQLGenerator) GenerateSelectWithJoins(
 	}
 
 	// WHERE clause
-	if where != nil && len(where.Conditions) > 0 {
-		whereSQL, whereArgs := g.buildWhere(where, &argIndex)
-		parts = append(parts, "WHERE "+whereSQL)
-		args = append(args, whereArgs...)
-		argIndex += len(whereArgs)
+	if where != nil && !where.IsEmpty() {
+		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
+			return "?"
+		}, quoteIdentifierMySQL)
+		if whereSQL != "" {
+			parts = append(parts, "WHERE "+whereSQL)
+			args = append(args, whereArgs...)
+		}
 	}
 
 	// ORDER BY
@@ -289,11 +295,14 @@ func (g *SQLiteGenerator) GenerateSelectWithJoins(
 	}
 
 	// WHERE clause
-	if where != nil && len(where.Conditions) > 0 {
-		whereSQL, whereArgs := g.buildWhere(where, &argIndex)
-		parts = append(parts, "WHERE "+whereSQL)
-		args = append(args, whereArgs...)
-		argIndex += len(whereArgs)
+	if where != nil && !where.IsEmpty() {
+		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
+			return "?"
+		}, quoteIdentifierSQLite)
+		if whereSQL != "" {
+			parts = append(parts, "WHERE "+whereSQL)
+			args = append(args, whereArgs...)
+		}
 	}
 
 	// ORDER BY

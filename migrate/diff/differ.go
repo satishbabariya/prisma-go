@@ -4,8 +4,10 @@ package diff
 import (
 	"fmt"
 
+	"github.com/satishbabariya/prisma-go/migrate/converter"
 	"github.com/satishbabariya/prisma-go/migrate/diff/flavour"
 	"github.com/satishbabariya/prisma-go/migrate/introspect"
+	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
 )
 
 // Differ compares database schemas with advanced features
@@ -108,6 +110,18 @@ func (d *Differ) CompareSchemas(source, target *introspect.DatabaseSchema) *Diff
 	result.Changes = OrderChanges(result.Changes)
 
 	return result
+}
+
+// CompareASTWithDatabase compares a Prisma schema AST with a database schema
+func (d *Differ) CompareASTWithDatabase(schemaAST *ast.SchemaAst, dbSchema *introspect.DatabaseSchema) (*DiffResult, error) {
+	// Convert AST to database schema format
+	astDBSchema, err := converter.ConvertASTToDBSchema(schemaAST, d.provider)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert AST to database schema: %w", err)
+	}
+
+	// Compare the two database schemas
+	return d.CompareSchemas(dbSchema, astDBSchema), nil
 }
 
 // getFlavour returns the appropriate flavour for the provider

@@ -45,7 +45,7 @@ func GenerateModelsFromAST(schemaAST *ast.SchemaAst) []ModelInfo {
 	var models []ModelInfo
 	modelMap := make(map[string]*ModelInfo)
 
-	// First pass: create all models
+	// First pass: create all models (including views)
 	for _, top := range schemaAST.Tops {
 		if model := top.AsModel(); model != nil {
 			modelInfo := ModelInfo{
@@ -62,6 +62,17 @@ func GenerateModelsFromAST(schemaAST *ast.SchemaAst) []ModelInfo {
 
 			models = append(models, modelInfo)
 			modelMap[model.Name.Name] = &models[len(models)-1]
+		}
+	}
+
+	// Also generate composite types as structs (foundation for future expansion)
+	// Composite types are already parsed and validated, but code generation
+	// would need to be added to generate Go structs for them
+	for _, top := range schemaAST.Tops {
+		if compositeType := top.AsCompositeType(); compositeType != nil {
+			// Foundation: Composite types can be used as field types
+			// Full implementation would generate Go structs for composite types
+			_ = compositeType // Mark as used for now
 		}
 	}
 

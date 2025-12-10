@@ -5,6 +5,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"reflect"
+	"strings"
 
 	"github.com/satishbabariya/prisma-go/query/sqlgen"
 )
@@ -45,7 +47,7 @@ func (e *TxExecutor) FindManyWithRelations(ctx context.Context, table string, se
 	// Build JOINs if relations are included
 	var joins []sqlgen.Join
 	if include != nil && len(include) > 0 && relations != nil {
-		joins = buildJoinsFromIncludes(table, include, relations)
+		joins = buildJoinsFromIncludes(table, include, relations, e.provider)
 	}
 
 	if len(joins) > 0 {
@@ -165,4 +167,136 @@ func (e *TxExecutor) Count(ctx context.Context, table string, where *sqlgen.Wher
 	}
 
 	return count, nil
+}
+
+// CreateMany executes batch INSERT queries within a transaction
+func (e *TxExecutor) CreateMany(ctx context.Context, table string, data []interface{}) ([]interface{}, error) {
+	if len(data) == 0 {
+		return []interface{}{}, nil
+	}
+
+	var results []interface{}
+
+	// For PostgreSQL, we can use multi-row INSERT with RETURNING
+	if e.provider == "postgresql" || e.provider == "postgres" {
+		// Extract columns from first record
+		columns, _, err := e.extractInsertData(data[0])
+		if err != nil {
+			return nil, fmt.Errorf("failed to extract insert data: %w", err)
+		}
+
+		// Build multi-row INSERT
+		var parts []string
+		var args []interface{}
+		argIndex := 1
+
+		parts = append(parts, fmt.Sprintf("INSERT INTO %s", e.quoteIdentifier(table)))
+		quotedCols := make([]string, len(columns))
+		for i, col := range columns {
+			quotedCols[i] = e.quoteIdentifier(col)
+		}
+		parts = append(parts, fmt.Sprintf("(%s)", strings.Join(quotedCols, ", ")))
+		parts = append(parts, "VALUES")
+
+		// Build VALUES for each row
+		valueParts := make([]string, len(data))
+		for i, record := range data {
+			_, values, err := e.extractInsertData(record)
+			if err != nil {
+				return nil, fmt.Errorf("failed to extract insert data for record %d: %w", i, err)
+			}
+
+			placeholders := make([]string, len(values))
+			for j := range values {
+				placeholders[j] = fmt.Sprintf("$%d", argIndex)
+				args = append(args, values[j])
+				argIndex++
+			}
+			valueParts[i] = fmt.Sprintf("(%s)", strings.Join(placeholders, ", "))
+		}
+
+		parts = append(parts, strings.Join(valueParts, ", "))
+		parts = append(parts, "RETURNING *")
+
+		querySQL := strings.Join(parts, " ")
+		rows, err := e.tx.QueryContext(ctx, querySQL, args...)
+		if err != nil {
+			return nil, fmt.Errorf("batch insert failed: %w", err)
+		}
+		defer rows.Close()
+
+		// Scan all results
+		for rows.Next() {
+			record := reflect.New(reflect.TypeOf(data[0]).Elem()).Interface()
+			columns, err := rows.Columns()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get columns: %w", err)
+			}
+			if err := e.scanRowIntoStruct(rows, columns, record); err != nil {
+				return nil, err
+			}
+			results = append(results, record)
+		}
+
+		return results, rows.Err()
+	}
+
+	// For other databases, insert one by one
+	for _, record := range data {
+		result, err := e.Create(ctx, table, record)
+		if err != nil {
+			return nil, fmt.Errorf("batch insert failed at record: %w", err)
+		}
+		results = append(results, result)
+	}
+
+	return results, nil
+}
+
+// UpdateMany executes batch UPDATE queries within a transaction
+func (e *TxExecutor) UpdateMany(ctx context.Context, table string, set map[string]interface{}, where *sqlgen.WhereClause) (int64, error) {
+	query := e.generator.GenerateUpdate(table, set, where)
+
+	result, err := e.tx.ExecContext(ctx, query.SQL, query.Args...)
+	if err != nil {
+		return 0, fmt.Errorf("batch update failed: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	return rowsAffected, nil
+}
+
+// DeleteMany executes batch DELETE queries within a transaction
+func (e *TxExecutor) DeleteMany(ctx context.Context, table string, where *sqlgen.WhereClause) (int64, error) {
+	query := e.generator.GenerateDelete(table, where)
+
+	result, err := e.tx.ExecContext(ctx, query.SQL, query.Args...)
+	if err != nil {
+		return 0, fmt.Errorf("batch delete failed: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	return rowsAffected, nil
+}
+
+// quoteIdentifier quotes an identifier based on provider
+func (e *TxExecutor) quoteIdentifier(name string) string {
+	switch e.provider {
+	case "postgresql", "postgres":
+		return fmt.Sprintf(`"%s"`, name)
+	case "mysql":
+		return fmt.Sprintf("`%s`", name)
+	case "sqlite":
+		return fmt.Sprintf(`"%s"`, name)
+	default:
+		return name
+	}
 }

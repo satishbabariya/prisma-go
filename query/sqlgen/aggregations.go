@@ -60,9 +60,13 @@ func (g *PostgresGenerator) GenerateAggregate(
 
 	// WHERE clause
 	if where != nil && !where.IsEmpty() {
-		whereSQL, whereArgs := g.buildWhere(where, &argIndex)
-		parts = append(parts, "WHERE "+whereSQL)
-		args = append(args, whereArgs...)
+		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
+			return fmt.Sprintf("$%d", i)
+		}, quoteIdentifier)
+		if whereSQL != "" {
+			parts = append(parts, "WHERE "+whereSQL)
+			args = append(args, whereArgs...)
+		}
 	}
 
 	// GROUP BY
@@ -148,9 +152,13 @@ func (g *MySQLGenerator) GenerateAggregate(
 	// WHERE clause
 	argIndex := 1
 	if where != nil && !where.IsEmpty() {
-		whereSQL, whereArgs := g.buildWhere(where, &argIndex)
-		parts = append(parts, "WHERE "+whereSQL)
-		args = append(args, whereArgs...)
+		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
+			return "?"
+		}, quoteIdentifierMySQL)
+		if whereSQL != "" {
+			parts = append(parts, "WHERE "+whereSQL)
+			args = append(args, whereArgs...)
+		}
 	}
 
 	// GROUP BY
@@ -234,9 +242,13 @@ func (g *SQLiteGenerator) GenerateAggregate(
 	// WHERE clause
 	argIndex := 1
 	if where != nil && !where.IsEmpty() {
-		whereSQL, whereArgs := g.buildWhere(where, &argIndex)
-		parts = append(parts, "WHERE "+whereSQL)
-		args = append(args, whereArgs...)
+		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
+			return "?"
+		}, quoteIdentifierSQLite)
+		if whereSQL != "" {
+			parts = append(parts, "WHERE "+whereSQL)
+			args = append(args, whereArgs...)
+		}
 	}
 
 	// GROUP BY
