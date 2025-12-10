@@ -1,0 +1,20 @@
+package generated
+
+import (
+	"time"
+)
+
+{{range .Models}}
+// {{.Name}} represents the {{.Name}} model
+type {{.Name}} struct {
+{{- range .Fields}}
+	{{.GoName}} {{.GoType}} {{.Tags}}
+{{- end}}
+}
+
+// Table{{.Name}} returns the table name for {{.Name}}
+func ({{.Name}}) TableName() string {
+	return "{{.TableName}}"
+}
+{{end}}
+

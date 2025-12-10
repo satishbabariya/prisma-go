@@ -217,8 +217,8 @@ func (l *Lexer) tokenizeString() {
 	}
 
 	value := l.input[start:l.pos]
+	// addToken will advance past the closing quote, so we don't need to advance again
 	l.addToken(TokenString, value)
-	l.advance() // Skip closing quote
 }
 
 func (l *Lexer) tokenizeIdentifier() {
