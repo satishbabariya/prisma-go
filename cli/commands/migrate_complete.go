@@ -11,12 +11,14 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/mattn/go-sqlite3"
 
+	"github.com/satishbabariya/prisma-go/migrate/diff"
 	"github.com/satishbabariya/prisma-go/migrate/executor"
 	"github.com/satishbabariya/prisma-go/migrate/introspect"
-	psl "github.com/satishbabariya/prisma-go/psl"
+	"github.com/satishbabariya/prisma-go/migrate/sqlgen"
+	"github.com/satishbabariya/prisma-go/psl"
 )
 
-func migrateCommand(args []string) error {
+func migrateCommandComplete(args []string) error {
 	if len(args) == 0 {
 		printMigrateHelp()
 		return nil
@@ -26,15 +28,15 @@ func migrateCommand(args []string) error {
 
 	switch subcommand {
 	case "dev":
-		return migrateDevCommand(args[1:])
+		return migrateDevCommandComplete(args[1:])
 	case "deploy":
-		return migrateDeployCommand(args[1:])
+		return migrateDeployCommandComplete(args[1:])
 	case "diff":
-		return migrateDiffCommand(args[1:])
+		return migrateDiffCommandComplete(args[1:])
 	case "status":
-		return migrateStatusCommand(args[1:])
+		return migrateStatusCommandComplete(args[1:])
 	case "reset":
-		return migrateResetCommand(args[1:])
+		return migrateResetCommandComplete(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown migrate subcommand: %s\n\n", subcommand)
 		printMigrateHelp()
@@ -43,28 +45,7 @@ func migrateCommand(args []string) error {
 	}
 }
 
-func printMigrateHelp() {
-	help := `
-USAGE:
-    prisma-go migrate <subcommand> [options]
-
-SUBCOMMANDS:
-    dev        Create and apply migrations in development
-    deploy     Apply pending migrations to production
-    diff       Compare schema to database
-    status     Check migration status
-    reset      Reset the database
-
-EXAMPLES:
-    prisma-go migrate dev schema.prisma --name init
-    prisma-go migrate deploy
-    prisma-go migrate diff schema.prisma
-    prisma-go migrate status
-`
-	fmt.Println(help)
-}
-
-func migrateDevCommand(args []string) error {
+func migrateDevCommandComplete(args []string) error {
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "Error: schema file required (use: prisma-go migrate dev <schema-path> [--name migration-name])")
 		return fmt.Errorf("schema file required")
@@ -137,7 +118,7 @@ func migrateDevCommand(args []string) error {
 	return nil
 }
 
-func migrateDeployCommand(args []string) error {
+func migrateDeployCommandComplete(args []string) error {
 	fmt.Println("🚀 Deploying pending migrations...")
 	
 	// Get connection string from environment
@@ -185,7 +166,7 @@ func migrateDeployCommand(args []string) error {
 	return nil
 }
 
-func migrateDiffCommand(args []string) error {
+func migrateDiffCommandComplete(args []string) error {
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "Error: schema file required (use: prisma-go migrate diff <schema-path>)")
 		return fmt.Errorf("schema file required")
@@ -247,7 +228,7 @@ func migrateDiffCommand(args []string) error {
 	return nil
 }
 
-func migrateStatusCommand(args []string) error {
+func migrateStatusCommandComplete(args []string) error {
 	fmt.Println("📊 Migration Status")
 	
 	// Get connection string from environment
@@ -301,7 +282,7 @@ func migrateStatusCommand(args []string) error {
 	return nil
 }
 
-func migrateResetCommand(args []string) error {
+func migrateResetCommandComplete(args []string) error {
 	fmt.Println("⚠️  Reset Database")
 	fmt.Println("\n🚨 WARNING: This will DELETE ALL DATA in your database!")
 	fmt.Println("\n💡 To reset your database:")

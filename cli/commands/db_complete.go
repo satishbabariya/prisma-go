@@ -12,10 +12,10 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/satishbabariya/prisma-go/migrate/introspect"
-	psl "github.com/satishbabariya/prisma-go/psl"
+	"github.com/satishbabariya/prisma-go/psl"
 )
 
-func dbCommand(args []string) error {
+func dbCommandComplete(args []string) error {
 	if len(args) == 0 {
 		printDBHelp()
 		return nil
@@ -25,11 +25,11 @@ func dbCommand(args []string) error {
 
 	switch subcommand {
 	case "push":
-		return dbPushCommand(args[1:])
+		return dbPushCommandComplete(args[1:])
 	case "pull":
-		return dbPullCommand(args[1:])
+		return dbPullCommandComplete(args[1:])
 	case "seed":
-		return dbSeedCommand(args[1:])
+		return dbSeedCommandComplete(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown db subcommand: %s\n\n", subcommand)
 		printDBHelp()
@@ -38,7 +38,7 @@ func dbCommand(args []string) error {
 	}
 }
 
-func printDBHelp() {
+func printDBHelpComplete() {
 	help := `
 USAGE:
     prisma-go db <subcommand> [options]
@@ -56,7 +56,7 @@ EXAMPLES:
 	fmt.Println(help)
 }
 
-func dbPushCommand(args []string) error {
+func dbPushCommandComplete(args []string) error {
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "Error: schema file required (use: prisma-go db push <schema-path>)")
 		return fmt.Errorf("schema file required")
@@ -67,10 +67,10 @@ func dbPushCommand(args []string) error {
 	fmt.Println("🚀 Pushing schema changes to database...")
 	
 	// Parse schema
-	parsed, diags := psl.ParseSchemaFromFile(schemaPath)
-	if diags.HasErrors() {
-		fmt.Fprintf(os.Stderr, "❌ Error parsing schema:\n%s\n", diags.ToPrettyString())
-		return fmt.Errorf("schema parsing failed")
+	parsed, err := psl.ParseSchemaFromFile(schemaPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Error parsing schema: %v\n", err)
+		return err
 	}
 	
 	// Get connection info
@@ -114,7 +114,7 @@ func dbPushCommand(args []string) error {
 	return nil
 }
 
-func dbPullCommand(args []string) error {
+func dbPullCommandComplete(args []string) error {
 	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "Error: output file required (use: prisma-go db pull <output-schema-path>)")
 		return fmt.Errorf("output file required")
@@ -178,7 +178,7 @@ func dbPullCommand(args []string) error {
 	return nil
 }
 
-func dbSeedCommand(args []string) error {
+func dbSeedCommandComplete(args []string) error {
 	fmt.Println("🌱 Database Seeding with Prisma-Go")
 	fmt.Println("\n💡 Database seeding typically involves:")
 	fmt.Println("  1. Create a seed script in Go")
@@ -306,39 +306,5 @@ func toPascalCase(s string) string {
 		}
 	}
 	return result
-}
-
-// extractConnectionInfo extracts provider and connection string from schema
-func extractConnectionInfo(schema *psl.SchemaAst) (string, string) {
-	provider := "postgresql"
-	connStr := ""
-	
-	for _, top := range schema.Tops {
-		if source, _ := top.AsSource(); source != nil {
-			for _, prop := range source.Properties {
-				if prop.Name.Name == "provider" {
-					if strLit, _ := prop.Value.AsStringValue(); strLit != nil {
-						provider = strLit.Value
-					}
-				}
-				if prop.Name.Name == "url" {
-					// Handle env("DATABASE_URL") or direct string
-					if funcCall, _ := prop.Value.AsFunctionCall(); funcCall != nil {
-						// env() function
-						if len(funcCall.Arguments.Arguments) > 0 {
-							if strLit, _ := funcCall.Arguments.Arguments[0].Value.AsStringValue(); strLit != nil {
-								envVar := strLit.Value
-								connStr = os.Getenv(envVar)
-							}
-						}
-					} else if strLit, _ := prop.Value.AsStringValue(); strLit != nil {
-						connStr = strLit.Value
-					}
-				}
-			}
-		}
-	}
-	
-	return provider, connStr
 }
 
