@@ -3,8 +3,8 @@ package commands
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/pterm/pterm"
@@ -158,7 +158,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 
 func runGenerateWatch(schemaPath string, generateInitially bool) error {
 	ui.PrintHeader("Prisma-Go", "Watch Mode")
-	
+
 	// Check if schema file exists
 	if _, err := os.Stat(schemaPath); os.IsNotExist(err) {
 		return fmt.Errorf("schema file not found: %s", schemaPath)
@@ -167,7 +167,7 @@ func runGenerateWatch(schemaPath string, generateInitially bool) error {
 	// Generate callback function
 	generateCallback := func() error {
 		ui.PrintInfo("Schema changed, regenerating...")
-		
+
 		// Read schema
 		content, err := os.ReadFile(schemaPath)
 		if err != nil {

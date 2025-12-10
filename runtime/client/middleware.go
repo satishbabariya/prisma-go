@@ -106,4 +106,3 @@ func ErrorMiddleware(onError func(query string, err error)) Middleware {
 		return err
 	}
 }
-

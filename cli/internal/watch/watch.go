@@ -102,4 +102,3 @@ func (w *Watcher) Stop() error {
 	close(w.done)
 	return w.watcher.Close()
 }
-
