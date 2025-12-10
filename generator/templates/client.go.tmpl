@@ -1,0 +1,78 @@
+package generated
+
+import (
+	"context"
+	"database/sql"
+
+	"github.com/satishbabariya/prisma-go/runtime/client"
+)
+
+// PrismaClient is the main client for database operations
+type PrismaClient struct {
+	*client.PrismaClient
+{{- range .Models}}
+	{{.Name}} *{{.Name}}Client
+{{- end}}
+}
+
+// NewPrismaClient creates a new Prisma client
+func NewPrismaClient(connectionString string) (*PrismaClient, error) {
+	baseClient, err := client.NewPrismaClient("{{.Provider}}", connectionString)
+	if err != nil {
+		return nil, err
+	}
+
+	c := &PrismaClient{
+		PrismaClient: baseClient,
+	}
+
+{{- range .Models}}
+	c.{{.Name}} = &{{.Name}}Client{client: baseClient}
+{{- end}}
+
+	return c, nil
+}
+
+{{range .Models}}
+// {{.Name}}Client provides methods for {{.Name}} operations
+type {{.Name}}Client struct {
+	client *client.PrismaClient
+}
+
+// FindMany retrieves multiple {{.Name}} records
+func (c *{{.Name}}Client) FindMany(ctx context.Context) ([]{{.Name}}, error) {
+	// TODO: Implement query execution
+	return []{{.Name}}{}, nil
+}
+
+// FindFirst retrieves the first {{.Name}} record
+func (c *{{.Name}}Client) FindFirst(ctx context.Context) (*{{.Name}}, error) {
+	// TODO: Implement query execution
+	return &{{.Name}}{}, nil
+}
+
+// FindUnique retrieves a unique {{.Name}} record
+func (c *{{.Name}}Client) FindUnique(ctx context.Context) (*{{.Name}}, error) {
+	// TODO: Implement query execution
+	return &{{.Name}}{}, nil
+}
+
+// Create creates a new {{.Name}} record
+func (c *{{.Name}}Client) Create(ctx context.Context, data {{.Name}}) (*{{.Name}}, error) {
+	// TODO: Implement insert execution
+	return &data, nil
+}
+
+// Update updates a {{.Name}} record
+func (c *{{.Name}}Client) Update(ctx context.Context, data {{.Name}}) (*{{.Name}}, error) {
+	// TODO: Implement update execution
+	return &data, nil
+}
+
+// Delete deletes a {{.Name}} record
+func (c *{{.Name}}Client) Delete(ctx context.Context, id interface{}) error {
+	// TODO: Implement delete execution
+	return nil
+}
+{{end}}
+
