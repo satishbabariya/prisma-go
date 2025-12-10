@@ -16,52 +16,21 @@ type DiffResult struct {
 
 // Change represents a single schema change
 type Change struct {
-	Type        ChangeType
+	Type        string
+	Table       string
+	Column      string
+	Index       string
 	Description string
 	SQL         string
 	IsSafe      bool
+	Warnings    []string
 }
-
-// ChangeType represents the type of change
-type ChangeType string
-
-const (
-	ChangeTypeCreateTable  ChangeType = "CreateTable"
-	ChangeTypeDropTable    ChangeType = "DropTable"
-	ChangeTypeAlterTable   ChangeType = "AlterTable"
-	ChangeTypeAddColumn    ChangeType = "AddColumn"
-	ChangeTypeDropColumn   ChangeType = "DropColumn"
-	ChangeTypeAlterColumn  ChangeType = "AlterColumn"
-	ChangeTypeCreateIndex  ChangeType = "CreateIndex"
-	ChangeTypeDropIndex    ChangeType = "DropIndex"
-)
 
 // TableChange represents a change to a table
 type TableChange struct {
-	TableName string
-	Changes   []Change
-}
-
-// Differ compares Prisma schema with database schema
-type Differ struct {
-	provider string
-}
-
-// NewDiffer creates a new schema differ
-func NewDiffer(provider string) *Differ {
-	return &Differ{provider: provider}
-}
-
-// Diff compares the Prisma schema with the database schema
-func (d *Differ) Diff(prismaSchema *database.ParserDatabase, dbSchema *introspect.DatabaseSchema) (*DiffResult, error) {
-	// TODO: Implement schema diffing logic
-	result := &DiffResult{
-		TablesToCreate: []TableChange{},
-		TablesToAlter:  []TableChange{},
-		TablesToDrop:   []TableChange{},
-		Changes:        []Change{},
-	}
-
-	return result, nil
+	Name    string
+	Action  string // "CREATE", "DROP", "ALTER"
+	Model   interface{} // Can be *ast.Model
+	Changes []Change
 }
 

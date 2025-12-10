@@ -92,16 +92,6 @@ func NewIntrospector(db *sql.DB, provider string) (Introspector, error) {
 	}
 }
 
-// PostgresIntrospector implements introspection for PostgreSQL
-type PostgresIntrospector struct {
-	db *sql.DB
-}
-
-func (p *PostgresIntrospector) Introspect(ctx context.Context) (*DatabaseSchema, error) {
-	// TODO: Implement PostgreSQL introspection
-	return &DatabaseSchema{}, nil
-}
-
 // MySQLIntrospector implements introspection for MySQL
 type MySQLIntrospector struct {
 	db *sql.DB
