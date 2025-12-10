@@ -66,10 +66,18 @@ func dbPushCommand(args []string) error {
 	
 	fmt.Println("🚀 Pushing schema changes to database...")
 	
+	// Read schema file
+	content, err := os.ReadFile(schemaPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to read schema: %v\n", err)
+		return err
+	}
+
 	// Parse schema
-	parsed, diags := psl.ParseSchemaFromFile(schemaPath)
+	sourceFile := psl.NewSourceFile(schemaPath, string(content))
+	parsed, diags := psl.ParseSchemaFromFile(sourceFile)
 	if diags.HasErrors() {
-		fmt.Fprintf(os.Stderr, "❌ Error parsing schema:\n%s\n", diags.ToPrettyString())
+		fmt.Fprintf(os.Stderr, "❌ Error parsing schema:\n%s\n", diags.ToPrettyString(schemaPath, string(content)))
 		return fmt.Errorf("schema parsing failed")
 	}
 	
@@ -314,7 +322,7 @@ func extractConnectionInfo(schema *psl.SchemaAst) (string, string) {
 	connStr := ""
 	
 	for _, top := range schema.Tops {
-		if source, _ := top.AsSource(); source != nil {
+		if source := top.AsSource(); source != nil {
 			for _, prop := range source.Properties {
 				if prop.Name.Name == "provider" {
 					if strLit, _ := prop.Value.AsStringValue(); strLit != nil {
@@ -323,16 +331,9 @@ func extractConnectionInfo(schema *psl.SchemaAst) (string, string) {
 				}
 				if prop.Name.Name == "url" {
 					// Handle env("DATABASE_URL") or direct string
-					if funcCall, _ := prop.Value.AsFunctionCall(); funcCall != nil {
-						// env() function
-						if len(funcCall.Arguments.Arguments) > 0 {
-							if strLit, _ := funcCall.Arguments.Arguments[0].Value.AsStringValue(); strLit != nil {
-								envVar := strLit.Value
-								connStr = os.Getenv(envVar)
-							}
-						}
-					} else if strLit, _ := prop.Value.AsStringValue(); strLit != nil {
-						connStr = strLit.Value
+					if strLit, _ := prop.Value.AsStringValue(); strLit != nil {
+						envVar := strLit.Value
+						connStr = os.Getenv(envVar)
 					}
 				}
 			}

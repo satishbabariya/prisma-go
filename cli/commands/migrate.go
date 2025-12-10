@@ -84,11 +84,18 @@ func migrateDevCommand(args []string) error {
 	fmt.Println("🚀 Creating and applying migration in development...")
 	fmt.Printf("📝 Migration name: %s\n", migrationName)
 	
-	// Parse schema
-	parsed, err := psl.ParseSchemaFromFile(schemaPath)
+	// Read and parse schema
+	content, err := os.ReadFile(schemaPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Error parsing schema: %v\n", err)
+		fmt.Fprintf(os.Stderr, "❌ Failed to read schema: %v\n", err)
 		return err
+	}
+
+	sourceFile := psl.NewSourceFile(schemaPath, string(content))
+	parsed, diags := psl.ParseSchemaFromFile(sourceFile)
+	if diags.HasErrors() {
+		fmt.Fprintf(os.Stderr, "❌ Error parsing schema:\n%s\n", diags.ToPrettyString(schemaPath, string(content)))
+		return fmt.Errorf("schema parsing failed")
 	}
 	
 	// Get connection info
@@ -195,11 +202,18 @@ func migrateDiffCommand(args []string) error {
 	
 	fmt.Println("🔍 Analyzing schema differences...")
 	
-	// Parse schema
-	parsed, err := psl.ParseSchemaFromFile(schemaPath)
+	// Read and parse schema
+	content, err := os.ReadFile(schemaPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Error parsing schema: %v\n", err)
+		fmt.Fprintf(os.Stderr, "❌ Failed to read schema: %v\n", err)
 		return err
+	}
+
+	sourceFile := psl.NewSourceFile(schemaPath, string(content))
+	parsed, diags := psl.ParseSchemaFromFile(sourceFile)
+	if diags.HasErrors() {
+		fmt.Fprintf(os.Stderr, "❌ Error parsing schema:\n%s\n", diags.ToPrettyString(schemaPath, string(content)))
+		return fmt.Errorf("schema parsing failed")
 	}
 	
 	// Get connection info
