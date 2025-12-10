@@ -43,7 +43,46 @@ func (i *PostgresIntrospector) Introspect(ctx context.Context) (*DatabaseSchema,
 	}
 	schema.Sequences = sequences
 
+	// Introspect views
+	views, err := i.introspectViews(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to introspect views: %w", err)
+	}
+	schema.Views = views
+
 	return schema, nil
+}
+
+// introspectViews reads all views
+func (i *PostgresIntrospector) introspectViews(ctx context.Context) ([]View, error) {
+	query := `
+		SELECT 
+			table_schema,
+			table_name,
+			view_definition
+		FROM information_schema.views
+		WHERE table_schema = 'public'
+		ORDER BY table_name
+	`
+
+	rows, err := i.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query views: %w", err)
+	}
+	defer rows.Close()
+
+	var views []View
+	for rows.Next() {
+		var view View
+		var schema string
+		err := rows.Scan(&schema, &view.Name, &view.Definition)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan view: %w", err)
+		}
+		views = append(views, view)
+	}
+
+	return views, rows.Err()
 }
 
 // introspectTables reads all tables and their columns

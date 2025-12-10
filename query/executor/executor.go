@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/satishbabariya/prisma-go/query/sqlgen"
 )
@@ -16,6 +17,8 @@ type Executor struct {
 	db        *sql.DB
 	provider  string
 	generator sqlgen.Generator
+	stmtCache map[string]*sql.Stmt
+	cacheMu   sync.RWMutex
 }
 
 // NewExecutor creates a new query executor
@@ -24,7 +27,43 @@ func NewExecutor(db *sql.DB, provider string) *Executor {
 		db:        db,
 		provider:  provider,
 		generator: sqlgen.NewGenerator(provider),
+		stmtCache: make(map[string]*sql.Stmt),
 	}
+}
+
+// getCachedStmt gets a cached prepared statement or creates a new one
+func (e *Executor) getCachedStmt(ctx context.Context, query string) (*sql.Stmt, error) {
+	e.cacheMu.RLock()
+	stmt, ok := e.stmtCache[query]
+	e.cacheMu.RUnlock()
+
+	if ok && stmt != nil {
+		return stmt, nil
+	}
+
+	// Create new prepared statement
+	stmt, err := e.db.PrepareContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare statement: %w", err)
+	}
+
+	// Cache it
+	e.cacheMu.Lock()
+	e.stmtCache[query] = stmt
+	e.cacheMu.Unlock()
+
+	return stmt, nil
+}
+
+// ClearStmtCache clears the prepared statement cache
+func (e *Executor) ClearStmtCache() {
+	e.cacheMu.Lock()
+	defer e.cacheMu.Unlock()
+
+	for _, stmt := range e.stmtCache {
+		stmt.Close()
+	}
+	e.stmtCache = make(map[string]*sql.Stmt)
 }
 
 // FindMany executes a SELECT query and maps results to a slice
@@ -198,6 +237,57 @@ func (e *Executor) Create(ctx context.Context, table string, data interface{}) (
 	return data, nil
 }
 
+// Upsert executes an INSERT ... ON CONFLICT ... DO UPDATE query
+func (e *Executor) Upsert(ctx context.Context, table string, data interface{}, conflictTarget []string, updateColumns []string) (interface{}, error) {
+	columns, values, err := e.extractInsertData(data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to extract insert data: %w", err)
+	}
+
+	// If conflictTarget is empty, try to infer from primary key or unique constraints
+	if len(conflictTarget) == 0 {
+		// Try to find id or primary key field
+		for _, col := range columns {
+			if col == "id" || col == "Id" {
+				conflictTarget = []string{col}
+				break
+			}
+		}
+	}
+
+	query := e.generator.GenerateUpsert(table, columns, values, updateColumns, conflictTarget)
+
+	// For PostgreSQL, we can use RETURNING
+	if e.provider == "postgresql" || e.provider == "postgres" {
+		row := e.db.QueryRowContext(ctx, query.SQL, query.Args...)
+		return e.scanRowToStruct(row, data)
+	}
+
+	// For other databases, execute upsert then query back
+	result, err := e.db.ExecContext(ctx, query.SQL, query.Args...)
+	if err != nil {
+		return nil, fmt.Errorf("upsert failed: %w", err)
+	}
+
+	// Get the last insert ID if available
+	id, err := result.LastInsertId()
+	if err == nil && len(conflictTarget) > 0 {
+		// Query back the record
+		where := &sqlgen.WhereClause{
+			Conditions: []sqlgen.Condition{
+				{Field: conflictTarget[0], Operator: "=", Value: id},
+			},
+			Operator: "AND",
+		}
+		var found interface{} = data
+		if err := e.FindFirst(ctx, table, nil, where, nil, nil, &found); err == nil {
+			return found, nil
+		}
+	}
+
+	return data, nil
+}
+
 // Update executes an UPDATE query
 func (e *Executor) Update(ctx context.Context, table string, set map[string]interface{}, where *sqlgen.WhereClause, dest interface{}) error {
 	query := e.generator.GenerateUpdate(table, set, where)
@@ -233,6 +323,142 @@ func (e *Executor) Delete(ctx context.Context, table string, where *sqlgen.Where
 	}
 
 	return nil
+}
+
+// CreateMany executes batch INSERT queries
+func (e *Executor) CreateMany(ctx context.Context, table string, data []interface{}) ([]interface{}, error) {
+	if len(data) == 0 {
+		return []interface{}{}, nil
+	}
+
+	var results []interface{}
+
+	// For PostgreSQL, we can use multi-row INSERT with RETURNING
+	if e.provider == "postgresql" || e.provider == "postgres" {
+		// Extract columns from first record
+		columns, _, err := e.extractInsertData(data[0])
+		if err != nil {
+			return nil, fmt.Errorf("failed to extract insert data: %w", err)
+		}
+
+		// Build multi-row INSERT
+		var parts []string
+		var args []interface{}
+		argIndex := 1
+
+		parts = append(parts, fmt.Sprintf("INSERT INTO %s", e.quoteIdentifier(table)))
+		quotedCols := make([]string, len(columns))
+		for i, col := range columns {
+			quotedCols[i] = e.quoteIdentifier(col)
+		}
+		parts = append(parts, fmt.Sprintf("(%s)", strings.Join(quotedCols, ", ")))
+		parts = append(parts, "VALUES")
+
+		// Build VALUES for each row
+		valueParts := make([]string, len(data))
+		for i, record := range data {
+			_, values, err := e.extractInsertData(record)
+			if err != nil {
+				return nil, fmt.Errorf("failed to extract insert data for record %d: %w", i, err)
+			}
+
+			placeholders := make([]string, len(values))
+			for j := range values {
+				if e.provider == "postgresql" || e.provider == "postgres" {
+					placeholders[j] = fmt.Sprintf("$%d", argIndex)
+				} else {
+					placeholders[j] = "?"
+				}
+				args = append(args, values[j])
+				argIndex++
+			}
+			valueParts[i] = fmt.Sprintf("(%s)", strings.Join(placeholders, ", "))
+		}
+
+		parts = append(parts, strings.Join(valueParts, ", "))
+		parts = append(parts, "RETURNING *")
+
+		querySQL := strings.Join(parts, " ")
+		rows, err := e.db.QueryContext(ctx, querySQL, args...)
+		if err != nil {
+			return nil, fmt.Errorf("batch insert failed: %w", err)
+		}
+		defer rows.Close()
+
+		// Scan all results
+		for rows.Next() {
+			record := reflect.New(reflect.TypeOf(data[0]).Elem()).Interface()
+			columns, err := rows.Columns()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get columns: %w", err)
+			}
+			if err := e.scanRowIntoStruct(rows, columns, record); err != nil {
+				return nil, err
+			}
+			results = append(results, record)
+		}
+
+		return results, rows.Err()
+	}
+
+	// For other databases, insert one by one (can be optimized with transactions)
+	for _, record := range data {
+		result, err := e.Create(ctx, table, record)
+		if err != nil {
+			return nil, fmt.Errorf("batch insert failed at record: %w", err)
+		}
+		results = append(results, result)
+	}
+
+	return results, nil
+}
+
+// UpdateMany executes batch UPDATE queries
+func (e *Executor) UpdateMany(ctx context.Context, table string, set map[string]interface{}, where *sqlgen.WhereClause) (int64, error) {
+	query := e.generator.GenerateUpdate(table, set, where)
+
+	result, err := e.db.ExecContext(ctx, query.SQL, query.Args...)
+	if err != nil {
+		return 0, fmt.Errorf("batch update failed: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	return rowsAffected, nil
+}
+
+// DeleteMany executes batch DELETE queries
+func (e *Executor) DeleteMany(ctx context.Context, table string, where *sqlgen.WhereClause) (int64, error) {
+	query := e.generator.GenerateDelete(table, where)
+
+	result, err := e.db.ExecContext(ctx, query.SQL, query.Args...)
+	if err != nil {
+		return 0, fmt.Errorf("batch delete failed: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	return rowsAffected, nil
+}
+
+// quoteIdentifier quotes an identifier based on provider
+func (e *Executor) quoteIdentifier(name string) string {
+	switch e.provider {
+	case "postgresql", "postgres":
+		return fmt.Sprintf(`"%s"`, name)
+	case "mysql":
+		return fmt.Sprintf("`%s`", name)
+	case "sqlite":
+		return fmt.Sprintf(`"%s"`, name)
+	default:
+		return name
+	}
 }
 
 // scanRows scans multiple rows into a slice

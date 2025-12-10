@@ -4,11 +4,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"os/signal"
+	"syscall"
 
 	"github.com/pterm/pterm"
 	"github.com/spf13/cobra"
 
 	"github.com/satishbabariya/prisma-go/cli/internal/ui"
+	"github.com/satishbabariya/prisma-go/cli/internal/watch"
 	"github.com/satishbabariya/prisma-go/generator"
 	psl "github.com/satishbabariya/prisma-go/psl"
 )
@@ -154,8 +157,99 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 }
 
 func runGenerateWatch(schemaPath string, generateInitially bool) error {
-	ui.PrintInfo("Watch mode is not yet implemented")
-	ui.PrintInfo("Use --watch flag will be available in a future version")
+	ui.PrintHeader("Prisma-Go", "Watch Mode")
+	
+	// Check if schema file exists
+	if _, err := os.Stat(schemaPath); os.IsNotExist(err) {
+		return fmt.Errorf("schema file not found: %s", schemaPath)
+	}
+
+	// Generate callback function
+	generateCallback := func() error {
+		ui.PrintInfo("Schema changed, regenerating...")
+		
+		// Read schema
+		content, err := os.ReadFile(schemaPath)
+		if err != nil {
+			return fmt.Errorf("failed to read schema: %w", err)
+		}
+
+		// Parse schema
+		sourceFile := psl.NewSourceFile(schemaPath, string(content))
+		ast, diags := psl.ParseSchemaFromFile(sourceFile)
+
+		if diags.HasErrors() {
+			ui.PrintError("Schema parsing failed:")
+			fmt.Fprintf(os.Stderr, "\n%s\n", diags.ToPrettyString(schemaPath, string(content)))
+			return fmt.Errorf("cannot generate from invalid schema")
+		}
+
+		// Determine output directory from generator config or use default
+		outputDir := "./generated"
+		provider := "postgresql" // Default provider
+
+		// Extract provider from datasource
+		for _, top := range ast.Tops {
+			if datasource := top.AsSource(); datasource != nil {
+				for _, prop := range datasource.Properties {
+					if prop.Name.Name == "provider" {
+						if value, _ := prop.Value.AsStringValue(); value != nil {
+							provider = value.Value
+						}
+					}
+				}
+			}
+			if gen := top.AsGenerator(); gen != nil {
+				for _, prop := range gen.Properties {
+					if prop.Name.Name == "output" {
+						if value, _ := prop.Value.AsStringValue(); value != nil {
+							outputDir = value.Value
+						}
+					}
+				}
+			}
+		}
+
+		// Create generator
+		gen := generator.NewGenerator(ast, provider)
+
+		// Generate client code
+		if err := gen.GenerateClient(outputDir); err != nil {
+			return fmt.Errorf("code generation failed: %w", err)
+		}
+
+		absPath, _ := filepath.Abs(outputDir)
+		ui.PrintSuccess("Generated Prisma Client at %s", absPath)
+		return nil
+	}
+
+	// Generate initially if requested
+	if generateInitially {
+		if err := generateCallback(); err != nil {
+			return err
+		}
+	}
+
+	// Create watcher
+	watcher, err := watch.NewWatcher(schemaPath, generateCallback)
+	if err != nil {
+		return fmt.Errorf("failed to create watcher: %w", err)
+	}
+	defer watcher.Stop()
+
+	// Start watching
+	if err := watcher.Start(); err != nil {
+		return fmt.Errorf("failed to start watcher: %w", err)
+	}
+
+	ui.PrintSuccess("Watching %s for changes... (Press Ctrl+C to stop)", schemaPath)
+
+	// Wait for interrupt signal
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	<-sigChan
+
+	ui.PrintInfo("\nStopping watch mode...")
 	return nil
 }
 

@@ -257,6 +257,124 @@ func (q *QueryBuilder) GetColumns() []string {
 	return q.columns
 }
 
+// AggregateBuilder builds aggregation queries
+type AggregateBuilder struct {
+	table      string
+	aggregates []sqlgen.AggregateFunction
+	where      *sqlgen.WhereClause
+	groupBy    *sqlgen.GroupBy
+	having     *sqlgen.Having
+}
+
+// NewAggregateBuilder creates a new aggregation builder
+func NewAggregateBuilder(table string) *AggregateBuilder {
+	return &AggregateBuilder{
+		table:      table,
+		aggregates: []sqlgen.AggregateFunction{},
+	}
+}
+
+// Count adds a COUNT(*) aggregation
+func (a *AggregateBuilder) Count(alias string) *AggregateBuilder {
+	a.aggregates = append(a.aggregates, sqlgen.AggregateFunction{
+		Function: "COUNT",
+		Field:    "*",
+		Alias:    alias,
+	})
+	return a
+}
+
+// Sum adds a SUM(field) aggregation
+func (a *AggregateBuilder) Sum(field string, alias string) *AggregateBuilder {
+	a.aggregates = append(a.aggregates, sqlgen.AggregateFunction{
+		Function: "SUM",
+		Field:    field,
+		Alias:    alias,
+	})
+	return a
+}
+
+// Avg adds an AVG(field) aggregation
+func (a *AggregateBuilder) Avg(field string, alias string) *AggregateBuilder {
+	a.aggregates = append(a.aggregates, sqlgen.AggregateFunction{
+		Function: "AVG",
+		Field:    field,
+		Alias:    alias,
+	})
+	return a
+}
+
+// Min adds a MIN(field) aggregation
+func (a *AggregateBuilder) Min(field string, alias string) *AggregateBuilder {
+	a.aggregates = append(a.aggregates, sqlgen.AggregateFunction{
+		Function: "MIN",
+		Field:    field,
+		Alias:    alias,
+	})
+	return a
+}
+
+// Max adds a MAX(field) aggregation
+func (a *AggregateBuilder) Max(field string, alias string) *AggregateBuilder {
+	a.aggregates = append(a.aggregates, sqlgen.AggregateFunction{
+		Function: "MAX",
+		Field:    field,
+		Alias:    alias,
+	})
+	return a
+}
+
+// Where sets the WHERE clause
+func (a *AggregateBuilder) Where(where *sqlgen.WhereClause) *AggregateBuilder {
+	a.where = where
+	return a
+}
+
+// GroupBy sets the GROUP BY clause
+func (a *AggregateBuilder) GroupBy(fields ...string) *AggregateBuilder {
+	a.groupBy = &sqlgen.GroupBy{
+		Fields: fields,
+	}
+	return a
+}
+
+// Having sets the HAVING clause
+func (a *AggregateBuilder) Having(conditions []sqlgen.Condition, operator string) *AggregateBuilder {
+	if operator == "" {
+		operator = "AND"
+	}
+	a.having = &sqlgen.Having{
+		Conditions: conditions,
+		Operator:   operator,
+	}
+	return a
+}
+
+// GetTable returns the table name
+func (a *AggregateBuilder) GetTable() string {
+	return a.table
+}
+
+// GetAggregates returns the aggregation functions
+func (a *AggregateBuilder) GetAggregates() []sqlgen.AggregateFunction {
+	return a.aggregates
+}
+
+// GetWhere returns the WHERE clause
+func (a *AggregateBuilder) GetWhere() *sqlgen.WhereClause {
+	return a.where
+}
+
+// GetGroupBy returns the GROUP BY clause
+func (a *AggregateBuilder) GetGroupBy() *sqlgen.GroupBy {
+	return a.groupBy
+}
+
+// GetHaving returns the HAVING clause
+func (a *AggregateBuilder) GetHaving() *sqlgen.Having {
+	return a.having
+}
+
 // GetWhere returns the WHERE clause
 func (q *QueryBuilder) GetWhere() *sqlgen.WhereClause {
 	return q.where
