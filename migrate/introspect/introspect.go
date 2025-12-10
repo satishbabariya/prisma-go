@@ -92,22 +92,4 @@ func NewIntrospector(db *sql.DB, provider string) (Introspector, error) {
 	}
 }
 
-// MySQLIntrospector implements introspection for MySQL
-type MySQLIntrospector struct {
-	db *sql.DB
-}
-
-func (m *MySQLIntrospector) Introspect(ctx context.Context) (*DatabaseSchema, error) {
-	// TODO: Implement MySQL introspection
-	return &DatabaseSchema{}, nil
-}
-
-// SQLiteIntrospector implements introspection for SQLite
-type SQLiteIntrospector struct {
-	db *sql.DB
-}
-
-func (s *SQLiteIntrospector) Introspect(ctx context.Context) (*DatabaseSchema, error) {
-	// TODO: Implement SQLite introspection
-	return &DatabaseSchema{}, nil
-}
+// MySQLIntrospector and SQLiteIntrospector are defined in their respective files
