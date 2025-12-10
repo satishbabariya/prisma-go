@@ -5,8 +5,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	_ "github.com/lib/pq"     // PostgreSQL driver
+
 	_ "github.com/go-sql-driver/mysql" // MySQL driver
+	_ "github.com/lib/pq"              // PostgreSQL driver
 	_ "github.com/mattn/go-sqlite3"    // SQLite driver
 )
 
@@ -28,6 +29,14 @@ func NewPrismaClient(provider string, connectionString string) (*PrismaClient, e
 		return nil, err
 	}
 
+	return &PrismaClient{
+		db:       db,
+		provider: provider,
+	}, nil
+}
+
+// NewPrismaClientFromDB creates a new Prisma client from a database connection
+func NewPrismaClientFromDB(provider string, db *sql.DB) (*PrismaClient, error) {
 	return &PrismaClient{
 		db:       db,
 		provider: provider,
@@ -62,4 +71,3 @@ func (c *PrismaClient) Disconnect(ctx context.Context) error {
 func (c *PrismaClient) DB() *sql.DB {
 	return c.db
 }
-

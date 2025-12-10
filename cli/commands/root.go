@@ -3,90 +3,112 @@ package commands
 import (
 	"fmt"
 	"os"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+
+	"github.com/satishbabariya/prisma-go/cli/internal/ui"
+	"github.com/satishbabariya/prisma-go/cli/internal/version"
 )
 
-// Execute is the main entry point for the CLI
-func Execute() error {
-	if len(os.Args) < 2 {
-		printHelp()
-		return nil
-	}
+var (
+	cfgFile      string
+	verbose      bool
+	noColor      bool
+	skipEnvCheck bool
+)
 
-	command := os.Args[1]
+// rootCmd represents the base command when called without any subcommands
+var rootCmd = &cobra.Command{
+	Use:   "prisma-go",
+	Short: "Prisma-Go - Native Go Prisma ORM & Schema Engine",
+	Long: `Prisma-Go is a native Go implementation of Prisma, providing:
+- Schema management and validation
+- Database migrations
+- Type-safe query builder
+- Code generation
 
-	switch command {
-	case "init":
-		return initCommand(os.Args[2:])
-	case "format", "fmt":
-		return formatCommand(os.Args[2:])
-	case "validate":
-		return validateCommand(os.Args[2:])
-	case "generate":
-		return generateCommand(os.Args[2:])
-	case "migrate":
-		return migrateCommand(os.Args[2:])
-	case "db":
-		return dbCommand(os.Args[2:])
-	case "version", "-v", "--version":
-		fmt.Println("prisma-go version 0.1.0")
-		return nil
-	case "help", "-h", "--help":
-		printHelp()
-		return nil
-	default:
-		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", command)
-		printHelp()
-		os.Exit(1)
-		return nil
-	}
+For more information, visit: https://github.com/satishbabariya/prisma-go`,
+	Version: version.Version,
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		// Initialize UI settings
+		if noColor {
+			// Disable colors
+			os.Setenv("NO_COLOR", "1")
+		}
+	},
+	Run: func(cmd *cobra.Command, args []string) {
+		// Show help if no subcommand
+		if err := cmd.Help(); err != nil {
+			ui.PrintError("Failed to show help: %v", err)
+			os.Exit(1)
+		}
+	},
 }
 
-func printHelp() {
-	help := `
-╔═══════════════════════════════════════════════════════════╗
-║                      PRISMA-GO                            ║
-║          Native Go Prisma ORM & Schema Engine             ║
-╚═══════════════════════════════════════════════════════════╝
+// Execute adds all child commands to the root command and sets flags appropriately.
+func Execute() error {
+	return rootCmd.Execute()
+}
 
-USAGE:
-    prisma-go <command> [options]
+func init() {
+	cobra.OnInitialize(initConfig)
 
-COMMANDS:
-    init             Initialize a new Prisma-Go project
-    format, fmt      Format a Prisma schema file
-    validate         Validate a Prisma schema file
-    generate         Generate Prisma Client for Go
-    migrate          Manage database migrations
-    db               Manage your database schema
-    version          Print version information
-    help             Print this help message
+	// Global flags
+	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.config/prisma-go/.prisma-go.yaml)")
+	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
+	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "disable colored output")
+	rootCmd.PersistentFlags().BoolVar(&skipEnvCheck, "skip-env-check", false, "skip environment variable checks")
 
-MIGRATE COMMANDS:
-    migrate dev      Create and apply migrations in development
-    migrate deploy   Apply pending migrations to production
-    migrate diff     Compare schema to database (use --create-only to generate SQL)
-    migrate apply    Apply a migration SQL file
-    migrate status   Check migration status
-    migrate reset    Reset the database
+	// Bind flags to viper
+	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
+	viper.BindPFlag("no_color", rootCmd.PersistentFlags().Lookup("no-color"))
+	viper.BindPFlag("skip_env_check", rootCmd.PersistentFlags().Lookup("skip-env-check"))
 
-DB COMMANDS:
-    db push          Push schema changes to database
-    db pull          Pull schema from database (introspect)
-    db seed          Seed the database
+	// Add version command
+	versionCmd := &cobra.Command{
+		Use:   "version",
+		Short: "Print version information",
+		Long:  "Print the version number and build information for prisma-go",
+		Run: func(cmd *cobra.Command, args []string) {
+			info := version.Get()
+			if verbose {
+				fmt.Println(info.FullString())
+			} else {
+				fmt.Println(info.String())
+			}
+		},
+	}
 
-OPTIONS:
-    -h, --help       Print help
-    -v, --version    Print version
+	rootCmd.AddCommand(versionCmd)
+}
 
-EXAMPLES:
-    prisma-go init
-    prisma-go format ./schema.prisma
-    prisma-go validate ./schema.prisma
-    prisma-go generate
-    prisma-go migrate dev
-    prisma-go db push
+// initConfig reads in config file and ENV variables if set.
+func initConfig() {
+	if cfgFile != "" {
+		// Use config file from the flag.
+		viper.SetConfigFile(cfgFile)
+	} else {
+		// Search config in home directory with name ".prisma-go" (without extension).
+		home, err := os.UserHomeDir()
+		if err != nil {
+			ui.PrintError("Failed to get home directory: %v", err)
+			os.Exit(1)
+		}
 
-For more information, visit: https://github.com/satishbabariya/prisma-go
-`
-	fmt.Println(help)
+		viper.AddConfigPath(".")
+		viper.AddConfigPath(home)
+		viper.AddConfigPath(fmt.Sprintf("%s/.config/prisma-go", home))
+		viper.SetConfigType("yaml")
+		viper.SetConfigName(".prisma-go")
+	}
+
+	viper.AutomaticEnv() // read in environment variables that match
+
+	// If a config file is found, read it in.
+	if err := viper.ReadInConfig(); err == nil {
+		if verbose {
+			ui.PrintInfo("Using config file: %s", viper.ConfigFileUsed())
+		}
+	}
 }

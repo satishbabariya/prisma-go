@@ -5,16 +5,47 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/spf13/cobra"
+
+	"github.com/satishbabariya/prisma-go/cli/internal/ui"
 	psl "github.com/satishbabariya/prisma-go/psl"
 )
 
-func formatCommand(args []string) error {
-	if len(args) == 0 {
-		// Default to schema.prisma in current directory
-		args = []string{"schema.prisma"}
-	}
+var formatCmd = &cobra.Command{
+	Use:   "format [schema-path]",
+	Short: "Format a Prisma schema file",
+	Long: `Format a Prisma schema file according to Prisma formatting rules.
 
-	schemaPath := args[0]
+This command will:
+- Parse and validate the schema
+- Format it according to Prisma style guide
+- Write the formatted schema back to the file`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: runFormat,
+}
+
+var (
+	formatSchemaPath string
+	formatCheck      bool
+	formatWrite      bool
+)
+
+func init() {
+	formatCmd.Flags().StringVarP(&formatSchemaPath, "schema", "s", "schema.prisma", "Path to schema file")
+	formatCmd.Flags().BoolVarP(&formatCheck, "check", "c", false, "Check if schema is formatted (exit with non-zero if not)")
+	formatCmd.Flags().BoolVarP(&formatWrite, "write", "w", true, "Write formatted schema to file")
+
+	// Aliases
+	formatCmd.Aliases = []string{"fmt"}
+
+	rootCmd.AddCommand(formatCmd)
+}
+
+func runFormat(cmd *cobra.Command, args []string) error {
+	schemaPath := formatSchemaPath
+	if len(args) > 0 {
+		schemaPath = args[0]
+	}
 
 	// Check if file exists
 	if _, err := os.Stat(schemaPath); os.IsNotExist(err) {
@@ -30,8 +61,8 @@ func formatCommand(args []string) error {
 	// Parse and validate first
 	_, diags := psl.ParseSchema(string(content))
 	if diags.HasErrors() {
-		fmt.Fprintf(os.Stderr, "Schema validation failed:\n\n")
-		fmt.Fprintf(os.Stderr, "%s\n", diags.ToPrettyString(schemaPath, string(content)))
+		ui.PrintError("Schema validation failed:")
+		fmt.Fprintf(os.Stderr, "\n%s\n", diags.ToPrettyString(schemaPath, string(content)))
 		return fmt.Errorf("cannot format schema with errors")
 	}
 
@@ -41,13 +72,29 @@ func formatCommand(args []string) error {
 		return fmt.Errorf("failed to format schema: %w", err)
 	}
 
-	// Write back to file
-	if err := os.WriteFile(schemaPath, []byte(formatted), 0644); err != nil {
-		return fmt.Errorf("failed to write formatted schema: %w", err)
+	// Check mode - just verify formatting
+	if formatCheck {
+		if string(content) != formatted {
+			ui.PrintError("Schema is not properly formatted")
+			return fmt.Errorf("schema formatting check failed")
+		}
+		ui.PrintSuccess("Schema is properly formatted")
+		return nil
 	}
 
-	absPath, _ := filepath.Abs(schemaPath)
-	fmt.Printf("✓ Formatted %s\n", absPath)
+	// Write mode - write formatted content back
+	if formatWrite {
+		if err := os.WriteFile(schemaPath, []byte(formatted), 0644); err != nil {
+			return fmt.Errorf("failed to write formatted schema: %w", err)
+		}
+
+		absPath, _ := filepath.Abs(schemaPath)
+		ui.PrintSuccess("Formatted %s", absPath)
+	} else {
+		// Just print formatted content
+		fmt.Print(formatted)
+	}
 
 	return nil
 }
+

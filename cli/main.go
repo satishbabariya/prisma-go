@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
 	_ "github.com/lib/pq"
@@ -13,7 +12,6 @@ import (
 
 func main() {
 	if err := commands.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }

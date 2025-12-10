@@ -1,0 +1,151 @@
+package commands
+
+import (
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/satishbabariya/prisma-go/migrate/introspect"
+	psl "github.com/satishbabariya/prisma-go/psl"
+)
+
+// extractConnectionInfo extracts provider and connection string from schema
+func extractConnectionInfo(schema *psl.SchemaAst) (string, string) {
+	provider := "postgresql"
+	connStr := ""
+
+	for _, top := range schema.Tops {
+		if source := top.AsSource(); source != nil {
+			for _, prop := range source.Properties {
+				if prop.Name.Name == "provider" {
+					if strLit, _ := prop.Value.AsStringValue(); strLit != nil {
+						provider = strLit.Value
+					}
+				}
+				if prop.Name.Name == "url" {
+					// Handle env("DATABASE_URL") function call
+					if fnCall := prop.Value.AsFunction(); fnCall != nil && fnCall.Name.Name == "env" {
+						if len(fnCall.Arguments) > 0 {
+							if strLit, _ := fnCall.Arguments[0].AsStringValue(); strLit != nil {
+								envVar := strLit.Value
+								connStr = os.Getenv(envVar)
+							}
+						}
+					} else if strLit, _ := prop.Value.AsStringValue(); strLit != nil {
+						// Direct string literal
+						connStr = strLit.Value
+					}
+				}
+			}
+		}
+	}
+
+	return provider, connStr
+}
+
+func detectProvider(connStr string) string {
+	if strings.Contains(connStr, "mysql") {
+		return "mysql"
+	} else if strings.Contains(connStr, "sqlite") || strings.Contains(connStr, "file:") {
+		return "sqlite"
+	}
+	return "postgresql"
+}
+
+// normalizeProviderForDriver normalizes provider name for sql.Open
+// PostgreSQL driver uses "postgres", not "postgresql"
+// SQLite driver uses "sqlite3", not "sqlite"
+func normalizeProviderForDriver(provider string) string {
+	switch provider {
+	case "postgresql", "postgres":
+		return "postgres"
+	case "sqlite":
+		return "sqlite3"
+	default:
+		return provider
+	}
+}
+
+func generatePrismaSchemaFromDB(schema *introspect.DatabaseSchema, provider string) string {
+	var result strings.Builder
+
+	// Datasource
+	result.WriteString("datasource db {\n")
+	result.WriteString(fmt.Sprintf("  provider = \"%s\"\n", provider))
+	result.WriteString("  url      = env(\"DATABASE_URL\")\n")
+	result.WriteString("}\n\n")
+
+	// Generator
+	result.WriteString("generator client {\n")
+	result.WriteString("  provider = \"prisma-client-go\"\n")
+	result.WriteString("  output   = \"./generated\"\n")
+	result.WriteString("}\n\n")
+
+	// Models
+	for _, table := range schema.Tables {
+		result.WriteString(fmt.Sprintf("model %s {\n", toPascalCase(table.Name)))
+
+		for _, col := range table.Columns {
+			fieldType := mapDBTypeToPrisma(col.Type)
+			nullable := ""
+			if col.Nullable {
+				nullable = "?"
+			}
+
+			attrs := ""
+			// Check if primary key
+			if table.PrimaryKey != nil && len(table.PrimaryKey.Columns) == 1 && table.PrimaryKey.Columns[0] == col.Name {
+				attrs += " @id"
+				if col.AutoIncrement {
+					attrs += " @default(autoincrement())"
+				}
+			}
+
+			// Check for unique indexes
+			for _, idx := range table.Indexes {
+				if idx.IsUnique && len(idx.Columns) == 1 && idx.Columns[0] == col.Name {
+					attrs += " @unique"
+					break
+				}
+			}
+
+			result.WriteString(fmt.Sprintf("  %s %s%s%s\n", col.Name, fieldType, nullable, attrs))
+		}
+
+		result.WriteString("}\n\n")
+	}
+
+	return result.String()
+}
+
+func mapDBTypeToPrisma(dbType string) string {
+	dbType = strings.ToUpper(dbType)
+	switch {
+	case strings.Contains(dbType, "INT"), strings.Contains(dbType, "SERIAL"):
+		return "Int"
+	case strings.Contains(dbType, "BOOL"):
+		return "Boolean"
+	case strings.Contains(dbType, "VARCHAR"), strings.Contains(dbType, "TEXT"), strings.Contains(dbType, "CHAR"):
+		return "String"
+	case strings.Contains(dbType, "TIMESTAMP"), strings.Contains(dbType, "DATE"):
+		return "DateTime"
+	case strings.Contains(dbType, "DECIMAL"), strings.Contains(dbType, "NUMERIC"), strings.Contains(dbType, "FLOAT"), strings.Contains(dbType, "DOUBLE"), strings.Contains(dbType, "REAL"):
+		return "Float"
+	case strings.Contains(dbType, "JSON"):
+		return "Json"
+	default:
+		return "String"
+	}
+}
+
+func toPascalCase(s string) string {
+	words := strings.Split(s, "_")
+	result := ""
+	for _, word := range words {
+		if len(word) > 0 {
+			result += strings.ToUpper(word[:1]) + word[1:]
+		}
+	}
+	return result
+}
+

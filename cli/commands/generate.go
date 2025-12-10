@@ -5,24 +5,67 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/pterm/pterm"
+	"github.com/spf13/cobra"
+
 	"github.com/satishbabariya/prisma-go/generator"
+	"github.com/satishbabariya/prisma-go/cli/internal/ui"
 	psl "github.com/satishbabariya/prisma-go/psl"
 )
 
-func generateCommand(args []string) error {
-	schemaPath := "schema.prisma"
+var generateCmd = &cobra.Command{
+	Use:   "generate [schema-path]",
+	Short: "Generate Prisma Client for Go",
+	Long: `Generate Prisma Client code from your Prisma schema.
+
+This command will:
+- Parse and validate your schema.prisma file
+- Generate type-safe Go client code
+- Create model structs and query builders`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: runGenerate,
+}
+
+var (
+	generateSchemaPath string
+	generateWatch     bool
+	generateWatchOnly bool
+)
+
+func init() {
+	generateCmd.Flags().StringVarP(&generateSchemaPath, "schema", "s", "schema.prisma", "Path to schema file")
+	generateCmd.Flags().BoolVarP(&generateWatch, "watch", "w", false, "Watch schema file for changes")
+	generateCmd.Flags().BoolVar(&generateWatchOnly, "watch-only", false, "Only watch, don't generate initially")
+
+	rootCmd.AddCommand(generateCmd)
+}
+
+func runGenerate(cmd *cobra.Command, args []string) error {
+	schemaPath := generateSchemaPath
 	if len(args) > 0 {
 		schemaPath = args[0]
 	}
 
+	// Watch mode
+	if generateWatch || generateWatchOnly {
+		return runGenerateWatch(schemaPath, !generateWatchOnly)
+	}
+
+	ui.PrintHeader("Prisma-Go", "Generate Client")
+
+	spinner, _ := ui.PrintSpinner("Generating Prisma Client...")
+	defer spinner.Stop()
+
 	// Check if schema file exists
 	if _, err := os.Stat(schemaPath); os.IsNotExist(err) {
-		return fmt.Errorf("schema file not found: %s (use: prisma-go generate <schema-path>)", schemaPath)
+		spinner.Stop()
+		return fmt.Errorf("schema file not found: %s", schemaPath)
 	}
 
 	// Read schema
 	content, err := os.ReadFile(schemaPath)
 	if err != nil {
+		spinner.Stop()
 		return fmt.Errorf("failed to read schema: %w", err)
 	}
 
@@ -31,8 +74,9 @@ func generateCommand(args []string) error {
 	ast, diags := psl.ParseSchemaFromFile(sourceFile)
 
 	if diags.HasErrors() {
-		fmt.Fprintf(os.Stderr, "Schema parsing failed:\n\n")
-		fmt.Fprintf(os.Stderr, "%s\n", diags.ToPrettyString(schemaPath, string(content)))
+		spinner.Stop()
+		ui.PrintError("Schema parsing failed:")
+		fmt.Fprintf(os.Stderr, "\n%s\n", diags.ToPrettyString(schemaPath, string(content)))
 		return fmt.Errorf("cannot generate from invalid schema")
 	}
 
@@ -62,29 +106,65 @@ func generateCommand(args []string) error {
 		}
 	}
 
-	fmt.Printf("🚀 Generating Prisma Client Go...\n\n")
-	fmt.Printf("Schema: %s\n", schemaPath)
-	fmt.Printf("Output: %s\n", outputDir)
-	fmt.Printf("Provider: %s\n\n", provider)
+	spinner.UpdateText("Parsing schema...")
+	spinner.Stop()
+
+	// Show generation info
+	info := pterm.Info.WithPrefix(pterm.Prefix{
+		Text:  "INFO",
+		Style: pterm.NewStyle(pterm.FgBlue),
+	})
+
+	info.Println(fmt.Sprintf("Schema: %s", schemaPath))
+	info.Println(fmt.Sprintf("Output: %s", outputDir))
+	info.Println(fmt.Sprintf("Provider: %s", provider))
+	fmt.Println()
 
 	// Create generator
+	spinner, _ = ui.PrintSpinner("Generating code...")
 	gen := generator.NewGenerator(ast, provider)
 
 	// Generate client code
 	if err := gen.GenerateClient(outputDir); err != nil {
+		spinner.Stop()
 		return fmt.Errorf("code generation failed: %w", err)
 	}
 
-	absPath, _ := filepath.Abs(outputDir)
-	fmt.Printf("✓ Generated Prisma Client at %s\n\n", absPath)
-	fmt.Println("Files generated:")
-	fmt.Println("  • models.go  - Model structs")
-	fmt.Println("  • client.go  - Prisma client")
+	spinner.Stop()
 
-	fmt.Println("\n💡 Next steps:")
-	fmt.Println("  1. Import the generated package in your code")
-	fmt.Println("  2. Create a client: client, _ := generated.NewPrismaClient(\"connection-string\")")
-	fmt.Println("  3. Use the client: users, _ := client.User.FindMany(ctx)")
+	absPath, _ := filepath.Abs(outputDir)
+	ui.PrintSuccess("Generated Prisma Client at %s", absPath)
+	fmt.Println()
+
+	// Show generated files
+	ui.PrintSection("Generated Files")
+	files := []string{
+		"models.go  - Model structs",
+		"client.go  - Prisma client",
+	}
+	ui.PrintList(files)
+
+	fmt.Println()
+	ui.PrintSection("Next Steps")
+	nextSteps := []string{
+		"Import the generated package in your code",
+		"Create a client: client, _ := generated.NewPrismaClient(\"connection-string\")",
+		"Use the client: users, _ := client.User.FindMany(ctx)",
+	}
+	ui.PrintList(nextSteps)
 
 	return nil
 }
+
+func runGenerateWatch(schemaPath string, generateInitially bool) error {
+	ui.PrintInfo("Watch mode is not yet implemented")
+	ui.PrintInfo("Use --watch flag will be available in a future version")
+	return nil
+}
+
+// generateCommand is a helper function for backward compatibility
+// It can be called from other commands that need to trigger generation
+func generateCommand(args []string) error {
+	return runGenerate(nil, args)
+}
+

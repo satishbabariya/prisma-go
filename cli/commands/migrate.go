@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spf13/cobra"
+
 	_ "github.com/lib/pq"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/mattn/go-sqlite3"
@@ -20,6 +22,142 @@ import (
 	"github.com/satishbabariya/prisma-go/migrate/sqlgen"
 	psl "github.com/satishbabariya/prisma-go/psl"
 )
+
+var migrateCmd = &cobra.Command{
+	Use:   "migrate",
+	Short: "Manage database migrations",
+	Long: `Manage database migrations for your Prisma schema.
+
+This command provides subcommands for:
+- Creating and applying migrations in development
+- Deploying migrations to production
+- Comparing schema differences
+- Checking migration status`,
+}
+
+var (
+	migrateDevCmd    *cobra.Command
+	migrateDeployCmd *cobra.Command
+	migrateDiffCmd   *cobra.Command
+	migrateApplyCmd  *cobra.Command
+	migrateStatusCmd *cobra.Command
+	migrateResetCmd  *cobra.Command
+)
+
+func init() {
+	initMigrateCommands()
+	initMigrateFlags()
+
+	// Add migrate subcommands
+	migrateCmd.AddCommand(migrateDevCmd)
+	migrateCmd.AddCommand(migrateDeployCmd)
+	migrateCmd.AddCommand(migrateDiffCmd)
+	migrateCmd.AddCommand(migrateApplyCmd)
+	migrateCmd.AddCommand(migrateStatusCmd)
+	migrateCmd.AddCommand(migrateResetCmd)
+
+	rootCmd.AddCommand(migrateCmd)
+}
+
+func initMigrateCommands() {
+	migrateDevCmd = &cobra.Command{
+		Use:   "dev [schema-path]",
+		Short: "Create and apply migrations in development",
+		Long:  "Create a new migration and optionally apply it to your development database",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			schemaPath := "schema.prisma"
+			if len(args) > 0 {
+				schemaPath = args[0]
+			}
+			migrationName, _ := cmd.Flags().GetString("name")
+			autoApply, _ := cmd.Flags().GetBool("apply")
+			argsList := []string{schemaPath}
+			if migrationName != "" {
+				argsList = append(argsList, "--name", migrationName)
+			}
+			if autoApply {
+				argsList = append(argsList, "--apply")
+			}
+			return migrateDevCommand(argsList)
+		},
+	}
+
+	migrateDeployCmd = &cobra.Command{
+		Use:   "deploy",
+		Short: "Apply pending migrations to production",
+		Long:  "Apply all pending migrations to your production database",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return migrateDeployCommand([]string{})
+		},
+	}
+
+	migrateDiffCmd = &cobra.Command{
+		Use:   "diff [schema-path]",
+		Short: "Compare schema to database",
+		Long:  "Compare your Prisma schema to the current database state",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			schemaPath := "schema.prisma"
+			if len(args) > 0 {
+				schemaPath = args[0]
+			}
+			createOnly, _ := cmd.Flags().GetBool("create-only")
+			migrationName, _ := cmd.Flags().GetString("name")
+			argsList := []string{schemaPath}
+			if createOnly {
+				argsList = append(argsList, "--create-only")
+			}
+			if migrationName != "" {
+				argsList = append(argsList, "--name", migrationName)
+			}
+			return migrateDiffCommand(argsList)
+		},
+	}
+
+	migrateApplyCmd = &cobra.Command{
+		Use:   "apply [migration-file]",
+		Short: "Apply a migration SQL file",
+		Long:  "Apply a specific migration SQL file to your database",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			migrationName, _ := cmd.Flags().GetString("name")
+			argsList := args
+			if migrationName != "" {
+				argsList = append(argsList, "--name", migrationName)
+			}
+			return migrateApplyCommand(argsList)
+		},
+	}
+
+	migrateStatusCmd = &cobra.Command{
+		Use:   "status",
+		Short: "Check migration status",
+		Long:  "Check the status of applied migrations",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return migrateStatusCommand([]string{})
+		},
+	}
+
+	migrateResetCmd = &cobra.Command{
+		Use:   "reset",
+		Short: "Reset the database",
+		Long:  "Reset the database (WARNING: This will delete all data)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return migrateResetCommand([]string{})
+		},
+	}
+}
+
+func initMigrateFlags() {
+	migrateDevCmd.Flags().StringP("name", "n", "", "Migration name")
+	migrateDevCmd.Flags().Bool("apply", false, "Automatically apply migration after creation")
+
+	migrateDiffCmd.Flags().Bool("create-only", false, "Only create migration file, don't apply")
+	migrateDiffCmd.Flags().StringP("name", "n", "", "Migration name")
+
+	migrateApplyCmd.Flags().StringP("name", "n", "", "Migration name")
+}
 
 func migrateCommand(args []string) error {
 	if len(args) == 0 {
@@ -255,7 +393,7 @@ func migrateDevCommand(args []string) error {
 	
 	// Step 5: Regenerate client
 	fmt.Println("\n🔄 Step 5: Regenerating client...")
-	if err := generateCommand([]string{schemaPath}); err != nil {
+	if err := runGenerate(nil, []string{schemaPath}); err != nil {
 		fmt.Fprintf(os.Stderr, "⚠️  Failed to regenerate client: %v\n", err)
 		// Don't fail the whole command if client generation fails
 	} else {

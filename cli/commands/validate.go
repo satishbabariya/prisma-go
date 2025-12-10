@@ -5,16 +5,43 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/spf13/cobra"
+
+	"github.com/satishbabariya/prisma-go/cli/internal/ui"
 	psl "github.com/satishbabariya/prisma-go/psl"
 )
 
-func validateCommand(args []string) error {
-	if len(args) == 0 {
-		// Default to schema.prisma in current directory
-		args = []string{"schema.prisma"}
+var validateCmd = &cobra.Command{
+	Use:   "validate [schema-path]",
+	Short: "Validate a Prisma schema file",
+	Long: `Validate a Prisma schema file for syntax and semantic errors.
+
+This command will:
+- Parse the schema file
+- Check for syntax errors
+- Check for semantic errors
+- Display validation results`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: runValidate,
+}
+
+var (
+	validateSchemaPath string
+)
+
+func init() {
+	validateCmd.Flags().StringVarP(&validateSchemaPath, "schema", "s", "schema.prisma", "Path to schema file")
+
+	rootCmd.AddCommand(validateCmd)
+}
+
+func runValidate(cmd *cobra.Command, args []string) error {
+	schemaPath := validateSchemaPath
+	if len(args) > 0 {
+		schemaPath = args[0]
 	}
 
-	schemaPath := args[0]
+	ui.PrintHeader("Prisma-Go", "Validate Schema")
 
 	// Check if file exists
 	if _, err := os.Stat(schemaPath); os.IsNotExist(err) {
@@ -33,19 +60,19 @@ func validateCommand(args []string) error {
 
 	// Check for parsing errors
 	if diags.HasErrors() {
-		fmt.Fprintf(os.Stderr, "Schema parsing failed:\n\n")
-		fmt.Fprintf(os.Stderr, "%s\n", diags.ToPrettyString(schemaPath, string(content)))
+		ui.PrintError("Schema parsing failed:")
+		fmt.Fprintf(os.Stderr, "\n%s\n", diags.ToPrettyString(schemaPath, string(content)))
 		return fmt.Errorf("schema has parsing errors")
 	}
 
 	// Check for warnings
 	if len(diags.Warnings()) > 0 {
-		fmt.Fprintf(os.Stderr, "Schema parsed with warnings:\n\n")
-		fmt.Fprintf(os.Stderr, "%s\n", diags.WarningsToPrettyString(schemaPath, string(content)))
+		ui.PrintWarning("Schema parsed with warnings:")
+		fmt.Fprintf(os.Stderr, "\n%s\n", diags.WarningsToPrettyString(schemaPath, string(content)))
 	}
 
 	absPath, _ := filepath.Abs(schemaPath)
-	fmt.Printf("✓ Schema is valid: %s\n", absPath)
+	ui.PrintSuccess("Schema is valid: %s", absPath)
 
 	// Count models, enums, datasources, generators
 	modelCount := 0
@@ -66,21 +93,27 @@ func validateCommand(args []string) error {
 	}
 
 	// Print summary
-	fmt.Println("\nSchema Summary:")
-	fmt.Printf("  • %d datasource(s)\n", datasourceCount)
-	fmt.Printf("  • %d generator(s)\n", generatorCount)
-	fmt.Printf("  • %d model(s)\n", modelCount)
-	fmt.Printf("  • %d enum(s)\n", enumCount)
+	fmt.Println()
+	ui.PrintSection("Schema Summary")
+	summary := []string{
+		fmt.Sprintf("%d datasource(s)", datasourceCount),
+		fmt.Sprintf("%d generator(s)", generatorCount),
+		fmt.Sprintf("%d model(s)", modelCount),
+		fmt.Sprintf("%d enum(s)", enumCount),
+	}
+	ui.PrintList(summary)
 
 	// List models with field counts
 	if modelCount > 0 {
-		fmt.Println("\nModels:")
+		fmt.Println()
+		ui.PrintSection("Models")
 		for _, top := range ast.Tops {
 			if model := top.AsModel(); model != nil {
-				fmt.Printf("  • %s (%d fields)\n", model.Name.Name, len(model.Fields))
+				ui.PrintInfo("%s (%d fields)", model.Name.Name, len(model.Fields))
 			}
 		}
 	}
 
 	return nil
 }
+
