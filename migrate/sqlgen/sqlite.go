@@ -27,7 +27,19 @@ func (g *SQLiteMigrationGenerator) GenerateMigrationSQL(diffResult *diff.DiffRes
 
 	// 1. Create tables
 	for _, change := range diffResult.TablesToCreate {
-		createSQL, err := g.generateCreateTable(change.Name, dbSchema)
+		// Find table in target schema (dbSchema is the target schema)
+		var targetTable *introspect.Table
+		for i := range dbSchema.Tables {
+			if dbSchema.Tables[i].Name == change.Name {
+				targetTable = &dbSchema.Tables[i]
+				break
+			}
+		}
+		if targetTable == nil {
+			return "", fmt.Errorf("table %s not found in target schema", change.Name)
+		}
+		
+		createSQL, err := g.generateCreateTableFromTable(targetTable)
 		if err != nil {
 			return "", fmt.Errorf("failed to generate CREATE TABLE for %s: %w", change.Name, err)
 		}
@@ -53,22 +65,10 @@ func (g *SQLiteMigrationGenerator) GenerateMigrationSQL(diffResult *diff.DiffRes
 	return sql.String(), nil
 }
 
-// generateCreateTable generates CREATE TABLE SQL for SQLite
-func (g *SQLiteMigrationGenerator) generateCreateTable(tableName string, dbSchema *introspect.DatabaseSchema) (string, error) {
-	var table *introspect.Table
-	for _, t := range dbSchema.Tables {
-		if t.Name == tableName {
-			table = &t
-			break
-		}
-	}
-
-	if table == nil {
-		return "", fmt.Errorf("table %s not found in schema", tableName)
-	}
-
+// generateCreateTableFromTable generates CREATE TABLE SQL for SQLite from a table definition
+func (g *SQLiteMigrationGenerator) generateCreateTableFromTable(table *introspect.Table) (string, error) {
 	var sql strings.Builder
-	sql.WriteString(fmt.Sprintf("CREATE TABLE \"%s\" (\n", tableName))
+	sql.WriteString(fmt.Sprintf("CREATE TABLE \"%s\" (\n", table.Name))
 
 	// Columns
 	columnDefs := []string{}
@@ -98,7 +98,7 @@ func (g *SQLiteMigrationGenerator) generateCreateTable(tableName string, dbSchem
 	// Indexes (separate statements)
 	for _, idx := range table.Indexes {
 		sql.WriteString("\n")
-		sql.WriteString(g.generateCreateIndex(tableName, idx))
+		sql.WriteString(g.generateCreateIndex(table.Name, idx))
 	}
 
 	return sql.String(), nil

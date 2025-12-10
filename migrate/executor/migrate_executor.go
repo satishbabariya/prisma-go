@@ -66,6 +66,11 @@ func (e *MigrationExecutor) ExecuteMigration(ctx context.Context, migrationSQL s
 
 // ExecuteMigrationStatements executes multiple SQL statements
 func (e *MigrationExecutor) ExecuteMigrationStatements(ctx context.Context, statements []string, migrationName string) error {
+	// Ensure migration table exists before starting transaction
+	if err := e.EnsureMigrationTable(ctx); err != nil {
+		return fmt.Errorf("failed to ensure migration table exists: %w", err)
+	}
+
 	tx, err := e.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)

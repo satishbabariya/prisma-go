@@ -28,7 +28,19 @@ func (g *PostgresMigrationGenerator) GenerateMigrationSQL(diffResult *diff.DiffR
 	
 	// 1. Create tables
 	for _, change := range diffResult.TablesToCreate {
-		createSQL, err := g.generateCreateTable(change.Name, dbSchema)
+		// Find table in target schema (dbSchema is the target schema)
+		var targetTable *introspect.Table
+		for i := range dbSchema.Tables {
+			if dbSchema.Tables[i].Name == change.Name {
+				targetTable = &dbSchema.Tables[i]
+				break
+			}
+		}
+		if targetTable == nil {
+			return "", fmt.Errorf("table %s not found in target schema", change.Name)
+		}
+		
+		createSQL, err := g.generateCreateTableFromTable(targetTable)
 		if err != nil {
 			return "", fmt.Errorf("failed to generate CREATE TABLE for %s: %w", change.Name, err)
 		}
@@ -54,23 +66,10 @@ func (g *PostgresMigrationGenerator) GenerateMigrationSQL(diffResult *diff.DiffR
 	return sql.String(), nil
 }
 
-// generateCreateTable generates CREATE TABLE SQL
-func (g *PostgresMigrationGenerator) generateCreateTable(tableName string, dbSchema *introspect.DatabaseSchema) (string, error) {
-	// Find table in schema
-	var table *introspect.Table
-	for _, t := range dbSchema.Tables {
-		if t.Name == tableName {
-			table = &t
-			break
-		}
-	}
-
-	if table == nil {
-		return "", fmt.Errorf("table %s not found in schema", tableName)
-	}
-
+// generateCreateTableFromTable generates CREATE TABLE SQL from a table definition
+func (g *PostgresMigrationGenerator) generateCreateTableFromTable(table *introspect.Table) (string, error) {
 	var sql strings.Builder
-	sql.WriteString(fmt.Sprintf("CREATE TABLE \"%s\" (\n", tableName))
+	sql.WriteString(fmt.Sprintf("CREATE TABLE \"%s\" (\n", table.Name))
 
 	// Columns
 	columnDefs := []string{}
@@ -94,13 +93,13 @@ func (g *PostgresMigrationGenerator) generateCreateTable(tableName string, dbSch
 	// Indexes
 	for _, idx := range table.Indexes {
 		sql.WriteString("\n")
-		sql.WriteString(g.generateCreateIndex(tableName, idx))
+		sql.WriteString(g.generateCreateIndex(table.Name, idx))
 	}
 
 	// Foreign keys
 	for _, fk := range table.ForeignKeys {
 		sql.WriteString("\n")
-		sql.WriteString(g.generateAddForeignKey(tableName, fk))
+		sql.WriteString(g.generateAddForeignKey(table.Name, fk))
 	}
 
 	return sql.String(), nil

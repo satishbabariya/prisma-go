@@ -121,7 +121,3 @@ func buildJoinsForRelation(
 	
 	return joins
 }
-
-// toPascalCaseFromSnake converts snake_case to PascalCase
-// (using exported version to avoid duplication)
-

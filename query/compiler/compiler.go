@@ -22,7 +22,11 @@ func NewCompiler(provider string) *Compiler {
 func (c *Compiler) Compile(node ast.QueryNode) (string, []interface{}, error) {
 	switch node.Type() {
 	case ast.NodeTypeFindMany:
-		return c.compileFindMany(node.(*ast.FindManyQuery))
+		query, ok := node.(*ast.FindManyQuery)
+		if !ok {
+			return "", nil, ErrInvalidQuery
+		}
+		return c.compileFindMany(query)
 	default:
 		return "", nil, ErrUnsupportedQuery
 	}

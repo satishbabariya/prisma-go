@@ -115,7 +115,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Create .env.example file
+	// Create .env.example file and optionally .env file
 	if !initSkipEnv {
 		ui.PrintStep(3, 5, "Creating .env.example file")
 		envExamplePath := filepath.Join(projectName, ".env.example")
@@ -128,6 +128,23 @@ func runInit(cmd *cobra.Command, args []string) error {
 			}
 		} else {
 			ui.PrintInfo(".env.example already exists, skipping...")
+		}
+
+		// If database URL was provided, create .env file with it
+		if initDatabaseURL != "" {
+			envPath := filepath.Join(projectName, ".env")
+			if exists, _ := afero.Exists(fs, envPath); !exists {
+				envContent := fmt.Sprintf(`# Database connection string
+DATABASE_URL="%s"
+`, initDatabaseURL)
+				if err := afero.WriteFile(fs, envPath, []byte(envContent), 0644); err != nil {
+					ui.PrintWarning("Failed to create .env file: %v", err)
+				} else {
+					ui.PrintSuccess("Created .env file with provided DATABASE_URL")
+				}
+			} else {
+				ui.PrintInfo(".env already exists, skipping...")
+			}
 		}
 	}
 

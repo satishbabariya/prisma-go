@@ -107,7 +107,9 @@ func PrintStep(step int, total int, message string) {
 func PrintTable(headers []string, rows [][]string) {
 	tableData := pterm.TableData{headers}
 	tableData = append(tableData, rows...)
-	pterm.DefaultTable.WithHasHeader().WithData(tableData).Render()
+	if err := pterm.DefaultTable.WithHasHeader().WithData(tableData).Render(); err != nil {
+		PrintError("failed to render table: %v", err)
+	}
 }
 
 // PrintList prints a bulleted list
@@ -167,8 +169,10 @@ func PrintProgressBar(total int) *pterm.ProgressbarPrinter {
 
 // PrintSpinner creates a spinner and returns it
 func PrintSpinner(message string) (*pterm.SpinnerPrinter, error) {
-	spinner := pterm.DefaultSpinner.WithText(message)
-	spinner.Start()
+	spinner, err := pterm.DefaultSpinner.WithText(message).Start()
+	if err != nil {
+		return nil, err
+	}
 	return spinner, nil
 }
 

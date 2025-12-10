@@ -9,6 +9,10 @@ import (
 )
 
 // CheckForUpdates checks if a newer version is available
+// NOTE: This is currently a placeholder/no-op implementation.
+// The latest version is hard-coded to "0.1.0", so it will never report
+// an update once the build version exceeds this. Before exposing this
+// in production, implement real version discovery (e.g., GitHub releases API).
 func CheckForUpdates(currentVersion string) error {
 	// This is a placeholder for update checking
 	// In a real implementation, you would:

@@ -28,12 +28,8 @@ func buildWhereRecursive(where *WhereClause, argIndex *int, placeholder func(int
 	for _, group := range where.Groups {
 		groupSQL, groupArgs := buildWhereRecursive(group, argIndex, placeholder, quoter)
 		if groupSQL != "" {
-			// Wrap in parentheses for precedence
-			if group.IsNot {
-				parts = append(parts, fmt.Sprintf("NOT (%s)", groupSQL))
-			} else {
-				parts = append(parts, fmt.Sprintf("(%s)", groupSQL))
-			}
+			// Wrap in parentheses for precedence (NOT is already handled inside buildWhereRecursive)
+			parts = append(parts, fmt.Sprintf("(%s)", groupSQL))
 			args = append(args, groupArgs...)
 		}
 	}

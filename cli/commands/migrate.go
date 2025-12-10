@@ -920,23 +920,32 @@ func migrateResolveCommand(args []string) error {
 		return err
 	}
 	
-	// Check if migration is already applied
-	for _, m := range applied {
-		if m.Name == migrationName {
-			if action == "applied" {
-				fmt.Printf("✅ Migration '%s' is already marked as applied\n", migrationName)
+		// Check if migration is already applied
+		for _, m := range applied {
+			if m.Name == migrationName {
+				if action == "applied" {
+					fmt.Printf("✅ Migration '%s' is already marked as applied\n", migrationName)
+					return nil
+				}
+				// Mark as rolled-back (remove from history)
+				var deleteSQL string
+				switch provider {
+				case "postgresql", "postgres":
+					deleteSQL = "DELETE FROM _prisma_migrations WHERE migration_name = $1"
+				case "mysql", "sqlite":
+					deleteSQL = "DELETE FROM _prisma_migrations WHERE migration_name = ?"
+				default:
+					return fmt.Errorf("unsupported provider: %s", provider)
+				}
+				_, err = db.ExecContext(ctx, deleteSQL, migrationName)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "❌ Failed to mark migration as rolled-back: %v\n", err)
+					return err
+				}
+				fmt.Printf("✅ Migration '%s' marked as rolled-back\n", migrationName)
 				return nil
 			}
-			// Mark as rolled-back (remove from history)
-			_, err = db.ExecContext(ctx, "DELETE FROM _prisma_migrations WHERE migration_name = $1", migrationName)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "❌ Failed to mark migration as rolled-back: %v\n", err)
-				return err
-			}
-			fmt.Printf("✅ Migration '%s' marked as rolled-back\n", migrationName)
-			return nil
 		}
-	}
 	
 	// Migration not found - mark as applied
 	if action == "applied" {

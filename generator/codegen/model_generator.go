@@ -330,8 +330,17 @@ func toPascalCase(s string) string {
 	if s == "" {
 		return ""
 	}
-	// Simple implementation - capitalize first letter
-	return strings.ToUpper(s[:1]) + s[1:]
+	words := strings.Split(s, "_")
+	var result strings.Builder
+	for _, word := range words {
+		if len(word) > 0 {
+			result.WriteString(strings.ToUpper(word[:1]))
+			if len(word) > 1 {
+				result.WriteString(strings.ToLower(word[1:]))
+			}
+		}
+	}
+	return result.String()
 }
 
 func toSnakeCase(s string) string {

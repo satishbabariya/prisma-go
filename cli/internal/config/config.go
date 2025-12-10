@@ -40,6 +40,9 @@ func LoadConfig() (*Config, error) {
 	viper.SetEnvPrefix("PRISMA_GO")
 	viper.AutomaticEnv()
 
+	// Bind DATABASE_URL explicitly (without prefix) for consistency
+	viper.BindEnv("database_url", "DATABASE_URL")
+
 	// Set defaults
 	viper.SetDefault("schema_path", "schema.prisma")
 	viper.SetDefault("output_path", "./generated")
@@ -48,24 +51,30 @@ func LoadConfig() (*Config, error) {
 	// Try to read config file (ignore if not found)
 	_ = viper.ReadInConfig()
 
-	// Load .env file if it exists
-	if _, err := AppFs.Stat(".env"); err == nil {
-		if err := godotenv.Load(); err != nil {
-			// Don't fail if .env can't be loaded
+	// Load .env file if it exists (using afero for filesystem abstraction)
+	if data, err := afero.ReadFile(AppFs, ".env"); err == nil {
+		envMap, err := godotenv.Unmarshal(string(data))
+		if err == nil {
+			for k, v := range envMap {
+				os.Setenv(k, v)
+			}
 		}
 	}
 
 	// Load .env.local if it exists (higher priority)
-	if _, err := AppFs.Stat(".env.local"); err == nil {
-		if err := godotenv.Overload(".env.local"); err != nil {
-			// Don't fail if .env.local can't be loaded
+	if data, err := afero.ReadFile(AppFs, ".env.local"); err == nil {
+		envMap, err := godotenv.Unmarshal(string(data))
+		if err == nil {
+			for k, v := range envMap {
+				os.Setenv(k, v)
+			}
 		}
 	}
 
 	cfg := &Config{
 		SchemaPath:   viper.GetString("schema_path"),
 		OutputPath:   viper.GetString("output_path"),
-		DatabaseURL:  os.Getenv("DATABASE_URL"),
+		DatabaseURL:  viper.GetString("database_url"),
 		Provider:     viper.GetString("provider"),
 		SkipEnvCheck: viper.GetBool("skip_env_check"),
 	}
