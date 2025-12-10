@@ -149,14 +149,39 @@ func (p *Parser) parseModel() Top {
 	attributes := []Attribute{}
 
 	for !p.check(lexer.TokenRBrace) && !p.isAtEnd() {
-		if p.check(lexer.TokenAt) {
-			if attr := p.parseAttribute(); attr != nil {
+		// Skip comments
+		for p.check(lexer.TokenComment) {
+			p.advance()
+		}
+		
+		if p.check(lexer.TokenRBrace) {
+			break
+		}
+		
+		// Check for model-level attributes (@@)
+		if p.check(lexer.TokenAt) && p.peek().Type == lexer.TokenAt {
+			// This is a model-level attribute (e.g., @@id, @@index)
+			// Consume both @ tokens - we've already verified the next token is also @
+			firstAt := p.advance() // consume first @
+			secondAt := p.advance() // consume second @
+			_ = firstAt
+			_ = secondAt
+			// Skip any comments/whitespace (handled by lexer, but check for comments)
+			for p.check(lexer.TokenComment) {
+				p.advance()
+			}
+			// Now parse as a regular attribute (but it's model-level)
+			// After consuming both @ tokens, the next token should be the attribute name
+			if attr := p.parseAttributeAfterAt(); attr != nil {
 				attributes = append(attributes, *attr)
 			} else {
 				// If parsing failed, advance to avoid infinite loop
-				p.advance()
+				if !p.isAtEnd() && !p.check(lexer.TokenRBrace) {
+					p.advance()
+				}
 			}
 		} else if field := p.parseField(); field != nil {
+			// Try to parse as a field (field-level @ attributes are handled in parseField)
 			fields = append(fields, *field)
 		} else {
 			// If parsing failed, advance to avoid infinite loop
@@ -207,12 +232,22 @@ func (p *Parser) parseCompositeType() Top {
 	attributes := []Attribute{}
 
 	for !p.check(lexer.TokenRBrace) && !p.isAtEnd() {
-		if p.check(lexer.TokenAt) {
-			if attr := p.parseAttribute(); attr != nil {
+		// Check for composite type-level attributes (@@)
+		if p.check(lexer.TokenAt) && p.peek().Type == lexer.TokenAt {
+			// This is a composite type-level attribute
+			// Consume both @ tokens
+			p.advance() // consume first @
+			p.advance() // consume second @
+			// Now parse as a regular attribute
+			if attr := p.parseAttributeAfterAt(); attr != nil {
 				attributes = append(attributes, *attr)
 			}
 		} else if field := p.parseField(); field != nil {
+			// Try to parse as a field (field-level @ attributes are handled in parseField)
 			fields = append(fields, *field)
+		} else {
+			// If parsing failed, advance to avoid infinite loop
+			p.advance()
 		}
 	}
 
@@ -231,9 +266,12 @@ func (p *Parser) parseField() *Field {
 	fieldType, arity := p.parseFieldType()
 
 	attributes := []Attribute{}
-	for p.check(lexer.TokenAt) {
+	// Parse field-level attributes (@), but stop if we see model-level attributes (@@)
+	for p.check(lexer.TokenAt) && p.peek().Type != lexer.TokenAt {
 		if attr := p.parseAttribute(); attr != nil {
 			attributes = append(attributes, *attr)
+		} else {
+			break
 		}
 	}
 
@@ -309,6 +347,22 @@ func (p *Parser) parseEnumValue() *EnumValue {
 
 func (p *Parser) parseAttribute() *Attribute {
 	p.expect(lexer.TokenAt)
+	return p.parseAttributeAfterAt()
+}
+
+// parseAttributeAfterAt parses an attribute after the @ token has been consumed.
+// This is used for both field-level (@attr) and model-level (@@attr) attributes.
+func (p *Parser) parseAttributeAfterAt() *Attribute {
+	// Skip comments before identifier
+	for p.check(lexer.TokenComment) {
+		p.advance()
+	}
+	
+	if !p.check(lexer.TokenIdentifier) {
+		currentToken := p.current()
+		p.error(fmt.Sprintf("Expected attribute name after '@', but got token type %d (%s)", currentToken.Type, currentToken.Value))
+		return nil
+	}
 	name := p.expect(lexer.TokenIdentifier)
 
 	argsList := ArgumentsList{
