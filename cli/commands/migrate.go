@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -39,6 +40,8 @@ func migrateCommand(args []string) error {
 		return migrateApplyCommand(args[1:])
 	case "status":
 		return migrateStatusCommand(args[1:])
+	case "resolve":
+		return migrateResolveCommand(args[1:])
 	case "reset":
 		return migrateResetCommand(args[1:])
 	default:
@@ -60,6 +63,7 @@ SUBCOMMANDS:
     diff       Compare schema to database
     apply      Apply a migration SQL file
     status     Check migration status
+    resolve    Resolve migration conflicts
     reset      Reset the database
 
 EXAMPLES:
@@ -277,11 +281,106 @@ func migrateDeployCommand(args []string) error {
 		return err
 	}
 	
+	// Build map of applied migration names
+	appliedMap := make(map[string]bool)
+	for _, m := range applied {
+		appliedMap[m.Name] = true
+	}
+	
 	fmt.Printf("✓ Found %d applied migrations\n", len(applied))
 	
-	fmt.Println("\n✅ Deploy ready!")
-	fmt.Println("\n💡 To deploy a migration:")
-	fmt.Println("  prisma-go migrate apply <migration.sql>")
+	// Scan migrations directory for pending migrations
+	migrationsDir := "migrations"
+	entries, err := os.ReadDir(migrationsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			fmt.Println("\n✅ No migrations directory found - nothing to deploy")
+			return nil
+		}
+		fmt.Fprintf(os.Stderr, "❌ Failed to read migrations directory: %v\n", err)
+		return err
+	}
+	
+	var pendingMigrations []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		
+		migrationName := entry.Name()
+		if appliedMap[migrationName] {
+			continue // Already applied
+		}
+		
+		// Check if migration.sql exists
+		sqlPath := filepath.Join(migrationsDir, migrationName, "migration.sql")
+		if _, err := os.Stat(sqlPath); err == nil {
+			pendingMigrations = append(pendingMigrations, sqlPath)
+		}
+	}
+	
+	if len(pendingMigrations) == 0 {
+		fmt.Println("\n✅ No pending migrations found - database is up to date!")
+		return nil
+	}
+	
+	fmt.Printf("\n📋 Found %d pending migration(s):\n", len(pendingMigrations))
+	for _, path := range pendingMigrations {
+		migrationName := filepath.Base(filepath.Dir(path))
+		fmt.Printf("  • %s\n", migrationName)
+	}
+	
+	fmt.Print("\n❓ Apply these migrations? (y/N): ")
+	var confirmation string
+	fmt.Scanln(&confirmation)
+	
+	confirmation = strings.TrimSpace(strings.ToLower(confirmation))
+	if confirmation != "y" && confirmation != "yes" {
+		fmt.Println("✋ Aborted. No migrations applied.")
+		return nil
+	}
+	
+	// Apply pending migrations
+	fmt.Println("\n🚀 Applying pending migrations...")
+	successCount := 0
+	failCount := 0
+	
+	for _, sqlPath := range pendingMigrations {
+		migrationName := filepath.Base(filepath.Dir(sqlPath))
+		fmt.Printf("\n📝 Applying: %s\n", migrationName)
+		
+		// Read SQL file
+		sqlContent, err := os.ReadFile(sqlPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  ❌ Failed to read migration file: %v\n", err)
+			failCount++
+			continue
+		}
+		
+		// Apply migration
+		err = migrationExecutor.ExecuteMigration(ctx, string(sqlContent), migrationName)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  ❌ Failed to apply migration: %v\n", err)
+			failCount++
+			continue
+		}
+		
+		fmt.Printf("  ✅ Applied successfully\n")
+		successCount++
+	}
+	
+	fmt.Printf("\n📊 Deployment Summary:\n")
+	fmt.Printf("  ✅ Applied: %d\n", successCount)
+	if failCount > 0 {
+		fmt.Printf("  ❌ Failed: %d\n", failCount)
+	}
+	
+	if failCount == 0 {
+		fmt.Println("\n🎉 All migrations deployed successfully!")
+	} else {
+		fmt.Printf("\n⚠️  Some migrations failed. Please review errors above.\n")
+		return fmt.Errorf("%d migration(s) failed", failCount)
+	}
 	
 	return nil
 }
@@ -590,6 +689,115 @@ func migrateStatusCommand(args []string) error {
 	}
 	
 	fmt.Println("\n✅ Migration system ready")
+	
+	return nil
+}
+
+func migrateResolveCommand(args []string) error {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "Error: migration name required (use: prisma-go migrate resolve <migration-name> [--applied|--rolled-back])")
+		return fmt.Errorf("migration name required")
+	}
+
+	migrationName := args[0]
+	action := "applied"
+	
+	// Parse flags
+	for i, arg := range args {
+		if arg == "--applied" {
+			action = "applied"
+		}
+		if arg == "--rolled-back" {
+			action = "rolled-back"
+		}
+		if arg == "--action" && i+1 < len(args) {
+			action = args[i+1]
+		}
+	}
+	
+	fmt.Printf("🔧 Resolving migration: %s\n", migrationName)
+	fmt.Printf("📝 Action: %s\n", action)
+	
+	// Get connection string from environment
+	connStr := os.Getenv("DATABASE_URL")
+	if connStr == "" {
+		fmt.Fprintf(os.Stderr, "❌ DATABASE_URL environment variable not set\n")
+		return fmt.Errorf("no connection string")
+	}
+	
+	provider := detectProvider(connStr)
+	driverProvider := normalizeProviderForDriver(provider)
+	
+	// Connect to database
+	db, err := sql.Open(driverProvider, connStr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to connect: %v\n", err)
+		return err
+	}
+	defer db.Close()
+	
+	ctx := context.Background()
+	
+	// Setup migration executor
+	migrationExecutor := executor.NewMigrationExecutor(db, provider)
+	
+	// Ensure migration table exists
+	err = migrationExecutor.EnsureMigrationTable(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to setup migration table: %v\n", err)
+		return err
+	}
+	
+	// Check if migration already exists
+	applied, err := migrationExecutor.GetAppliedMigrations(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to get migration history: %v\n", err)
+		return err
+	}
+	
+	// Check if migration is already applied
+	for _, m := range applied {
+		if m.Name == migrationName {
+			if action == "applied" {
+				fmt.Printf("✅ Migration '%s' is already marked as applied\n", migrationName)
+				return nil
+			}
+			// Mark as rolled-back (remove from history)
+			_, err = db.ExecContext(ctx, "DELETE FROM _prisma_migrations WHERE migration_name = $1", migrationName)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "❌ Failed to mark migration as rolled-back: %v\n", err)
+				return err
+			}
+			fmt.Printf("✅ Migration '%s' marked as rolled-back\n", migrationName)
+			return nil
+		}
+	}
+	
+	// Migration not found - mark as applied
+	if action == "applied" {
+		// Record migration without executing SQL
+		checksum := fmt.Sprintf("%x", time.Now().UnixNano())
+		var insertSQL string
+		switch provider {
+		case "postgresql", "postgres":
+			insertSQL = "INSERT INTO _prisma_migrations (migration_name, applied_at, checksum) VALUES ($1, $2, $3)"
+		case "mysql":
+			insertSQL = "INSERT INTO _prisma_migrations (migration_name, applied_at, checksum) VALUES (?, ?, ?)"
+		case "sqlite":
+			insertSQL = "INSERT INTO _prisma_migrations (migration_name, applied_at, checksum) VALUES (?, ?, ?)"
+		default:
+			return fmt.Errorf("unsupported provider: %s", provider)
+		}
+		
+		_, err = db.ExecContext(ctx, insertSQL, migrationName, time.Now(), checksum)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Failed to mark migration as applied: %v\n", err)
+			return err
+		}
+		fmt.Printf("✅ Migration '%s' marked as applied (without executing SQL)\n", migrationName)
+	} else {
+		fmt.Printf("✅ Migration '%s' marked as %s\n", migrationName, action)
+	}
 	
 	return nil
 }

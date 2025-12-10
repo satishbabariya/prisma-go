@@ -15,6 +15,8 @@ func Execute() error {
 	command := os.Args[1]
 
 	switch command {
+	case "init":
+		return initCommand(os.Args[2:])
 	case "format", "fmt":
 		return formatCommand(os.Args[2:])
 	case "validate":
@@ -50,12 +52,12 @@ USAGE:
     prisma-go <command> [options]
 
 COMMANDS:
+    init             Initialize a new Prisma-Go project
     format, fmt      Format a Prisma schema file
     validate         Validate a Prisma schema file
     generate         Generate Prisma Client for Go
     migrate          Manage database migrations
     db               Manage your database schema
-
     version          Print version information
     help             Print this help message
 
@@ -77,6 +79,7 @@ OPTIONS:
     -v, --version    Print version
 
 EXAMPLES:
+    prisma-go init
     prisma-go format ./schema.prisma
     prisma-go validate ./schema.prisma
     prisma-go generate
