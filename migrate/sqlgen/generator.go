@@ -23,6 +23,10 @@ func NewMigrationGenerator(provider string) (MigrationGenerator, error) {
 		return NewMySQLMigrationGenerator(), nil
 	case "sqlite":
 		return NewSQLiteMigrationGenerator(), nil
+	case "sqlserver", "mssql":
+		return NewSQLServerMigrationGenerator(), nil
+	case "cockroachdb":
+		return NewCockroachDBMigrationGenerator(), nil
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", provider)
 	}

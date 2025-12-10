@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/satishbabariya/prisma-go/query/builder"
+	"github.com/satishbabariya/prisma-go/query/optimizer"
 	"github.com/satishbabariya/prisma-go/query/sqlgen"
 )
 
@@ -17,6 +18,7 @@ func buildNestedJoinsFromIncludes(
 	includes map[string]*builder.NestedInclude,
 	relations map[string]RelationMetadata,
 	allRelations map[string]map[string]RelationMetadata, // model -> relations
+	provider string,
 ) []sqlgen.Join {
 	var joins []sqlgen.Join
 	processed := make(map[string]bool) // Track processed relations to avoid duplicates
@@ -32,6 +34,16 @@ func buildNestedJoinsFromIncludes(
 			"",
 			processed,
 		)...)
+	}
+
+	// Optimize joins if optimizer is available
+	if len(joins) > 0 {
+		opt := optimizer.NewOptimizer(provider)
+		includeMap := make(map[string]bool)
+		for rel := range includes {
+			includeMap[rel] = true
+		}
+		joins = opt.OptimizeJoins(joins, includeMap)
 	}
 
 	return joins

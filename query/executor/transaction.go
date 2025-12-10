@@ -47,7 +47,7 @@ func (e *TxExecutor) FindManyWithRelations(ctx context.Context, table string, se
 	// Build JOINs if relations are included
 	var joins []sqlgen.Join
 	if include != nil && len(include) > 0 && relations != nil {
-		joins = buildJoinsFromIncludes(table, include, relations)
+		joins = buildJoinsFromIncludes(table, include, relations, e.provider)
 	}
 
 	if len(joins) > 0 {

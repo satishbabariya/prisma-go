@@ -86,7 +86,7 @@ func (e *Executor) FindManyWithRelations(ctx context.Context, table string, sele
 	// Build JOINs if relations are included
 	var joins []sqlgen.Join
 	if include != nil && len(include) > 0 && relations != nil {
-		joins = buildJoinsFromIncludes(table, include, relations)
+		joins = buildJoinsFromIncludes(table, include, relations, e.provider)
 	}
 
 	if len(joins) > 0 {
@@ -149,7 +149,7 @@ func (e *Executor) FindFirstWithRelations(ctx context.Context, table string, sel
 	// Build JOINs if relations are included
 	var joins []sqlgen.Join
 	if include != nil && len(include) > 0 && relations != nil {
-		joins = buildJoinsFromIncludes(table, include, relations)
+		joins = buildJoinsFromIncludes(table, include, relations, e.provider)
 	}
 
 	if len(joins) > 0 {

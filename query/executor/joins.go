@@ -4,6 +4,7 @@ package executor
 import (
 	"fmt"
 
+	"github.com/satishbabariya/prisma-go/query/optimizer"
 	"github.com/satishbabariya/prisma-go/query/sqlgen"
 )
 
@@ -12,6 +13,7 @@ func buildJoinsFromIncludes(
 	table string,
 	includes map[string]bool,
 	relations map[string]RelationMetadata,
+	provider string,
 ) []sqlgen.Join {
 	var joins []sqlgen.Join
 
@@ -47,6 +49,12 @@ func buildJoinsFromIncludes(
 
 			joins = append(joins, join)
 		}
+	}
+
+	// Optimize joins if optimizer is available
+	if len(joins) > 0 {
+		opt := optimizer.NewOptimizer(provider)
+		joins = opt.OptimizeJoins(joins, includes)
 	}
 
 	return joins
