@@ -600,10 +600,17 @@ func extractConnectionInfo(schema *psl.SchemaAst) (string, string) {
 					}
 				}
 				if prop.Name.Name == "url" {
-					// Handle env("DATABASE_URL") or direct string
-					if strLit, _ := prop.Value.AsStringValue(); strLit != nil {
-						envVar := strLit.Value
-						connStr = os.Getenv(envVar)
+					// Handle env("DATABASE_URL") function call
+					if fnCall := prop.Value.AsFunction(); fnCall != nil && fnCall.Name.Name == "env" {
+						if len(fnCall.Arguments) > 0 {
+							if strLit, _ := fnCall.Arguments[0].AsStringValue(); strLit != nil {
+								envVar := strLit.Value
+								connStr = os.Getenv(envVar)
+							}
+						}
+					} else if strLit, _ := prop.Value.AsStringValue(); strLit != nil {
+						// Direct string literal
+						connStr = strLit.Value
 					}
 				}
 			}
