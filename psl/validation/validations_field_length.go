@@ -18,12 +18,12 @@ func validateLengthUsedWithCorrectTypes(field *database.ScalarFieldWalker, attri
 	if field.Length() == nil {
 		return
 	}
-	
+
 	scalarType := field.ScalarType()
 	if scalarType == nil {
 		return
 	}
-	
+
 	// Length is only allowed with String or Bytes
 	if *scalarType != database.ScalarTypeString && *scalarType != database.ScalarTypeBytes {
 		ctx.PushError(diagnostics.NewFieldValidationError(
@@ -56,7 +56,7 @@ func validateFieldLengthPrefix(field *database.ScalarFieldWalker, ctx *Validatio
 	if field.Length() == nil {
 		return
 	}
-	
+
 	if *scalarType != database.ScalarTypeString && *scalarType != database.ScalarTypeBytes {
 		ctx.PushError(diagnostics.NewFieldValidationError(
 			fmt.Sprintf("Length prefix can only be used with String or Bytes types, but the field is of type %s.", *scalarType),

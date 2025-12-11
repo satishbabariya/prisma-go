@@ -142,4 +142,3 @@ func getStructColumns(typ reflect.Type) []string {
 	}
 	return columns
 }
-

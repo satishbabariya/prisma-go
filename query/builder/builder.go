@@ -230,18 +230,18 @@ func (w *WhereBuilder) Build() *sqlgen.WhereClause {
 
 // QueryBuilder builds complete queries
 type QueryBuilder struct {
-	table          string
-	columns        []string
-	aggregates     []sqlgen.AggregateFunction
-	windowFuncs    []sqlgen.WindowFunction
-	ctes           []sqlgen.CTE
-	joins          []sqlgen.Join
-	where          *sqlgen.WhereClause
-	groupBy        *sqlgen.GroupBy
-	having         *sqlgen.Having
-	orderBy        []sqlgen.OrderBy
-	limit          *int
-	offset         *int
+	table       string
+	columns     []string
+	aggregates  []sqlgen.AggregateFunction
+	windowFuncs []sqlgen.WindowFunction
+	ctes        []sqlgen.CTE
+	joins       []sqlgen.Join
+	where       *sqlgen.WhereClause
+	groupBy     *sqlgen.GroupBy
+	having      *sqlgen.Having
+	orderBy     []sqlgen.OrderBy
+	limit       *int
+	offset      *int
 }
 
 // OrderByBuilder builds ORDER BY clauses

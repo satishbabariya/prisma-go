@@ -191,7 +191,7 @@ func (w *ScalarFieldWalker) Length() *int {
 	if model == nil {
 		return nil
 	}
-	
+
 	// Check primary key
 	pk := model.PrimaryKey()
 	if pk != nil {
@@ -201,7 +201,7 @@ func (w *ScalarFieldWalker) Length() *int {
 			}
 		}
 	}
-	
+
 	// Check indexes
 	for _, index := range model.Indexes() {
 		for _, indexField := range index.Fields() {
@@ -210,7 +210,7 @@ func (w *ScalarFieldWalker) Length() *int {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -220,7 +220,7 @@ func (w *ScalarFieldWalker) SortOrder() *SortOrder {
 	if model == nil {
 		return nil
 	}
-	
+
 	// Check primary key
 	pk := model.PrimaryKey()
 	if pk != nil {
@@ -230,7 +230,7 @@ func (w *ScalarFieldWalker) SortOrder() *SortOrder {
 			}
 		}
 	}
-	
+
 	// Check indexes
 	for _, index := range model.Indexes() {
 		for _, indexField := range index.Fields() {
@@ -239,7 +239,7 @@ func (w *ScalarFieldWalker) SortOrder() *SortOrder {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -249,11 +249,11 @@ func (w *ScalarFieldWalker) RawNativeType() *string {
 	if sf == nil || sf.NativeType == nil {
 		return nil
 	}
-	
+
 	// Build string representation: @scope.TypeName(args...)
 	scope := w.db.interner.Get(sf.NativeType.Scope)
 	typeName := w.db.interner.Get(sf.NativeType.TypeName)
-	
+
 	result := "@" + scope + "." + typeName
 	if len(sf.NativeType.Arguments) > 0 {
 		result += "("
@@ -265,7 +265,7 @@ func (w *ScalarFieldWalker) RawNativeType() *string {
 		}
 		result += ")"
 	}
-	
+
 	return &result
 }
 

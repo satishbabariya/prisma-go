@@ -101,4 +101,3 @@ func JoinConditionEQ(leftColumn columns.Column, rightColumn columns.Column) stri
 func quoteIdentifier(name string) string {
 	return fmt.Sprintf(`"%s"`, name)
 }
-

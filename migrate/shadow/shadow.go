@@ -387,4 +387,3 @@ func getDriverName(provider string) string {
 func quoteIdentifier(name string) string {
 	return fmt.Sprintf(`"%s"`, name)
 }
-

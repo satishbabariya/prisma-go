@@ -31,4 +31,3 @@ func DeserializeSchema(jsonStr string) (*introspect.DatabaseSchema, error) {
 	}
 	return &schema, nil
 }
-

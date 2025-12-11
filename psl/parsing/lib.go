@@ -53,7 +53,7 @@ func StringLiteralValue(s string) string {
 // ParseSchema parses a Prisma schema string into an AST.
 func ParseSchema(input string) (*ast.SchemaAst, diagnostics.Diagnostics) {
 	diags := diagnostics.NewDiagnostics()
-	
+
 	lex := lexer.NewLexer(input)
 	tokens, err := lex.Tokenize()
 	if err != nil {

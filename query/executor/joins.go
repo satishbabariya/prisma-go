@@ -70,7 +70,7 @@ type RelationMetadata struct {
 	IsManyToMany      bool   // true if many-to-many relation
 	JunctionTable     string // Junction table name for many-to-many
 	JunctionFKToSelf  string // Foreign key in junction table pointing to self
-	JunctionFKToOther  string // Foreign key in junction table pointing to other
+	JunctionFKToOther string // Foreign key in junction table pointing to other
 }
 
 func quoteIdentifier(name string) string {

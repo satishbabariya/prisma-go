@@ -15,7 +15,7 @@ type MongoDBGenerator struct{}
 func (g *MongoDBGenerator) GenerateSelect(table string, columns []string, where *WhereClause, orderBy []OrderBy, limit, offset *int) *Query {
 	// MongoDB uses find() operations
 	// This is a foundation - full implementation would generate MongoDB query documents
-	
+
 	var filter map[string]interface{}
 	if where != nil && !where.IsEmpty() {
 		filter = g.buildMongoFilter(where)
@@ -256,4 +256,3 @@ func (g *MongoDBGenerator) buildMongoFilterFromConditions(conditions []Condition
 
 	return map[string]interface{}{op: clauses}
 }
-

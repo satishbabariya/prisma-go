@@ -72,4 +72,3 @@ func (g *SQLServerMigrationGenerator) generateRollbackAlterTable(change diff.Tab
 
 	return sql.String()
 }
-

@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -120,8 +121,19 @@ func (suite *TestSuite) createUpsertTables(ctx context.Context) {
 
 // cleanupUpsertTables removes upsert test tables
 func (suite *TestSuite) cleanupUpsertTables(ctx context.Context) {
-	_, err := suite.db.ExecContext(ctx, "DROP TABLE IF EXISTS profiles, posts, users")
-	require.NoError(suite.T(), err)
+	// SQLite doesn't support multiple tables in one DROP statement
+	if suite.config.Provider == "sqlite" || suite.config.Provider == "mysql" {
+		tables := []string{"profiles", "posts", "users"}
+		for _, table := range tables {
+			_, err := suite.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", table))
+			if err != nil {
+				suite.T().Logf("Error dropping table %s (may not exist): %v", table, err)
+			}
+		}
+	} else {
+		_, err := suite.db.ExecContext(ctx, "DROP TABLE IF EXISTS profiles, posts, users")
+		require.NoError(suite.T(), err)
+	}
 }
 
 // testBasicUpsert tests basic upsert functionality

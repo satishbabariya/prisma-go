@@ -53,7 +53,7 @@ func validateCompositeTypeFieldDefaultValue(field *database.CompositeTypeFieldWa
 
 	// Validate default value type matches field type
 	fieldType := field.Type()
-	
+
 	// Type-specific validation would go here
 	// For now, basic validation is done
 	_ = fieldType

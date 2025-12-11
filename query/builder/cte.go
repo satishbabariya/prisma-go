@@ -81,4 +81,3 @@ func (c *CTEBuilder) IsRecursive() bool {
 	}
 	return false
 }
-

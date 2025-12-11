@@ -40,24 +40,24 @@ type Cache interface {
 
 // Stats represents cache statistics
 type Stats struct {
-	Hits       int64
-	Misses     int64
-	Size       int
-	MaxSize    int
-	Evictions  int64
-	HitRate    float64
+	Hits      int64
+	Misses    int64
+	Size      int
+	MaxSize   int
+	Evictions int64
+	HitRate   float64
 }
 
 // LRUCache implements an LRU cache with TTL support
 type LRUCache struct {
-	mu          sync.RWMutex
-	data        map[string]*cacheNode
-	maxSize     int
-	defaultTTL  time.Duration
-	head        *cacheNode
-	tail        *cacheNode
-	stats       Stats
-	evictions   int64
+	mu         sync.RWMutex
+	data       map[string]*cacheNode
+	maxSize    int
+	defaultTTL time.Duration
+	head       *cacheNode
+	tail       *cacheNode
+	stats      Stats
+	evictions  int64
 }
 
 // cacheNode represents a node in the doubly-linked list for LRU
@@ -310,12 +310,12 @@ func GenerateCacheKey(sql string, args []interface{}) string {
 	// Create a hash of SQL + args
 	hasher := sha256.New()
 	hasher.Write([]byte(sql))
-	
+
 	// Add args to hash
 	for _, arg := range args {
 		hasher.Write([]byte(fmt.Sprintf("%v", arg)))
 	}
-	
+
 	hash := hex.EncodeToString(hasher.Sum(nil))
 	return fmt.Sprintf("query:%s:%s", sql[:min(len(sql), 50)], hash[:16])
 }
@@ -327,4 +327,3 @@ func min(a, b int) int {
 	}
 	return b
 }
-

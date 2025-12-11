@@ -153,16 +153,16 @@ func (p *Parser) parseModel() Top {
 		for p.check(lexer.TokenComment) {
 			p.advance()
 		}
-		
+
 		if p.check(lexer.TokenRBrace) {
 			break
 		}
-		
+
 		// Check for model-level attributes (@@)
 		if p.check(lexer.TokenAt) && p.peek().Type == lexer.TokenAt {
 			// This is a model-level attribute (e.g., @@id, @@index)
 			// Consume both @ tokens - we've already verified the next token is also @
-			firstAt := p.advance() // consume first @
+			firstAt := p.advance()  // consume first @
 			secondAt := p.advance() // consume second @
 			_ = firstAt
 			_ = secondAt
@@ -357,7 +357,7 @@ func (p *Parser) parseAttributeAfterAt() *Attribute {
 	for p.check(lexer.TokenComment) {
 		p.advance()
 	}
-	
+
 	if !p.check(lexer.TokenIdentifier) {
 		currentToken := p.current()
 		p.error(fmt.Sprintf("Expected attribute name after '@', but got token type %d (%s)", currentToken.Type, currentToken.Value))

@@ -111,15 +111,15 @@ func buildCondition(cond Condition, argIndex *int, placeholder func(int) string,
 					values[i] = val
 				}
 			}
-			
+
 			if len(values) > 0 {
-			placeholders := make([]string, len(values))
-			for i := range values {
-				placeholders[i] = placeholder(*argIndex)
-				args = append(args, values[i])
-				(*argIndex)++
-			}
-			sql = fmt.Sprintf("%s IN (%s)", quoter(cond.Field), strings.Join(placeholders, ", "))
+				placeholders := make([]string, len(values))
+				for i := range values {
+					placeholders[i] = placeholder(*argIndex)
+					args = append(args, values[i])
+					(*argIndex)++
+				}
+				sql = fmt.Sprintf("%s IN (%s)", quoter(cond.Field), strings.Join(placeholders, ", "))
 			}
 		}
 
@@ -161,15 +161,15 @@ func buildCondition(cond Condition, argIndex *int, placeholder func(int) string,
 					values[i] = val
 				}
 			}
-			
+
 			if len(values) > 0 {
-			placeholders := make([]string, len(values))
-			for i := range values {
-				placeholders[i] = placeholder(*argIndex)
-				args = append(args, values[i])
-				(*argIndex)++
-			}
-			sql = fmt.Sprintf("%s NOT IN (%s)", quoter(cond.Field), strings.Join(placeholders, ", "))
+				placeholders := make([]string, len(values))
+				for i := range values {
+					placeholders[i] = placeholder(*argIndex)
+					args = append(args, values[i])
+					(*argIndex)++
+				}
+				sql = fmt.Sprintf("%s NOT IN (%s)", quoter(cond.Field), strings.Join(placeholders, ", "))
 			}
 		}
 

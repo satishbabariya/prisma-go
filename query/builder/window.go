@@ -15,23 +15,23 @@ type WindowFunction struct {
 
 // WindowDefinition defines the window frame
 type WindowDefinition struct {
-	PartitionByFields []string      // PARTITION BY columns
+	PartitionByFields []string         // PARTITION BY columns
 	OrderByFields     []sqlgen.OrderBy // ORDER BY for the window
-	FrameSpec         *WindowFrame   // Frame specification (ROWS/RANGE BETWEEN)
+	FrameSpec         *WindowFrame     // Frame specification (ROWS/RANGE BETWEEN)
 }
 
 // WindowFrame defines the window frame
 type WindowFrame struct {
-	Type      string // "ROWS" or "RANGE"
-	Start     *FrameBound
-	End       *FrameBound
+	Type          string // "ROWS" or "RANGE"
+	Start         *FrameBound
+	End           *FrameBound
 	ExclusionType string // "EXCLUDE CURRENT ROW", "EXCLUDE GROUP", "EXCLUDE TIES", "EXCLUDE NO OTHERS"
 }
 
 // FrameBound defines a frame boundary
 type FrameBound struct {
-	Type      string // "UNBOUNDED PRECEDING", "PRECEDING", "CURRENT ROW", "FOLLOWING", "UNBOUNDED FOLLOWING"
-	Offset    *int   // Offset for PRECEDING/FOLLOWING (nil for UNBOUNDED/CURRENT ROW)
+	Type   string // "UNBOUNDED PRECEDING", "PRECEDING", "CURRENT ROW", "FOLLOWING", "UNBOUNDED FOLLOWING"
+	Offset *int   // Offset for PRECEDING/FOLLOWING (nil for UNBOUNDED/CURRENT ROW)
 }
 
 // WindowBuilder builds window functions
@@ -271,4 +271,3 @@ func Following(offset int) *FrameBound {
 func UnboundedFollowing() *FrameBound {
 	return NewFrameBound("UNBOUNDED FOLLOWING", nil)
 }
-

@@ -121,10 +121,10 @@ func ExtractRelationMetadata(schemaAST *ast.SchemaAst, modelName string) (map[st
 			ForeignKey:        foreignKey,
 			LocalKey:          localKey,
 			IsList:            isList,
-			IsManyToMany:       isManyToMany,
+			IsManyToMany:      isManyToMany,
 			JunctionTable:     junctionTable,
-			JunctionFKToSelf:   junctionFKToSelf,
-			JunctionFKToOther:  junctionFKToOther,
+			JunctionFKToSelf:  junctionFKToSelf,
+			JunctionFKToOther: junctionFKToOther,
 		}
 	}
 

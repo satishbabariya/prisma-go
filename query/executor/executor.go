@@ -17,23 +17,23 @@ import (
 
 // Executor executes queries and maps results
 type Executor struct {
-	db        *sql.DB
-	provider  string
-	generator sqlgen.Generator
-	stmtCache map[string]*sql.Stmt
-	cacheMu   sync.RWMutex
-	queryCache cache.Cache
+	db           *sql.DB
+	provider     string
+	generator    sqlgen.Generator
+	stmtCache    map[string]*sql.Stmt
+	cacheMu      sync.RWMutex
+	queryCache   cache.Cache
 	cacheEnabled bool
 }
 
 // NewExecutor creates a new query executor
 func NewExecutor(db *sql.DB, provider string) *Executor {
 	return &Executor{
-		db:          db,
-		provider:    provider,
-		generator:   sqlgen.NewGenerator(provider),
-		stmtCache:   make(map[string]*sql.Stmt),
-		queryCache:  nil, // Cache disabled by default
+		db:           db,
+		provider:     provider,
+		generator:    sqlgen.NewGenerator(provider),
+		stmtCache:    make(map[string]*sql.Stmt),
+		queryCache:   nil, // Cache disabled by default
 		cacheEnabled: false,
 	}
 }
@@ -187,7 +187,7 @@ func (e *Executor) FindManyWithJoins(ctx context.Context, table string, selectFi
 	// Merge explicit joins with relation-based joins
 	var allJoins []sqlgen.Join
 	allJoins = append(allJoins, joins...)
-	
+
 	// Add relation-based joins if includes are specified
 	if include != nil && len(include) > 0 && relations != nil {
 		relationJoins := buildJoinsFromIncludes(table, include, relations, e.provider)
@@ -259,7 +259,7 @@ func (e *Executor) FindFirstWithJoins(ctx context.Context, table string, selectF
 	// Merge explicit joins with relation-based joins
 	var allJoins []sqlgen.Join
 	allJoins = append(allJoins, joins...)
-	
+
 	// Add relation-based joins if includes are specified
 	if include != nil && len(include) > 0 && relations != nil {
 		relationJoins := buildJoinsFromIncludes(table, include, relations, e.provider)

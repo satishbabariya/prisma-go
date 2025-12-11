@@ -105,7 +105,6 @@ func GenerateModelsFile(models []ModelInfo, outputDir string) error {
 		sb.WriteString("}\n\n")
 	}
 
-
 	for _, model := range models {
 		modelName := model.Name
 		tableName := model.TableName

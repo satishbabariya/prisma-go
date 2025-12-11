@@ -534,4 +534,3 @@ func (g *SQLServerGenerator) GenerateAggregate(table string, aggregates []Aggreg
 func quoteIdentifierSQLServer(name string) string {
 	return fmt.Sprintf("[%s]", name)
 }
-

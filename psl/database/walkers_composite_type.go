@@ -147,17 +147,17 @@ func (w *CompositeTypeFieldWalker) DefaultValue() ast.Expression {
 	if !exists || ctf.Default == nil {
 		return nil
 	}
-	
+
 	astCT := w.db.WalkCompositeType(w.ctID).AstCompositeType()
 	if astCT == nil || int(w.fieldID) >= len(astCT.Fields) {
 		return nil
 	}
-	
+
 	astField := &astCT.Fields[w.fieldID]
 	if int(ctf.Default.ArgumentIdx) >= len(astField.Attributes) {
 		return nil
 	}
-	
+
 	// Find the @default attribute
 	for _, attr := range astField.Attributes {
 		if attr.Name.Name == "default" {
@@ -166,7 +166,7 @@ func (w *CompositeTypeFieldWalker) DefaultValue() ast.Expression {
 			}
 		}
 	}
-	
+
 	return nil
 }
 

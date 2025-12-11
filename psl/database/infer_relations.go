@@ -12,20 +12,20 @@ func fieldsMatchUniqueCriteria(fieldIDs []ScalarFieldId, criteriaFields []FieldW
 	if len(fieldIDs) != len(criteriaFields) {
 		return false
 	}
-	
+
 	// Create a map of criteria field IDs for quick lookup
 	criteriaFieldMap := make(map[ScalarFieldId]bool)
 	for _, fieldWithArgs := range criteriaFields {
 		criteriaFieldMap[fieldWithArgs.Field] = true
 	}
-	
+
 	// Check if all field IDs are in the criteria
 	for _, fieldID := range fieldIDs {
 		if !criteriaFieldMap[fieldID] {
 			return false
 		}
 	}
-	
+
 	return true
 }
 
@@ -247,13 +247,13 @@ func ingestRelation(evidence *RelationEvidence, relations *Relations, ctx *Conte
 	} else {
 		// No opposite field - check if referencing fields are unique to determine 1:1 vs 1:m
 		relationField := ctx.types.RelationFields[evidence.FieldID]
-		
+
 		// Get referencing fields
 		var referencingFieldIDs []ScalarFieldId
 		if relationField.Fields != nil {
 			referencingFieldIDs = *relationField.Fields
 		}
-		
+
 		if len(referencingFieldIDs) > 0 {
 			// Check if referencing fields form a unique constraint
 			modelAttrs, exists := ctx.types.ModelAttributes[relationField.ModelID]
@@ -270,7 +270,7 @@ func ingestRelation(evidence *RelationEvidence, relations *Relations, ctx *Conte
 						goto relationCreated
 					}
 				}
-				
+
 				// Check unique indexes
 				for _, indexEntry := range modelAttrs.AstIndexes {
 					if indexEntry.Index.Type == IndexTypeUnique {
@@ -287,7 +287,7 @@ func ingestRelation(evidence *RelationEvidence, relations *Relations, ctx *Conte
 				}
 			}
 		}
-		
+
 		// Referencing fields are not unique - 1:m relation (forward side)
 		relationAttrs = RelationAttributes{
 			Type:   RelationAttributeTypeOneToMany,
@@ -295,7 +295,7 @@ func ingestRelation(evidence *RelationEvidence, relations *Relations, ctx *Conte
 			FieldB: nil,
 		}
 	}
-	
+
 relationCreated:
 
 	// Determine model A and model B

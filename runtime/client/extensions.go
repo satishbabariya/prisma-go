@@ -226,4 +226,3 @@ func ResultTransformationExtension(transform func(ctx *ExtensionContext, result 
 		},
 	}
 }
-

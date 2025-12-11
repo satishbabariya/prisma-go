@@ -409,4 +409,3 @@ func OR(conditions ...Condition) []Condition {
 	// This will be handled by the WhereBuilder
 	return conditions
 }
-

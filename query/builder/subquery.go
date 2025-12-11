@@ -138,40 +138,40 @@ func (s *SubqueryBuilder) Build() *Subquery {
 // IN creates a condition that checks if a column is IN the subquery
 func IN(column string, subquery *Subquery) sqlgen.Condition {
 	return sqlgen.Condition{
-		Field:       column,
-		Operator:    "IN",
-		Value:       subquery,
-		IsSubquery:  true,
+		Field:      column,
+		Operator:   "IN",
+		Value:      subquery,
+		IsSubquery: true,
 	}
 }
 
 // NOT_IN creates a condition that checks if a column is NOT IN the subquery
 func NOT_IN(column string, subquery *Subquery) sqlgen.Condition {
 	return sqlgen.Condition{
-		Field:       column,
-		Operator:    "NOT IN",
-		Value:       subquery,
-		IsSubquery:  true,
+		Field:      column,
+		Operator:   "NOT IN",
+		Value:      subquery,
+		IsSubquery: true,
 	}
 }
 
 // EXISTS creates a condition that checks if the subquery returns any rows
 func EXISTS(subquery *Subquery) sqlgen.Condition {
 	return sqlgen.Condition{
-		Field:       "",
-		Operator:    "EXISTS",
-		Value:       subquery,
-		IsSubquery:  true,
+		Field:      "",
+		Operator:   "EXISTS",
+		Value:      subquery,
+		IsSubquery: true,
 	}
 }
 
 // NOT_EXISTS creates a condition that checks if the subquery returns no rows
 func NOT_EXISTS(subquery *Subquery) sqlgen.Condition {
 	return sqlgen.Condition{
-		Field:       "",
-		Operator:    "NOT EXISTS",
-		Value:       subquery,
-		IsSubquery:  true,
+		Field:      "",
+		Operator:   "NOT EXISTS",
+		Value:      subquery,
+		IsSubquery: true,
 	}
 }
 

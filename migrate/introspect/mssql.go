@@ -72,10 +72,10 @@ func (i *SQLServerIntrospector) introspectTables(ctx context.Context) ([]Table, 
 
 		fullName := fmt.Sprintf("%s.%s", schemaName, tableName)
 		table := &Table{
-			Name:   tableName,
-			Schema: schemaName,
-			Columns: []Column{},
-			Indexes: []Index{},
+			Name:        tableName,
+			Schema:      schemaName,
+			Columns:     []Column{},
+			Indexes:     []Index{},
 			ForeignKeys: []ForeignKey{},
 		}
 		tables = append(tables, *table)
@@ -300,9 +300,9 @@ func (i *SQLServerIntrospector) introspectForeignKeys(ctx context.Context, schem
 
 		if _, ok := fkMap[fkName]; !ok {
 			fkMap[fkName] = &ForeignKey{
-				Name:             fkName,
-				ReferencedTable:  refTable,
-				Columns:          []string{},
+				Name:              fkName,
+				ReferencedTable:   refTable,
+				Columns:           []string{},
 				ReferencedColumns: []string{},
 			}
 		}
