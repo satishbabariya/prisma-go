@@ -84,6 +84,9 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	outputDir := "./generated"
 	provider := "postgresql" // Default provider
 
+	// Get schema file directory for resolving relative paths
+	schemaDir := filepath.Dir(schemaPath)
+
 	// Extract provider from datasource
 	for _, top := range ast.Tops {
 		if datasource := top.AsSource(); datasource != nil {
@@ -100,6 +103,10 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 				if prop.Name.Name == "output" {
 					if value, _ := prop.Value.AsStringValue(); value != nil {
 						outputDir = value.Value
+						// Resolve relative paths relative to schema file directory
+						if !filepath.IsAbs(outputDir) {
+							outputDir = filepath.Join(schemaDir, outputDir)
+						}
 					}
 				}
 			}
@@ -188,6 +195,9 @@ func runGenerateWatch(schemaPath string, generateInitially bool) error {
 		outputDir := "./generated"
 		provider := "postgresql" // Default provider
 
+		// Get schema file directory for resolving relative paths
+		schemaDir := filepath.Dir(schemaPath)
+
 		// Extract provider from datasource
 		for _, top := range ast.Tops {
 			if datasource := top.AsSource(); datasource != nil {
@@ -204,6 +214,10 @@ func runGenerateWatch(schemaPath string, generateInitially bool) error {
 					if prop.Name.Name == "output" {
 						if value, _ := prop.Value.AsStringValue(); value != nil {
 							outputDir = value.Value
+							// Resolve relative paths relative to schema file directory
+							if !filepath.IsAbs(outputDir) {
+								outputDir = filepath.Join(schemaDir, outputDir)
+							}
 						}
 					}
 				}

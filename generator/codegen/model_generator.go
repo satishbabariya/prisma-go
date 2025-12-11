@@ -48,9 +48,12 @@ func GenerateModelsFromAST(schemaAST *ast.SchemaAst) []ModelInfo {
 	// First pass: create all models (including views)
 	for _, top := range schemaAST.Tops {
 		if model := top.AsModel(); model != nil {
+			// Extract table name from @@map attribute if present
+			tableName := extractTableNameFromModel(model)
+			
 			modelInfo := ModelInfo{
 				Name:      model.Name.Name,
-				TableName: toSnakeCase(model.Name.Name),
+				TableName: tableName,
 				Fields:    []FieldInfo{},
 				Relations: []RelationInfo{},
 			}
@@ -363,4 +366,33 @@ func toSnakeCase(s string) string {
 		result.WriteRune(r)
 	}
 	return strings.ToLower(result.String())
+}
+
+// extractTableNameFromModel extracts the table name from a model's @@map attribute
+// or falls back to snake_case of the model name
+func extractTableNameFromModel(model *ast.Model) string {
+	// Check for @@map attribute
+	for _, attr := range model.Attributes {
+		if attr.Name.Name == "map" {
+			// Check for named argument "name"
+			for _, arg := range attr.Arguments.Arguments {
+				if arg.Name != nil && arg.Name.Name == "name" {
+					if strLit, ok := arg.Value.(ast.StringLiteral); ok {
+						return strLit.Value
+					}
+				}
+			}
+			// Check for unnamed first argument (positional)
+			if len(attr.Arguments.Arguments) > 0 {
+				firstArg := attr.Arguments.Arguments[0]
+				if firstArg.Name == nil {
+					if strLit, ok := firstArg.Value.(ast.StringLiteral); ok {
+						return strLit.Value
+					}
+				}
+			}
+		}
+	}
+	// Fall back to snake_case of model name
+	return toSnakeCase(model.Name.Name)
 }

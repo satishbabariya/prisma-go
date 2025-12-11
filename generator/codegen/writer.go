@@ -122,8 +122,8 @@ func GenerateModelsFile(models []ModelInfo, outputDir string) error {
 		sb.WriteString("}\n\n")
 
 		// Generate column instance
-		sb.WriteString(fmt.Sprintf("// %s provides type-safe column references\n", modelName))
-		sb.WriteString(fmt.Sprintf("var %s = %sColumns{\n", modelName, modelName))
+		sb.WriteString(fmt.Sprintf("// %sColumnsInstance provides type-safe column references for %s\n", modelName, modelName))
+		sb.WriteString(fmt.Sprintf("var %sColumnsInstance = %sColumns{\n", modelName, modelName))
 		for _, field := range model.Fields {
 			if !field.IsRelation {
 				fieldName := field.GoName
@@ -365,12 +365,6 @@ func GenerateClientFile(models []ModelInfo, provider string, outputDir string) e
 		sb.WriteString("}\n\n")
 
 		// Subquery helper method
-		sb.WriteString("// Subquery creates a subquery builder for this model\n")
-		sb.WriteString(fmt.Sprintf("func (c *%sClient) Subquery() *builder.SubqueryBuilder {\n", modelName))
-		sb.WriteString(fmt.Sprintf("\treturn builder.NewSubqueryBuilder(c.table, c.executor.GetGenerator())\n"))
-		sb.WriteString("}\n\n")
-
-		// Subquery helper methods
 		sb.WriteString("// Subquery creates a subquery builder for this model\n")
 		sb.WriteString(fmt.Sprintf("func (c *%sClient) Subquery() *builder.SubqueryBuilder {\n", modelName))
 		sb.WriteString(fmt.Sprintf("\treturn builder.NewSubqueryBuilder(c.table, c.executor.GetGenerator())\n"))

@@ -136,7 +136,7 @@ func (e *Executor) FindManyWithRelations(ctx context.Context, table string, sele
 
 	rows, err := e.db.QueryContext(ctx, query.SQL, query.Args...)
 	if err != nil {
-		return fmt.Errorf("query execution failed: %w", err)
+		return fmt.Errorf("query execution failed for table %q: SQL=%q, args=%v: %w", table, query.SQL, query.Args, err)
 	}
 	defer rows.Close()
 
@@ -148,12 +148,12 @@ func (e *Executor) FindManyWithRelations(ctx context.Context, table string, sele
 		}
 		err = e.scanJoinResults(rows, table, joins, relations, dest)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to scan join results for table %q: %w", table, err)
 		}
 	} else {
 		err = e.scanRows(rows, dest)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to scan rows for table %q: %w", table, err)
 		}
 
 		// Relations are loaded via JOINs above, no need for N+1 fallback
@@ -813,7 +813,7 @@ func (e *Executor) scanRows(rows *sql.Rows, dest interface{}) error {
 	for rows.Next() {
 		element := reflect.New(elementType).Interface()
 		if err := e.scanRowIntoStruct(rows, columns, element); err != nil {
-			return err
+			return fmt.Errorf("failed to scan row into struct (columns: %v): %w", columns, err)
 		}
 		sliceValue = reflect.Append(sliceValue, reflect.ValueOf(element))
 	}
@@ -991,6 +991,107 @@ func (e *Executor) setFieldValue(fieldValue reflect.Value, value interface{}) er
 	if valueType.ConvertibleTo(fieldType) {
 		fieldValue.Set(valueValue.Convert(fieldType))
 		return nil
+	}
+
+	// Special handling for SQLite boolean conversion (int64 -> bool)
+	// SQLite stores booleans as INTEGER (0 or 1), but Go expects bool
+	if fieldType.Kind() == reflect.Bool {
+		switch v := value.(type) {
+		case int64:
+			fieldValue.SetBool(v != 0)
+			return nil
+		case int32:
+			fieldValue.SetBool(v != 0)
+			return nil
+		case int:
+			fieldValue.SetBool(v != 0)
+			return nil
+		case int16:
+			fieldValue.SetBool(v != 0)
+			return nil
+		case int8:
+			fieldValue.SetBool(v != 0)
+			return nil
+		case uint64:
+			fieldValue.SetBool(v != 0)
+			return nil
+		case uint32:
+			fieldValue.SetBool(v != 0)
+			return nil
+		case uint:
+			fieldValue.SetBool(v != 0)
+			return nil
+		case uint16:
+			fieldValue.SetBool(v != 0)
+			return nil
+		case uint8:
+			fieldValue.SetBool(v != 0)
+			return nil
+		}
+	}
+
+	// Special handling for SQLite DateTime conversion (string -> time.Time)
+	// SQLite stores DateTime as TEXT, but Go expects time.Time
+	if fieldType == reflect.TypeOf(time.Time{}) {
+		var timeStr string
+		var ok bool
+
+		// Handle string type
+		if timeStr, ok = value.(string); !ok {
+			// Handle []byte (some drivers return bytes)
+			if bytes, ok := value.([]byte); ok {
+				timeStr = string(bytes)
+			} else {
+				return fmt.Errorf("cannot convert %s to time.Time: value is not string or []byte", valueType)
+			}
+		}
+
+		// Try common SQLite datetime formats (including space-separated RFC3339-like)
+		// First, try converting space to T for RFC3339 parsing
+		if strings.Contains(timeStr, " ") && !strings.Contains(timeStr, "T") {
+			// Replace space with T to make it RFC3339-compatible
+			rfc3339Str := strings.Replace(timeStr, " ", "T", 1)
+			if t, err := time.Parse(time.RFC3339Nano, rfc3339Str); err == nil {
+				fieldValue.Set(reflect.ValueOf(t))
+				return nil
+			}
+			if t, err := time.Parse(time.RFC3339, rfc3339Str); err == nil {
+				fieldValue.Set(reflect.ValueOf(t))
+				return nil
+			}
+		}
+
+		formats := []string{
+			time.RFC3339Nano,                      // T-separated RFC3339Nano
+			time.RFC3339,                          // T-separated RFC3339
+			"2006-01-02 15:04:05.999999999-07:00", // Space-separated with timezone
+			"2006-01-02 15:04:05.999999999+07:00", // Space-separated with +timezone
+			"2006-01-02 15:04:05.999999999Z07:00", // Space-separated with Z timezone
+			"2006-01-02T15:04:05.999999999Z07:00", // T-separated with timezone
+			"2006-01-02T15:04:05Z07:00",           // T-separated without nanoseconds
+			"2006-01-02T15:04:05",                 // T-separated without timezone
+			"2006-01-02 15:04:05.999999999",       // Space-separated without timezone
+			"2006-01-02 15:04:05",                 // Space-separated simple
+		}
+
+		for _, format := range formats {
+			if t, err := time.Parse(format, timeStr); err == nil {
+				fieldValue.Set(reflect.ValueOf(t))
+				return nil
+			}
+		}
+
+		// Last resort: try parsing with time.ParseInLocation for local time
+		if t, err := time.ParseInLocation("2006-01-02 15:04:05.999999999", timeStr, time.Local); err == nil {
+			fieldValue.Set(reflect.ValueOf(t))
+			return nil
+		}
+		if t, err := time.ParseInLocation("2006-01-02 15:04:05", timeStr, time.Local); err == nil {
+			fieldValue.Set(reflect.ValueOf(t))
+			return nil
+		}
+
+		return fmt.Errorf("cannot parse time string %q to time.Time", timeStr)
 	}
 
 	return fmt.Errorf("cannot convert %s to %s", valueType, fieldType)
