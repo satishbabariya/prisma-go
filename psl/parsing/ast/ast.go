@@ -4,6 +4,7 @@ package ast
 import (
 	"fmt"
 
+	"github.com/satishbabariya/prisma-go/internal/debug"
 	"github.com/satishbabariya/prisma-go/psl/diagnostics"
 )
 
@@ -15,31 +16,41 @@ type SchemaAst struct {
 
 // Sources returns all datasource blocks in the schema.
 func (ast *SchemaAst) Sources() []*SourceConfig {
+	debug.Debug("Extracting datasource blocks from AST", "total_tops", len(ast.Tops))
 	var sources []*SourceConfig
 	for _, top := range ast.Tops {
 		if source := top.AsSource(); source != nil {
 			sources = append(sources, source)
+			debug.Debug("Found datasource", "name", source.Name.Name)
 		}
 	}
+	debug.Debug("Completed extracting datasources", "count", len(sources))
 	return sources
 }
 
 // Generators returns all generator blocks in the schema.
 func (ast *SchemaAst) Generators() []*GeneratorConfig {
+	debug.Debug("Extracting generator blocks from AST", "total_tops", len(ast.Tops))
 	var generators []*GeneratorConfig
 	for _, top := range ast.Tops {
 		if generator := top.AsGenerator(); generator != nil {
 			generators = append(generators, generator)
+			debug.Debug("Found generator", "name", generator.Name.Name)
 		}
 	}
+	debug.Debug("Completed extracting generators", "count", len(generators))
 	return generators
 }
 
 // IterTops returns all top-level items in the schema.
 func (ast *SchemaAst) IterTops() []Top {
+	debug.Debug("Iterating over top-level items", "count", len(ast.Tops))
 	// Return a copy to avoid external modification
 	tops := make([]Top, len(ast.Tops))
 	copy(tops, ast.Tops)
+	for i, top := range tops {
+		debug.Debug("Top-level item", "index", i, "type", top.GetType(), "name", top.TopName())
+	}
 	return tops
 }
 
@@ -683,9 +694,11 @@ func (m *Model) ModelIsView() bool {
 
 // IterFields returns an iterator over the fields with their indices.
 func (m *Model) IterFields() []FieldWithId {
+	debug.Debug("Iterating over model fields", "model", m.Name.Name, "field_count", len(m.Fields))
 	result := make([]FieldWithId, len(m.Fields))
 	for i := range m.Fields {
 		result[i] = FieldWithId{Id: FieldId(i), Field: &m.Fields[i]}
+		debug.Debug("Model field", "index", i, "name", m.Fields[i].Name.Name, "type", m.Fields[i].FieldType.Name())
 	}
 	return result
 }
@@ -711,9 +724,11 @@ func (e *Enum) TopName() string                 { return e.Name.Name }
 
 // IterValues returns an iterator over the enum values with their indices.
 func (e *Enum) IterValues() []EnumValueWithId {
+	debug.Debug("Iterating over enum values", "enum", e.Name.Name, "value_count", len(e.Values))
 	result := make([]EnumValueWithId, len(e.Values))
 	for i, value := range e.Values {
 		result[i] = EnumValueWithId{Id: EnumValueId(i), Value: &value}
+		debug.Debug("Enum value", "index", i, "name", value.Name.Name)
 	}
 	return result
 }
@@ -764,9 +779,11 @@ func (c *CompositeType) IsCommentedOut() bool {
 
 // IterFields returns an iterator over the fields with their indices.
 func (c *CompositeType) IterFields() []FieldWithId {
+	debug.Debug("Iterating over composite type fields", "type", c.Name.Name, "field_count", len(c.Fields))
 	result := make([]FieldWithId, len(c.Fields))
 	for i, field := range c.Fields {
 		result[i] = FieldWithId{Id: FieldId(i), Field: &field}
+		debug.Debug("Composite type field", "index", i, "name", field.Name.Name, "type", field.FieldType.Name())
 	}
 	return result
 }

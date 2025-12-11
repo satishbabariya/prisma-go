@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/satishbabariya/prisma-go/internal/debug"
 	"github.com/satishbabariya/prisma-go/psl/diagnostics"
 	"github.com/satishbabariya/prisma-go/psl/parsing/lexer"
 )
@@ -17,6 +18,7 @@ type Parser struct {
 
 // NewParser creates a new parser for the given tokens.
 func NewParser(tokens []lexer.Token, diags *diagnostics.Diagnostics) *Parser {
+	debug.Debug("Creating new parser", "token_count", len(tokens))
 	return &Parser{
 		tokens:      tokens,
 		pos:         0,
@@ -26,11 +28,13 @@ func NewParser(tokens []lexer.Token, diags *diagnostics.Diagnostics) *Parser {
 
 // Parse parses the tokens into a SchemaAst.
 func (p *Parser) Parse() *SchemaAst {
+	debug.Debug("Starting parsing process")
 	schema := &SchemaAst{Tops: []Top{}}
 
 	for !p.isAtEnd() {
 		// Skip comments
 		for p.check(lexer.TokenComment) {
+			debug.Debug("Skipping comment token")
 			p.advance()
 		}
 
@@ -40,9 +44,11 @@ func (p *Parser) Parse() *SchemaAst {
 
 		if top := p.parseTopLevel(); top != nil {
 			schema.Tops = append(schema.Tops, top)
+			debug.Debug("Parsed top-level item", "type", top.GetType(), "name", top.TopName())
 		}
 	}
 
+	debug.Debug("Parsing completed", "top_level_items", len(schema.Tops))
 	return schema
 }
 
@@ -57,6 +63,7 @@ func (p *Parser) parseTopLevel() Top {
 	}
 
 	token := p.current()
+	debug.Debug("Parsing top-level item", "token_type", token.Type, "token_value", token.Value)
 
 	switch token.Type {
 	case lexer.TokenGenerator:
@@ -79,8 +86,10 @@ func (p *Parser) parseTopLevel() Top {
 }
 
 func (p *Parser) parseGenerator() Top {
+	debug.Debug("Parsing generator block")
 	p.expect(lexer.TokenGenerator)
 	name := p.expect(lexer.TokenIdentifier)
+	debug.Debug("Generator name", "name", name.Value)
 
 	p.expect(lexer.TokenLBrace)
 
@@ -98,6 +107,7 @@ func (p *Parser) parseGenerator() Top {
 
 		if prop := p.parseConfigProperty(); prop != nil {
 			properties = append(properties, *prop)
+			debug.Debug("Parsed generator property", "name", prop.Name.Name)
 		} else {
 			// If parsing failed, advance to avoid infinite loop
 			p.advance()
@@ -106,16 +116,20 @@ func (p *Parser) parseGenerator() Top {
 
 	p.expect(lexer.TokenRBrace)
 
-	return &GeneratorConfig{
+	generator := &GeneratorConfig{
 		Name:       Identifier{Name: name.Value, span: p.spanForToken(name)},
 		Properties: properties,
 		span:       p.spanFrom(name),
 	}
+	debug.Debug("Completed parsing generator", "property_count", len(properties))
+	return generator
 }
 
 func (p *Parser) parseDatasource() Top {
+	debug.Debug("Parsing datasource block")
 	p.expect(lexer.TokenDatasource)
 	name := p.expect(lexer.TokenIdentifier)
+	debug.Debug("Datasource name", "name", name.Value)
 
 	p.expect(lexer.TokenLBrace)
 
@@ -124,6 +138,7 @@ func (p *Parser) parseDatasource() Top {
 	for !p.check(lexer.TokenRBrace) && !p.isAtEnd() {
 		if prop := p.parseConfigProperty(); prop != nil {
 			properties = append(properties, *prop)
+			debug.Debug("Parsed datasource property", "name", prop.Name.Name)
 		} else {
 			// If parsing failed, advance to avoid infinite loop
 			p.advance()
@@ -132,16 +147,20 @@ func (p *Parser) parseDatasource() Top {
 
 	p.expect(lexer.TokenRBrace)
 
-	return &SourceConfig{
+	datasource := &SourceConfig{
 		Name:       Identifier{Name: name.Value, span: p.spanForToken(name)},
 		Properties: properties,
 		span:       p.spanFrom(name),
 	}
+	debug.Debug("Completed parsing datasource", "property_count", len(properties))
+	return datasource
 }
 
 func (p *Parser) parseModel() Top {
+	debug.Debug("Parsing model block")
 	p.expect(lexer.TokenModel)
 	name := p.expect(lexer.TokenIdentifier)
+	debug.Debug("Model name", "name", name.Value)
 
 	p.expect(lexer.TokenLBrace)
 
@@ -166,6 +185,7 @@ func (p *Parser) parseModel() Top {
 			secondAt := p.advance() // consume second @
 			_ = firstAt
 			_ = secondAt
+			debug.Debug("Parsing model-level attribute")
 			// Skip any comments/whitespace (handled by lexer, but check for comments)
 			for p.check(lexer.TokenComment) {
 				p.advance()
@@ -174,6 +194,7 @@ func (p *Parser) parseModel() Top {
 			// After consuming both @ tokens, the next token should be the attribute name
 			if attr := p.parseAttributeAfterAt(); attr != nil {
 				attributes = append(attributes, *attr)
+				debug.Debug("Parsed model attribute", "name", attr.Name.Name)
 			} else {
 				// If parsing failed, advance to avoid infinite loop
 				if !p.isAtEnd() && !p.check(lexer.TokenRBrace) {
@@ -183,6 +204,7 @@ func (p *Parser) parseModel() Top {
 		} else if field := p.parseField(); field != nil {
 			// Try to parse as a field (field-level @ attributes are handled in parseField)
 			fields = append(fields, *field)
+			debug.Debug("Parsed model field", "name", field.Name.Name, "type", field.FieldType.Name())
 		} else {
 			// If parsing failed, advance to avoid infinite loop
 			p.advance()
@@ -191,12 +213,14 @@ func (p *Parser) parseModel() Top {
 
 	p.expect(lexer.TokenRBrace)
 
-	return &Model{
+	model := &Model{
 		Name:       Identifier{Name: name.Value, span: p.spanForToken(name)},
 		Fields:     fields,
 		Attributes: attributes,
 		span:       p.spanFrom(name),
 	}
+	debug.Debug("Completed parsing model", "field_count", len(fields), "attribute_count", len(attributes))
+	return model
 }
 
 func (p *Parser) parseEnum() Top {
@@ -263,6 +287,7 @@ func (p *Parser) parseCompositeType() Top {
 
 func (p *Parser) parseField() *Field {
 	name := p.expect(lexer.TokenIdentifier)
+	debug.Debug("Parsing field", "name", name.Value)
 	fieldType, arity := p.parseFieldType()
 
 	attributes := []Attribute{}
@@ -270,18 +295,21 @@ func (p *Parser) parseField() *Field {
 	for p.check(lexer.TokenAt) && p.peek().Type != lexer.TokenAt {
 		if attr := p.parseAttribute(); attr != nil {
 			attributes = append(attributes, *attr)
+			debug.Debug("Parsed field attribute", "name", attr.Name.Name)
 		} else {
 			break
 		}
 	}
 
-	return &Field{
+	field := &Field{
 		Name:       Identifier{Name: name.Value, span: p.spanForToken(name)},
 		FieldType:  fieldType,
 		Arity:      arity,
 		Attributes: attributes,
 		span:       p.spanFrom(name),
 	}
+	debug.Debug("Completed parsing field", "arity", arity, "attribute_count", len(attributes))
+	return field
 }
 
 func (p *Parser) parseFieldType() (FieldType, FieldArity) {
@@ -322,10 +350,12 @@ func (p *Parser) parseFieldType() (FieldType, FieldArity) {
 		arity = Required
 	}
 
-	return FieldType{
+	fieldType := FieldType{
 		Type: SupportedFieldType{Identifier: typeName},
 		span: p.spanForToken(typeNameToken),
-	}, arity
+	}
+	debug.Debug("Parsed field type", "type_name", typeName.Name, "arity", arity, "is_array", isArray, "is_optional", isOptional)
+	return fieldType, arity
 }
 
 func (p *Parser) parseEnumValue() *EnumValue {
@@ -346,6 +376,7 @@ func (p *Parser) parseEnumValue() *EnumValue {
 }
 
 func (p *Parser) parseAttribute() *Attribute {
+	debug.Debug("Parsing field-level attribute")
 	p.expect(lexer.TokenAt)
 	return p.parseAttributeAfterAt()
 }
@@ -364,6 +395,7 @@ func (p *Parser) parseAttributeAfterAt() *Attribute {
 		return nil
 	}
 	name := p.expect(lexer.TokenIdentifier)
+	debug.Debug("Attribute name", "name", name.Value)
 
 	argsList := ArgumentsList{
 		Arguments:      []Argument{},
@@ -372,6 +404,7 @@ func (p *Parser) parseAttributeAfterAt() *Attribute {
 	}
 
 	if p.check(lexer.TokenLParen) {
+		debug.Debug("Parsing attribute arguments")
 		p.expect(lexer.TokenLParen)
 
 		for !p.check(lexer.TokenRParen) && !p.isAtEnd() {
@@ -406,6 +439,7 @@ func (p *Parser) parseAttributeAfterAt() *Attribute {
 						argsList.EmptyArguments = append(argsList.EmptyArguments, EmptyArgument{
 							Name: Identifier{Name: nameToken.Value, span: p.spanForToken(nameToken)},
 						})
+						debug.Debug("Parsed empty argument", "name", nameToken.Value)
 
 						// If there's a comma, check if it's trailing
 						if p.check(lexer.TokenComma) {
@@ -423,15 +457,18 @@ func (p *Parser) parseAttributeAfterAt() *Attribute {
 
 					// There's a value after the colon, parse as normal named argument
 					value := p.parseExpression()
-					argsList.Arguments = append(argsList.Arguments, Argument{
+					arg := Argument{
 						Name:  &Identifier{Name: nameToken.Value, span: p.spanForToken(nameToken)},
 						Value: value,
 						Span:  p.spanFrom(nameToken),
-					})
+					}
+					argsList.Arguments = append(argsList.Arguments, arg)
+					debug.Debug("Parsed named argument", "name", nameToken.Value)
 				} else {
 					// Regular unnamed argument or expression
 					if arg := p.parseArgument(); arg != nil {
 						argsList.Arguments = append(argsList.Arguments, *arg)
+						debug.Debug("Parsed unnamed argument")
 					} else {
 						// If parsing failed, advance to avoid infinite loop
 						p.advance()
@@ -439,6 +476,7 @@ func (p *Parser) parseAttributeAfterAt() *Attribute {
 				}
 			} else if arg := p.parseArgument(); arg != nil {
 				argsList.Arguments = append(argsList.Arguments, *arg)
+				debug.Debug("Parsed argument")
 			} else {
 				// If parsing failed, advance to avoid infinite loop
 				p.advance()
@@ -467,13 +505,16 @@ func (p *Parser) parseAttributeAfterAt() *Attribute {
 		}
 
 		p.expect(lexer.TokenRParen)
+		debug.Debug("Completed parsing attribute arguments", "argument_count", len(argsList.Arguments))
 	}
 
-	return &Attribute{
+	attribute := &Attribute{
 		Name:      Identifier{Name: name.Value, span: p.spanForToken(name)},
 		Arguments: argsList,
 		Span:      p.spanFrom(name),
 	}
+	debug.Debug("Completed parsing attribute", "name", name.Value, "argument_count", len(argsList.Arguments))
+	return attribute
 }
 
 func (p *Parser) parseArgument() *Argument {
@@ -498,25 +539,36 @@ func (p *Parser) parseArgument() *Argument {
 
 func (p *Parser) parseExpression() Expression {
 	token := p.current()
+	debug.Debug("Parsing expression", "token_type", token.Type, "token_value", token.Value)
 
 	switch token.Type {
 	case lexer.TokenString:
 		p.advance()
-		return StringLiteral{Value: token.Value, span: p.spanForToken(token)}
+		expr := StringLiteral{Value: token.Value, span: p.spanForToken(token)}
+		debug.Debug("Parsed string literal expression", "value", token.Value)
+		return expr
 	case lexer.TokenNumber:
 		p.advance()
 		if intVal, err := strconv.Atoi(token.Value); err == nil {
-			return IntLiteral{Value: intVal, span: p.spanForToken(token)}
+			expr := IntLiteral{Value: intVal, span: p.spanForToken(token)}
+			debug.Debug("Parsed integer literal expression", "value", intVal)
+			return expr
 		}
 		if floatVal, err := strconv.ParseFloat(token.Value, 64); err == nil {
-			return FloatLiteral{Value: floatVal, span: p.spanForToken(token)}
+			expr := FloatLiteral{Value: floatVal, span: p.spanForToken(token)}
+			debug.Debug("Parsed float literal expression", "value", floatVal)
+			return expr
 		}
 		// Default to int if parsing fails
-		return IntLiteral{Value: 0, span: p.spanForToken(token)}
+		expr := IntLiteral{Value: 0, span: p.spanForToken(token)}
+		debug.Debug("Failed to parse number, defaulting to 0")
+		return expr
 	case lexer.TokenBoolean:
 		p.advance()
 		boolVal := token.Value == "true"
-		return BooleanLiteral{Value: boolVal, span: p.spanForToken(token)}
+		expr := BooleanLiteral{Value: boolVal, span: p.spanForToken(token)}
+		debug.Debug("Parsed boolean literal expression", "value", boolVal)
+		return expr
 	case lexer.TokenLBracket:
 		return p.parseArrayLiteral()
 	case lexer.TokenIdentifier:
@@ -524,7 +576,9 @@ func (p *Parser) parseExpression() Expression {
 			return p.parseFunctionCall()
 		}
 		p.advance()
-		return Identifier{Name: token.Value, span: p.spanForToken(token)}
+		expr := Identifier{Name: token.Value, span: p.spanForToken(token)}
+		debug.Debug("Parsed identifier expression", "value", token.Value)
+		return expr
 	case lexer.TokenRBrace, lexer.TokenRParen, lexer.TokenRBracket, lexer.TokenComma, lexer.TokenEOF:
 		// End of expression - return error and don't advance
 		p.error("Expected expression (value, function call, or array) but found end of construct")
@@ -538,6 +592,7 @@ func (p *Parser) parseExpression() Expression {
 }
 
 func (p *Parser) parseArrayLiteral() Expression {
+	debug.Debug("Parsing array literal")
 	p.expect(lexer.TokenLBracket)
 
 	elements := []Expression{}
@@ -559,14 +614,17 @@ func (p *Parser) parseArrayLiteral() Expression {
 		p.expect(lexer.TokenRBracket)
 	}
 
-	return ArrayLiteral{
+	array := ArrayLiteral{
 		Elements: elements,
 		span:     p.spanFrom(p.previous()),
 	}
+	debug.Debug("Completed parsing array literal", "element_count", len(elements))
+	return array
 }
 
 func (p *Parser) parseFunctionCall() Expression {
 	name := p.expect(lexer.TokenIdentifier)
+	debug.Debug("Parsing function call", "name", name.Value)
 	p.expect(lexer.TokenLParen)
 
 	args := []Expression{}
@@ -588,11 +646,13 @@ func (p *Parser) parseFunctionCall() Expression {
 		p.expect(lexer.TokenRParen)
 	}
 
-	return FunctionCall{
+	functionCall := FunctionCall{
 		Name:      Identifier{Name: name.Value, span: p.spanForToken(name)},
 		Arguments: args,
 		span:      p.spanFrom(name),
 	}
+	debug.Debug("Completed parsing function call", "name", name.Value, "argument_count", len(args))
+	return functionCall
 }
 
 func (p *Parser) parseConfigProperty() *ConfigBlockProperty {
@@ -672,10 +732,14 @@ func (p *Parser) expect(tokenType lexer.TokenType) lexer.Token {
 func (p *Parser) error(message string) {
 	// Add error to diagnostics
 	span := diagnostics.NewSpan(0, 0, diagnostics.FileIDZero) // Default span
+	var line, column int
 	if !p.isAtEnd() {
 		token := p.current()
 		span = diagnostics.NewSpan(token.Column, token.Column+len(token.Value), diagnostics.FileIDZero)
+		line = token.Line
+		column = token.Column
 	}
+	debug.Error("Parser error", "message", message, "line", line, "column", column)
 	p.diagnostics.PushError(diagnostics.NewValidationError(message, span))
 }
 
