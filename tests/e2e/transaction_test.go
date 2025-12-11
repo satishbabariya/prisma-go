@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestTransactions tests transaction functionality
-func (suite *TestSuite) TestTransactions() {
+// TestTransactionRollback tests transaction functionality with rollback scenarios
+func (suite *TestSuite) TestTransactionRollback() {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 

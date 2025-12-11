@@ -1,0 +1,289 @@
+package e2e
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/stretchr/testify/require"
+)
+
+// TestAutoReconnect tests auto-reconnect functionality after disconnect
+func (suite *TestSuite) TestAutoReconnect() {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	// Create test tables
+	suite.createTestTables(ctx)
+	defer suite.cleanupTestTables(ctx)
+
+	// Test basic disconnect and reconnect
+	suite.testBasicReconnect(ctx)
+
+	// Test reconnect after connection failure
+	suite.testReconnectAfterFailure(ctx)
+
+	// Test multiple disconnect/reconnect cycles
+	suite.testMultipleReconnectCycles(ctx)
+
+	suite.T().Logf("Auto-reconnect test passed for provider: %s", suite.config.Provider)
+}
+
+// testBasicReconnect tests basic disconnect and reconnect functionality
+func (suite *TestSuite) testBasicReconnect(ctx context.Context) {
+	// Insert initial data
+	_, err := suite.db.ExecContext(ctx,
+		suite.convertPlaceholders("INSERT INTO users (email, name, age) VALUES (?, ?, ?)"),
+		"reconnect@example.com", "Reconnect Test", 30)
+	require.NoError(suite.T(), err)
+
+	// Verify data exists before disconnect
+	var count int
+	err = suite.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM users WHERE email = ?", "reconnect@example.com").Scan(&count)
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), 1, count)
+
+	// Disconnect the database connection
+	err = suite.prisma.Disconnect(ctx)
+	require.NoError(suite.T(), err)
+
+	// Try to query - should fail
+	err = suite.db.PingContext(ctx)
+	require.Error(suite.T(), err)
+
+	// Reconnect
+	err = suite.prisma.Connect(ctx)
+	require.NoError(suite.T(), err)
+
+	// Verify connection is restored
+	err = suite.db.PingContext(ctx)
+	require.NoError(suite.T(), err)
+
+	// Verify data still exists after reconnect
+	err = suite.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM users WHERE email = ?", "reconnect@example.com").Scan(&count)
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), 1, count)
+
+	// Test that we can insert new data after reconnect
+	_, err = suite.db.ExecContext(ctx,
+		suite.convertPlaceholders("INSERT INTO users (email, name, age) VALUES (?, ?, ?)"),
+		"reconnect2@example.com", "Reconnect Test 2", 25)
+	require.NoError(suite.T(), err)
+
+	// Verify new data was inserted
+	err = suite.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM users WHERE email = ?", "reconnect2@example.com").Scan(&count)
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), 1, count)
+}
+
+// testReconnectAfterFailure tests reconnect after connection failure
+func (suite *TestSuite) testReconnectAfterFailure(ctx context.Context) {
+	// Insert test data
+	_, err := suite.db.ExecContext(ctx,
+		suite.convertPlaceholders("INSERT INTO users (email, name, age) VALUES (?, ?, ?)"),
+		"failure@example.com", "Failure Test", 35)
+	require.NoError(suite.T(), err)
+
+	// Force disconnect by closing the underlying connection
+	err = suite.db.Close()
+	require.NoError(suite.T(), err)
+
+	// Create new connection to simulate recovery
+	newDB, err := suite.connectToDatabase()
+	require.NoError(suite.T(), err)
+	defer newDB.Close()
+
+	// Test the new connection works
+	err = newDB.PingContext(ctx)
+	require.NoError(suite.T(), err)
+
+	// Verify data is still accessible
+	var count int
+	err = newDB.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM users WHERE email = ?", "failure@example.com").Scan(&count)
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), 1, count)
+
+	// Update the suite's database reference
+	suite.db = newDB
+
+	// Test that we can continue operations
+	_, err = suite.db.ExecContext(ctx,
+		suite.convertPlaceholders("INSERT INTO users (email, name, age) VALUES (?, ?, ?)"),
+		"recovered@example.com", "Recovered Test", 40)
+	require.NoError(suite.T(), err)
+}
+
+// testMultipleReconnectCycles tests multiple disconnect/reconnect cycles
+func (suite *TestSuite) testMultipleReconnectCycles(ctx context.Context) {
+	// Test multiple disconnect/reconnect cycles
+	for i := 0; i < 3; i++ {
+		// Insert data for this cycle
+		email := suite.getUniqueEmail("cycle", i)
+		_, err := suite.db.ExecContext(ctx,
+			suite.convertPlaceholders("INSERT INTO users (email, name, age) VALUES (?, ?, ?)"),
+			email, "Cycle Test", 20+i)
+		require.NoError(suite.T(), err)
+
+		// Verify data exists
+		var count int
+		err = suite.db.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM users WHERE email = ?", email).Scan(&count)
+		require.NoError(suite.T(), err)
+		require.Equal(suite.T(), 1, count)
+
+		// Disconnect
+		err = suite.prisma.Disconnect(ctx)
+		require.NoError(suite.T(), err)
+
+		// Verify disconnected
+		err = suite.db.PingContext(ctx)
+		require.Error(suite.T(), err)
+
+		// Reconnect
+		err = suite.prisma.Connect(ctx)
+		require.NoError(suite.T(), err)
+
+		// Verify reconnected
+		err = suite.db.PingContext(ctx)
+		require.NoError(suite.T(), err)
+
+		// Verify data still exists
+		err = suite.db.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM users WHERE email = ?", email).Scan(&count)
+		require.NoError(suite.T(), err)
+		require.Equal(suite.T(), 1, count)
+	}
+
+	// Verify all cycle data exists
+	var totalCycles int
+	err := suite.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM users WHERE email LIKE 'cycle%'").Scan(&totalCycles)
+	require.NoError(suite.T(), err)
+	require.Equal(suite.T(), 3, totalCycles)
+}
+
+// connectToDatabase creates a new database connection
+func (suite *TestSuite) connectToDatabase() (*sql.DB, error) {
+	db, err := sql.Open(getDriverName(suite.config.Provider), suite.config.DatabaseURL)
+	if err != nil {
+		return nil, err
+	}
+
+	// Test connection
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err = db.PingContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return db, nil
+}
+
+// getUniqueEmail generates a unique email for testing
+func (suite *TestSuite) getUniqueEmail(prefix string, index int) string {
+	return fmt.Sprintf("%s-%d-%d@example.com", prefix, index, time.Now().UnixNano())
+}
+
+// TestConnectionResilience tests connection resilience under various conditions
+func (suite *TestSuite) TestConnectionResilience() {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	// Create test tables
+	suite.createTestTables(ctx)
+	defer suite.cleanupTestTables(ctx)
+
+	// Test resilience during operations
+	suite.testResilienceDuringOperations(ctx)
+
+	// Test timeout handling
+	suite.testConnectionTimeouts(ctx)
+
+	suite.T().Logf("Connection resilience test passed for provider: %s", suite.config.Provider)
+}
+
+// testResilienceDuringOperations tests connection resilience during database operations
+func (suite *TestSuite) testResilienceDuringOperations(ctx context.Context) {
+	// Start a background operation
+	done := make(chan bool, 1)
+	errors := make(chan error, 1)
+
+	go func() {
+		defer func() { done <- true }()
+
+		// Perform multiple operations
+		for i := 0; i < 10; i++ {
+			email := fmt.Sprintf("resilience-%d@example.com", i)
+			_, err := suite.db.ExecContext(ctx,
+				suite.convertPlaceholders("INSERT INTO users (email, name, age) VALUES (?, ?, ?)"),
+				email, "Resilience Test", 20+i)
+			if err != nil {
+				errors <- err
+				return
+			}
+
+			// Small delay between operations
+			time.Sleep(100 * time.Millisecond)
+		}
+	}()
+
+	// Wait a bit then disconnect and reconnect
+	time.Sleep(200 * time.Millisecond)
+
+	// Disconnect
+	err := suite.prisma.Disconnect(ctx)
+	require.NoError(suite.T(), err)
+
+	// Small delay
+	time.Sleep(100 * time.Millisecond)
+
+	// Reconnect
+	err = suite.prisma.Connect(ctx)
+	require.NoError(suite.T(), err)
+
+	// Wait for background operation to complete
+	select {
+	case <-done:
+		// Operation completed
+	case err := <-errors:
+		// Some operations might fail during disconnect, which is expected
+		suite.T().Logf("Operation error during disconnect/reconnect: %v", err)
+	case <-ctx.Done():
+		suite.T().Fatal("Resilience test timed out")
+	}
+
+	// Verify some data was inserted
+	var count int
+	err = suite.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM users WHERE email LIKE 'resilience%'").Scan(&count)
+	require.NoError(suite.T(), err)
+	require.Greater(suite.T(), count, 0)
+}
+
+// testConnectionTimeouts tests connection timeout handling
+func (suite *TestSuite) testConnectionTimeouts(ctx context.Context) {
+	// Test with very short timeout
+	shortCtx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	defer cancel()
+
+	// This should timeout quickly
+	_, err := suite.db.ExecContext(shortCtx, "SELECT 1")
+	require.Error(suite.T(), err)
+	require.True(suite.T(), errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, context.Canceled))
+
+	// Test with normal timeout - should work
+	normalCtx, normalCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer normalCancel()
+
+	_, err = suite.db.ExecContext(normalCtx, "SELECT 1")
+	require.NoError(suite.T(), err)
+}
