@@ -160,15 +160,15 @@ func (suite *TestSuite) testNestedSeeding(ctx context.Context) {
 
 	// Verify nested data was created correctly
 	var userCount, postCount, commentCount int
-	err = suite.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users WHERE email = ?", "alice@prisma.io").Scan(&userCount)
+	err = suite.db.QueryRowContext(ctx, suite.convertPlaceholders("SELECT COUNT(*) FROM users WHERE email = ?"), "alice@prisma.io").Scan(&userCount)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), 1, userCount)
 
-	err = suite.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM posts WHERE author_id = ?", userID).Scan(&postCount)
+	err = suite.db.QueryRowContext(ctx, suite.convertPlaceholders("SELECT COUNT(*) FROM posts WHERE author_id = ?"), userID).Scan(&postCount)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), 2, postCount)
 
-	err = suite.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM comments WHERE author_id = ?", userID).Scan(&commentCount)
+	err = suite.db.QueryRowContext(ctx, suite.convertPlaceholders("SELECT COUNT(*) FROM comments WHERE author_id = ?"), userID).Scan(&commentCount)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), 2, commentCount)
 }
@@ -200,7 +200,7 @@ func (suite *TestSuite) testBulkSeeding(ctx context.Context) {
 
 	// Verify bulk insert
 	var userCount int
-	err = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM users WHERE email IN (?, ?)", "nilu@prisma.io", "mahmoud@prisma.io").Scan(&userCount)
+	err = tx.QueryRowContext(ctx, suite.convertPlaceholders("SELECT COUNT(*) FROM users WHERE email IN (?, ?)"), "nilu@prisma.io", "mahmoud@prisma.io").Scan(&userCount)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), len(users), userCount)
 
