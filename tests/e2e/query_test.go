@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	queryAst "github.com/satishbabariya/prisma-go/query/ast"
@@ -157,9 +158,25 @@ func (suite *TestSuite) createComplexTestTables(ctx context.Context) {
 	}
 
 	suite.T().Logf("Creating tables with SQL: %s", createSQL)
-	_, err = suite.db.ExecContext(ctx, createSQL)
-	suite.T().Logf("Table creation error: %v", err)
-	require.NoError(suite.T(), err)
+	// MySQL doesn't support multiple statements in one ExecContext call
+	if suite.config.Provider == "mysql" {
+		// Split by semicolon and execute each statement separately
+		statements := strings.Split(createSQL, ";")
+		for _, stmt := range statements {
+			stmt = strings.TrimSpace(stmt)
+			if stmt != "" {
+				_, err := suite.db.ExecContext(ctx, stmt)
+				if err != nil {
+					suite.T().Logf("Table creation error: %v", err)
+				}
+				require.NoError(suite.T(), err)
+			}
+		}
+	} else {
+		_, err = suite.db.ExecContext(ctx, createSQL)
+		suite.T().Logf("Table creation error: %v", err)
+		require.NoError(suite.T(), err)
+	}
 
 	// Insert test data
 	suite.insertComplexTestData(ctx)

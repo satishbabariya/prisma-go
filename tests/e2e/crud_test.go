@@ -2,6 +2,8 @@ package e2e
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	queryAst "github.com/satishbabariya/prisma-go/query/ast"
@@ -68,7 +70,7 @@ func (suite *TestSuite) createTestTables(ctx context.Context) {
 			title VARCHAR(255) NOT NULL,
 			content TEXT,
 			published BOOLEAN DEFAULT FALSE,
-			author_id INT,
+			author_id INT NOT NULL,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE CASCADE
 		);`
@@ -92,8 +94,21 @@ func (suite *TestSuite) createTestTables(ctx context.Context) {
 		);`
 	}
 
-	_, err := suite.db.ExecContext(ctx, createSQL)
-	require.NoError(suite.T(), err)
+	// MySQL doesn't support multiple statements in one ExecContext call
+	if suite.config.Provider == "mysql" {
+		// Split by semicolon and execute each statement separately
+		statements := strings.Split(createSQL, ";")
+		for _, stmt := range statements {
+			stmt = strings.TrimSpace(stmt)
+			if stmt != "" {
+				_, err := suite.db.ExecContext(ctx, stmt)
+				require.NoError(suite.T(), err)
+			}
+		}
+	} else {
+		_, err := suite.db.ExecContext(ctx, createSQL)
+		require.NoError(suite.T(), err)
+	}
 }
 
 // cleanupTestTables removes test tables
@@ -127,8 +142,8 @@ func (suite *TestSuite) testCreateOperation(ctx context.Context) {
 	userAge := 25
 
 	var userID int
-	if suite.config.Provider == "sqlite" {
-		// SQLite doesn't support RETURNING clause, use last_insert_rowid()
+	if suite.config.Provider == "sqlite" || suite.config.Provider == "mysql" {
+		// SQLite and MySQL don't support RETURNING clause, use last_insert_rowid()/LastInsertId()
 		result, err := suite.db.ExecContext(ctx,
 			suite.convertPlaceholders("INSERT INTO users (email, name, age) VALUES (?, ?, ?)"),
 			userEmail, userName, userAge)
@@ -149,8 +164,8 @@ func (suite *TestSuite) testCreateOperation(ctx context.Context) {
 	postContent := "This is a test post content"
 
 	var postID int
-	if suite.config.Provider == "sqlite" {
-		// SQLite doesn't support RETURNING clause, use last_insert_rowid()
+	if suite.config.Provider == "sqlite" || suite.config.Provider == "mysql" {
+		// SQLite and MySQL don't support RETURNING clause, use last_insert_rowid()/LastInsertId()
 		result, err := suite.db.ExecContext(ctx,
 			suite.convertPlaceholders("INSERT INTO posts (title, content, author_id) VALUES (?, ?, ?)"),
 			postTitle, postContent, userID)
@@ -327,13 +342,20 @@ func (suite *TestSuite) TestQueryCompilation() {
 	suite.T().Logf("Compiled SQL: %s, Args: %v", sql, args)
 
 	// Test that the compiled SQL can be executed (if tables exist)
+	// Clean up first to ensure isolation from previous tests
+	suite.cleanupTestTables(ctx)
 	suite.createTestTables(ctx)
 	defer suite.cleanupTestTables(ctx)
 
 	// Insert test data first
+	// Use a unique email to avoid conflicts with other tests
+	testEmail := fmt.Sprintf("querycomp-%d@example.com", time.Now().UnixNano())
 	_, err = suite.db.ExecContext(ctx,
-		suite.convertPlaceholders("INSERT INTO users (email, name) VALUES (?, ?)"), "test@example.com", "Test User")
+		suite.convertPlaceholders("INSERT INTO users (email, name) VALUES (?, ?)"), testEmail, "Test User")
 	require.NoError(suite.T(), err)
+	
+	// Update the query args to use the new email
+	args = []interface{}{testEmail}
 
 	// Execute the compiled query
 	rows, err := suite.db.QueryContext(ctx, sql, args...)
@@ -348,7 +370,7 @@ func (suite *TestSuite) TestQueryCompilation() {
 		var email, name string
 		err = rows.Scan(&id, &email, &name)
 		require.NoError(suite.T(), err)
-		require.Equal(suite.T(), "test@example.com", email)
+		require.Equal(suite.T(), testEmail, email)
 		require.Equal(suite.T(), "Test User", name)
 	}
 

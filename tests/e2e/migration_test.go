@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/satishbabariya/prisma-go/migrate/diff"
@@ -176,8 +177,21 @@ func (suite *TestSuite) TestMigrationExecution() {
 	suite.T().Logf("Generated SQL: %s", generatedSQL)
 
 	// Execute SQL directly
-	_, err = suite.db.ExecContext(ctx, generatedSQL)
-	require.NoError(suite.T(), err)
+	// MySQL doesn't support multiple statements in one ExecContext call
+	if suite.config.Provider == "mysql" {
+		// Split by semicolon and execute each statement separately
+		statements := strings.Split(generatedSQL, ";")
+		for _, stmt := range statements {
+			stmt = strings.TrimSpace(stmt)
+			if stmt != "" {
+				_, err := suite.db.ExecContext(ctx, stmt)
+				require.NoError(suite.T(), err)
+			}
+		}
+	} else {
+		_, err = suite.db.ExecContext(ctx, generatedSQL)
+		require.NoError(suite.T(), err)
+	}
 
 	// Verify tables were created
 	var userTableExists bool

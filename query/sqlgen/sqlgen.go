@@ -816,8 +816,8 @@ func (g *MySQLGenerator) GenerateSelect(table string, columns []string, where *W
 	// WHERE clause
 	if where != nil && !where.IsEmpty() {
 		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
-			return fmt.Sprintf("$%d", i)
-		}, quoteIdentifier, "postgresql")
+			return "?"
+		}, quoteIdentifierMySQL, "mysql")
 		if whereSQL != "" {
 			parts = append(parts, "WHERE "+whereSQL)
 			args = append(args, whereArgs...)
