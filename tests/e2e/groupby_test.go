@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -109,8 +110,23 @@ func (suite *TestSuite) createGroupByTables(ctx context.Context) {
 		);`
 	}
 
-	_, err := suite.db.ExecContext(ctx, createSQL)
-	require.NoError(suite.T(), err)
+	// MySQL doesn't support multiple CREATE TABLE statements in one Exec
+	if suite.config.Provider == "mysql" {
+		statements := strings.Split(createSQL, ";")
+		for _, stmt := range statements {
+			trimmedStmt := strings.TrimSpace(stmt)
+			if trimmedStmt != "" {
+				_, err := suite.db.ExecContext(ctx, trimmedStmt)
+				if err != nil {
+					suite.T().Logf("Table creation error for statement '%s': %v", trimmedStmt, err)
+					require.NoError(suite.T(), err)
+				}
+			}
+		}
+	} else {
+		_, err := suite.db.ExecContext(ctx, createSQL)
+		require.NoError(suite.T(), err)
+	}
 }
 
 // cleanupGroupByTables removes GROUP BY test tables
@@ -157,10 +173,21 @@ func (suite *TestSuite) insertGroupByTestData(ctx context.Context) {
 
 	for _, user := range users {
 		var userID int
-		err := suite.db.QueryRowContext(ctx,
-			suite.convertPlaceholders("INSERT INTO users (email, name, age, department, salary) VALUES (?, ?, ?, ?, ?) RETURNING id"),
-			user.Email, user.Name, user.Age, user.Department, user.Salary).Scan(&userID)
-		require.NoError(suite.T(), err)
+		var err error
+		if suite.config.Provider == "postgresql" || suite.config.Provider == "postgres" {
+			err = suite.db.QueryRowContext(ctx,
+				suite.convertPlaceholders("INSERT INTO users (email, name, age, department, salary) VALUES (?, ?, ?, ?, ?) RETURNING id"),
+				user.Email, user.Name, user.Age, user.Department, user.Salary).Scan(&userID)
+			require.NoError(suite.T(), err)
+		} else {
+			result, err := suite.db.ExecContext(ctx,
+				suite.convertPlaceholders("INSERT INTO users (email, name, age, department, salary) VALUES (?, ?, ?, ?, ?)"),
+				user.Email, user.Name, user.Age, user.Department, user.Salary)
+			require.NoError(suite.T(), err)
+			lastID, err := result.LastInsertId()
+			require.NoError(suite.T(), err)
+			userID = int(lastID)
+		}
 
 		// Insert posts for each user with different categories
 		categories := []string{"Technology", "Business", "Lifestyle"}

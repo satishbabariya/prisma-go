@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -116,8 +117,23 @@ func (suite *TestSuite) createSeedingTables(ctx context.Context) {
 		);`
 	}
 
-	_, err := suite.db.ExecContext(ctx, createSQL)
-	require.NoError(suite.T(), err)
+	// MySQL doesn't support multiple CREATE TABLE statements in one Exec
+	if suite.config.Provider == "mysql" {
+		statements := strings.Split(createSQL, ";")
+		for _, stmt := range statements {
+			trimmedStmt := strings.TrimSpace(stmt)
+			if trimmedStmt != "" {
+				_, err := suite.db.ExecContext(ctx, trimmedStmt)
+				if err != nil {
+					suite.T().Logf("Table creation error for statement '%s': %v", trimmedStmt, err)
+					require.NoError(suite.T(), err)
+				}
+			}
+		}
+	} else {
+		_, err := suite.db.ExecContext(ctx, createSQL)
+		require.NoError(suite.T(), err)
+	}
 }
 
 // cleanupSeedingTables removes seeding test tables
@@ -130,22 +146,49 @@ func (suite *TestSuite) cleanupSeedingTables(ctx context.Context) {
 func (suite *TestSuite) testNestedSeeding(ctx context.Context) {
 	// Insert a user with nested posts and comments
 	var userID int
-	err := suite.db.QueryRowContext(ctx,
-		suite.convertPlaceholders("INSERT INTO users (email, name, age) VALUES (?, ?, ?) RETURNING id"),
-		"alice@prisma.io", "Alice", 27).Scan(&userID)
-	require.NoError(suite.T(), err)
+	var err error
+	if suite.config.Provider == "postgresql" || suite.config.Provider == "postgres" {
+		err = suite.db.QueryRowContext(ctx,
+			suite.convertPlaceholders("INSERT INTO users (email, name, age) VALUES (?, ?, ?) RETURNING id"),
+			"alice@prisma.io", "Alice", 27).Scan(&userID)
+		require.NoError(suite.T(), err)
+	} else {
+		result, err := suite.db.ExecContext(ctx,
+			suite.convertPlaceholders("INSERT INTO users (email, name, age) VALUES (?, ?, ?)"),
+			"alice@prisma.io", "Alice", 27)
+		require.NoError(suite.T(), err)
+		lastID, err := result.LastInsertId()
+		require.NoError(suite.T(), err)
+		userID = int(lastID)
+	}
 
 	// Insert posts for Alice
 	var post1ID, post2ID int
-	err = suite.db.QueryRowContext(ctx,
-		suite.convertPlaceholders("INSERT INTO posts (title, content, published, view_count, author_id) VALUES (?, ?, ?, ?, ?) RETURNING id"),
-		"Join the Prisma Slack", "https://slack.prisma.io", true, 42, userID).Scan(&post1ID)
-	require.NoError(suite.T(), err)
-
-	err = suite.db.QueryRowContext(ctx,
-		suite.convertPlaceholders("INSERT INTO posts (title, content, published, view_count, author_id) VALUES (?, ?, ?, ?, ?) RETURNING id"),
-		"Follow Prisma on Twitter", "https://www.twitter.com/prisma", true, 128, userID).Scan(&post2ID)
-	require.NoError(suite.T(), err)
+	if suite.config.Provider == "postgresql" || suite.config.Provider == "postgres" {
+		err = suite.db.QueryRowContext(ctx,
+			suite.convertPlaceholders("INSERT INTO posts (title, content, published, view_count, author_id) VALUES (?, ?, ?, ?, ?) RETURNING id"),
+			"Join the Prisma Slack", "https://slack.prisma.io", true, 42, userID).Scan(&post1ID)
+		require.NoError(suite.T(), err)
+		err = suite.db.QueryRowContext(ctx,
+			suite.convertPlaceholders("INSERT INTO posts (title, content, published, view_count, author_id) VALUES (?, ?, ?, ?, ?) RETURNING id"),
+			"Follow Prisma on Twitter", "https://www.twitter.com/prisma", true, 128, userID).Scan(&post2ID)
+		require.NoError(suite.T(), err)
+	} else {
+		result, err := suite.db.ExecContext(ctx,
+			suite.convertPlaceholders("INSERT INTO posts (title, content, published, view_count, author_id) VALUES (?, ?, ?, ?, ?)"),
+			"Join the Prisma Slack", "https://slack.prisma.io", true, 42, userID)
+		require.NoError(suite.T(), err)
+		lastID, err := result.LastInsertId()
+		require.NoError(suite.T(), err)
+		post1ID = int(lastID)
+		result, err = suite.db.ExecContext(ctx,
+			suite.convertPlaceholders("INSERT INTO posts (title, content, published, view_count, author_id) VALUES (?, ?, ?, ?, ?)"),
+			"Follow Prisma on Twitter", "https://www.twitter.com/prisma", true, 128, userID)
+		require.NoError(suite.T(), err)
+		lastID, err = result.LastInsertId()
+		require.NoError(suite.T(), err)
+		post2ID = int(lastID)
+	}
 
 	// Insert comments on posts
 	_, err = suite.db.ExecContext(ctx,
