@@ -87,6 +87,18 @@ func (suite *TestSuite) SetupSuite() {
 	require.NoError(suite.T(), err)
 	require.NotNil(suite.T(), db)
 
+	// SQLite-specific setup: enable foreign keys and WAL mode for better concurrency
+	if suite.config.Provider == "sqlite" {
+		_, err = db.ExecContext(ctx, "PRAGMA foreign_keys = ON")
+		if err != nil {
+			suite.T().Logf("Warning: Could not enable foreign keys: %v", err)
+		}
+		_, err = db.ExecContext(ctx, "PRAGMA journal_mode = WAL")
+		if err != nil {
+			suite.T().Logf("Warning: Could not enable WAL mode: %v", err)
+		}
+	}
+
 	// Test database connection
 	err = db.PingContext(ctx)
 	require.NoError(suite.T(), err)
@@ -113,6 +125,25 @@ func (suite *TestSuite) SetupSuite() {
 	suite.compiler = compiler.NewCompiler(suite.config.Provider)
 
 	suite.T().Logf("E2E test suite setup completed for provider: %s", suite.config.Provider)
+}
+
+// SetupTest runs before each test to ensure clean state
+func (suite *TestSuite) SetupTest() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// For SQLite, clean up any existing test data
+	if suite.config.Provider == "sqlite" {
+		// Delete data from common test tables
+		tables := []string{"posts", "users", "departments", "employees", "projects", "employee_projects", "concurrent_test", "test_introspection"}
+		for _, table := range tables {
+			_, err := suite.db.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s", table))
+			if err != nil {
+				// Table might not exist, which is fine
+				suite.T().Logf("Could not delete from %s (may not exist): %v", table, err)
+			}
+		}
+	}
 }
 
 // TearDownSuite runs once per test suite

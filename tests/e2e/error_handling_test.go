@@ -209,13 +209,24 @@ func (suite *TestSuite) testDataTypeErrors(ctx context.Context) {
 	// Note: This test may behave differently across databases
 
 	// Try to insert a string into an integer field
+	// Note: SQLite uses dynamic typing and is very permissive, so this might not error
 	_, err := suite.db.ExecContext(ctx,
 		suite.convertPlaceholders("INSERT INTO users (email, name, age) VALUES (?, ?, ?)"),
 		"datatype@example.com", "Data Type User", "not-a-number")
-	require.Error(suite.T(), err)
-
-	errMsg := err.Error()
-	suite.T().Logf("Data type error: %s", errMsg)
+	
+	// SQLite is very permissive with types and might allow this
+	if suite.config.Provider == "sqlite" {
+		// SQLite might allow this, so we don't require an error
+		if err != nil {
+			suite.T().Logf("Data type error: %s", err.Error())
+		} else {
+			suite.T().Logf("SQLite allowed string in integer field (dynamic typing)")
+		}
+	} else {
+		require.Error(suite.T(), err)
+		errMsg := err.Error()
+		suite.T().Logf("Data type error: %s", errMsg)
+	}
 
 	// Try to insert a very long string that exceeds field length
 	longString := make([]byte, 300) // Assuming VARCHAR(255) limit
@@ -229,8 +240,7 @@ func (suite *TestSuite) testDataTypeErrors(ctx context.Context) {
 
 	// This may or may not error depending on the database and field definitions
 	if err != nil {
-		errMsg = err.Error()
-		suite.T().Logf("Field length error: %s", errMsg)
+		suite.T().Logf("Field length error: %s", err.Error())
 	}
 }
 

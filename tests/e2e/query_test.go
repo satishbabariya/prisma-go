@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	queryAst "github.com/satishbabariya/prisma-go/query/ast"
@@ -138,9 +139,21 @@ func (suite *TestSuite) createComplexTestTables(ctx context.Context) {
 	}
 
 	// Drop tables first to ensure clean state
-	_, err := suite.db.ExecContext(ctx, "DROP TABLE IF EXISTS employee_projects, projects, employees, departments")
-	if err != nil {
-		suite.T().Logf("Drop tables error (may be expected): %v", err)
+	var err error
+	if suite.config.Provider == "sqlite" {
+		// SQLite doesn't support dropping multiple tables in one statement
+		tables := []string{"employee_projects", "projects", "employees", "departments"}
+		for _, table := range tables {
+			_, err = suite.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", table))
+			if err != nil {
+				suite.T().Logf("Drop table %s error (may be expected): %v", table, err)
+			}
+		}
+	} else {
+		_, err = suite.db.ExecContext(ctx, "DROP TABLE IF EXISTS employee_projects, projects, employees, departments")
+		if err != nil {
+			suite.T().Logf("Drop tables error (may be expected): %v", err)
+		}
 	}
 
 	suite.T().Logf("Creating tables with SQL: %s", createSQL)
@@ -194,8 +207,19 @@ func (suite *TestSuite) insertComplexTestData(ctx context.Context) {
 
 // cleanupComplexTestTables removes complex test tables
 func (suite *TestSuite) cleanupComplexTestTables(ctx context.Context) {
-	_, err := suite.db.ExecContext(ctx, "DROP TABLE IF EXISTS employee_projects, projects, employees, departments")
-	require.NoError(suite.T(), err)
+	if suite.config.Provider == "sqlite" {
+		// SQLite doesn't support dropping multiple tables in one statement
+		tables := []string{"employee_projects", "projects", "employees", "departments"}
+		for _, table := range tables {
+			_, err := suite.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", table))
+			if err != nil {
+				suite.T().Logf("Error dropping table %s: %v", table, err)
+			}
+		}
+	} else {
+		_, err := suite.db.ExecContext(ctx, "DROP TABLE IF EXISTS employee_projects, projects, employees, departments")
+		require.NoError(suite.T(), err)
+	}
 }
 
 // testComplexWhereClauses tests complex WHERE conditions

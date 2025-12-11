@@ -290,7 +290,11 @@ func (suite *TestSuite) TestConcurrentConnections() {
 	require.NoError(suite.T(), err)
 
 	// Test concurrent operations
+	// SQLite has concurrency limitations, so reduce concurrency for SQLite
 	concurrency := 10
+	if suite.config.Provider == "sqlite" {
+		concurrency = 5 // Reduce concurrency for SQLite
+	}
 	done := make(chan bool, concurrency)
 
 	for i := 0; i < concurrency; i++ {

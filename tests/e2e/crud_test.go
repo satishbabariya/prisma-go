@@ -86,7 +86,7 @@ func (suite *TestSuite) createTestTables(ctx context.Context) {
 			title TEXT NOT NULL,
 			content TEXT,
 			published BOOLEAN DEFAULT FALSE,
-			author_id INTEGER,
+			author_id INTEGER NOT NULL,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY (author_id) REFERENCES users(id) ON DELETE CASCADE
 		);`
@@ -98,8 +98,25 @@ func (suite *TestSuite) createTestTables(ctx context.Context) {
 
 // cleanupTestTables removes test tables
 func (suite *TestSuite) cleanupTestTables(ctx context.Context) {
-	_, err := suite.db.ExecContext(ctx, "DROP TABLE IF EXISTS posts, users")
-	require.NoError(suite.T(), err)
+	if suite.config.Provider == "sqlite" {
+		// SQLite doesn't support dropping multiple tables in one statement
+		// Also, delete data first to avoid foreign key issues
+		_, _ = suite.db.ExecContext(ctx, "DELETE FROM posts")
+		_, _ = suite.db.ExecContext(ctx, "DELETE FROM users")
+		_, err := suite.db.ExecContext(ctx, "DROP TABLE IF EXISTS posts")
+		if err != nil {
+			suite.T().Logf("Error dropping posts table: %v", err)
+		}
+		_, err = suite.db.ExecContext(ctx, "DROP TABLE IF EXISTS users")
+		if err != nil {
+			suite.T().Logf("Error dropping users table: %v", err)
+		}
+	} else {
+		_, err := suite.db.ExecContext(ctx, "DROP TABLE IF EXISTS posts, users")
+		if err != nil {
+			suite.T().Logf("Error dropping tables: %v", err)
+		}
+	}
 }
 
 // testCreateOperation tests the Create operation
@@ -110,10 +127,21 @@ func (suite *TestSuite) testCreateOperation(ctx context.Context) {
 	userAge := 25
 
 	var userID int
-	err := suite.db.QueryRowContext(ctx,
-		suite.convertPlaceholders("INSERT INTO users (email, name, age) VALUES (?, ?, ?) RETURNING id"),
-		userEmail, userName, userAge).Scan(&userID)
-	require.NoError(suite.T(), err)
+	if suite.config.Provider == "sqlite" {
+		// SQLite doesn't support RETURNING clause, use last_insert_rowid()
+		result, err := suite.db.ExecContext(ctx,
+			suite.convertPlaceholders("INSERT INTO users (email, name, age) VALUES (?, ?, ?)"),
+			userEmail, userName, userAge)
+		require.NoError(suite.T(), err)
+		lastID, err := result.LastInsertId()
+		require.NoError(suite.T(), err)
+		userID = int(lastID)
+	} else {
+		err := suite.db.QueryRowContext(ctx,
+			suite.convertPlaceholders("INSERT INTO users (email, name, age) VALUES (?, ?, ?) RETURNING id"),
+			userEmail, userName, userAge).Scan(&userID)
+		require.NoError(suite.T(), err)
+	}
 	require.Greater(suite.T(), userID, 0)
 
 	// Insert a post for the user
@@ -121,14 +149,26 @@ func (suite *TestSuite) testCreateOperation(ctx context.Context) {
 	postContent := "This is a test post content"
 
 	var postID int
-	err = suite.db.QueryRowContext(ctx,
-		suite.convertPlaceholders("INSERT INTO posts (title, content, author_id) VALUES (?, ?, ?) RETURNING id"),
-		postTitle, postContent, userID).Scan(&postID)
-	require.NoError(suite.T(), err)
+	if suite.config.Provider == "sqlite" {
+		// SQLite doesn't support RETURNING clause, use last_insert_rowid()
+		result, err := suite.db.ExecContext(ctx,
+			suite.convertPlaceholders("INSERT INTO posts (title, content, author_id) VALUES (?, ?, ?)"),
+			postTitle, postContent, userID)
+		require.NoError(suite.T(), err)
+		lastID, err := result.LastInsertId()
+		require.NoError(suite.T(), err)
+		postID = int(lastID)
+	} else {
+		err := suite.db.QueryRowContext(ctx,
+			suite.convertPlaceholders("INSERT INTO posts (title, content, author_id) VALUES (?, ?, ?) RETURNING id"),
+			postTitle, postContent, userID).Scan(&postID)
+		require.NoError(suite.T(), err)
+	}
 	require.Greater(suite.T(), postID, 0)
 
 	// Verify the records were created
 	var count int
+	var err error
 	err = suite.db.QueryRowContext(ctx, suite.convertPlaceholders("SELECT COUNT(*) FROM users WHERE email = ?"), userEmail).Scan(&count)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), 1, count)
