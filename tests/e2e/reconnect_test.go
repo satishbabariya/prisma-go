@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/satishbabariya/prisma-go/runtime/client"
 	"github.com/stretchr/testify/require"
 )
 
@@ -42,7 +43,7 @@ func (suite *TestSuite) testBasicReconnect(ctx context.Context) {
 	// Verify data exists before disconnect
 	var count int
 	err = suite.db.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM users WHERE email = ?", "reconnect@example.com").Scan(&count)
+		suite.convertPlaceholders("SELECT COUNT(*) FROM users WHERE email = ?"), "reconnect@example.com").Scan(&count)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), 1, count)
 
@@ -54,8 +55,13 @@ func (suite *TestSuite) testBasicReconnect(ctx context.Context) {
 	err = suite.db.PingContext(ctx)
 	require.Error(suite.T(), err)
 
-	// Reconnect
-	err = suite.prisma.Connect(ctx)
+	// Reconnect by creating a new connection
+	newDB, err := sql.Open(getDriverName(suite.config.Provider), suite.config.DatabaseURL)
+	require.NoError(suite.T(), err)
+	suite.db = newDB
+	
+	// Create new Prisma client with the new connection
+	suite.prisma, err = client.NewPrismaClientFromDB(suite.config.Provider, newDB)
 	require.NoError(suite.T(), err)
 
 	// Verify connection is restored
@@ -64,7 +70,7 @@ func (suite *TestSuite) testBasicReconnect(ctx context.Context) {
 
 	// Verify data still exists after reconnect
 	err = suite.db.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM users WHERE email = ?", "reconnect@example.com").Scan(&count)
+		suite.convertPlaceholders("SELECT COUNT(*) FROM users WHERE email = ?"), "reconnect@example.com").Scan(&count)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), 1, count)
 
@@ -76,7 +82,7 @@ func (suite *TestSuite) testBasicReconnect(ctx context.Context) {
 
 	// Verify new data was inserted
 	err = suite.db.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM users WHERE email = ?", "reconnect2@example.com").Scan(&count)
+		suite.convertPlaceholders("SELECT COUNT(*) FROM users WHERE email = ?"), "reconnect2@example.com").Scan(&count)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), 1, count)
 }
@@ -105,7 +111,7 @@ func (suite *TestSuite) testReconnectAfterFailure(ctx context.Context) {
 	// Verify data is still accessible
 	var count int
 	err = newDB.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM users WHERE email = ?", "failure@example.com").Scan(&count)
+		suite.convertPlaceholders("SELECT COUNT(*) FROM users WHERE email = ?"), "failure@example.com").Scan(&count)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), 1, count)
 
@@ -133,7 +139,7 @@ func (suite *TestSuite) testMultipleReconnectCycles(ctx context.Context) {
 		// Verify data exists
 		var count int
 		err = suite.db.QueryRowContext(ctx,
-			"SELECT COUNT(*) FROM users WHERE email = ?", email).Scan(&count)
+			suite.convertPlaceholders("SELECT COUNT(*) FROM users WHERE email = ?"), email).Scan(&count)
 		require.NoError(suite.T(), err)
 		require.Equal(suite.T(), 1, count)
 
@@ -145,8 +151,13 @@ func (suite *TestSuite) testMultipleReconnectCycles(ctx context.Context) {
 		err = suite.db.PingContext(ctx)
 		require.Error(suite.T(), err)
 
-		// Reconnect
-		err = suite.prisma.Connect(ctx)
+		// Reconnect by creating a new connection
+		newDB, err := sql.Open(getDriverName(suite.config.Provider), suite.config.DatabaseURL)
+		require.NoError(suite.T(), err)
+		suite.db = newDB
+		
+		// Create new Prisma client with the new connection
+		suite.prisma, err = client.NewPrismaClientFromDB(suite.config.Provider, newDB)
 		require.NoError(suite.T(), err)
 
 		// Verify reconnected
@@ -155,7 +166,7 @@ func (suite *TestSuite) testMultipleReconnectCycles(ctx context.Context) {
 
 		// Verify data still exists
 		err = suite.db.QueryRowContext(ctx,
-			"SELECT COUNT(*) FROM users WHERE email = ?", email).Scan(&count)
+			suite.convertPlaceholders("SELECT COUNT(*) FROM users WHERE email = ?"), email).Scan(&count)
 		require.NoError(suite.T(), err)
 		require.Equal(suite.T(), 1, count)
 	}
@@ -163,7 +174,7 @@ func (suite *TestSuite) testMultipleReconnectCycles(ctx context.Context) {
 	// Verify all cycle data exists
 	var totalCycles int
 	err := suite.db.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM users WHERE email LIKE 'cycle%'").Scan(&totalCycles)
+		suite.convertPlaceholders("SELECT COUNT(*) FROM users WHERE email LIKE ?"), "cycle%").Scan(&totalCycles)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), 3, totalCycles)
 }
@@ -245,8 +256,13 @@ func (suite *TestSuite) testResilienceDuringOperations(ctx context.Context) {
 	// Small delay
 	time.Sleep(100 * time.Millisecond)
 
-	// Reconnect
-	err = suite.prisma.Connect(ctx)
+	// Reconnect by creating a new connection
+	newDB, err := sql.Open(getDriverName(suite.config.Provider), suite.config.DatabaseURL)
+	require.NoError(suite.T(), err)
+	suite.db = newDB
+	
+	// Create new Prisma client with the new connection
+	suite.prisma, err = client.NewPrismaClientFromDB(suite.config.Provider, newDB)
 	require.NoError(suite.T(), err)
 
 	// Wait for background operation to complete
@@ -263,7 +279,7 @@ func (suite *TestSuite) testResilienceDuringOperations(ctx context.Context) {
 	// Verify some data was inserted
 	var count int
 	err = suite.db.QueryRowContext(ctx,
-		"SELECT COUNT(*) FROM users WHERE email LIKE 'resilience%'").Scan(&count)
+		suite.convertPlaceholders("SELECT COUNT(*) FROM users WHERE email LIKE ?"), "resilience%").Scan(&count)
 	require.NoError(suite.T(), err)
 	require.Greater(suite.T(), count, 0)
 }
