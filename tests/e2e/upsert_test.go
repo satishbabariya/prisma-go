@@ -136,74 +136,82 @@ func (suite *TestSuite) cleanupUpsertTables(ctx context.Context) {
 	}
 }
 
+// upsertUser performs an upsert operation on users table, returning the user ID
+func (suite *TestSuite) upsertUser(ctx context.Context, email, name string, age int) int {
+	var userID int
+	var err error
+
+	if suite.config.Provider == "postgresql" || suite.config.Provider == "postgres" {
+		err = suite.db.QueryRowContext(ctx, suite.convertPlaceholders(`
+			INSERT INTO users (email, name, age) 
+			VALUES (?, ?, ?) 
+			ON CONFLICT (email) DO UPDATE SET 
+				name = EXCLUDED.name,
+				age = EXCLUDED.age,
+				updated_at = CURRENT_TIMESTAMP
+			RETURNING id`), email, name, age).Scan(&userID)
+		require.NoError(suite.T(), err)
+	} else if suite.config.Provider == "mysql" {
+		result, err := suite.db.ExecContext(ctx, suite.convertPlaceholders(`
+			INSERT INTO users (email, name, age) 
+			VALUES (?, ?, ?)
+			ON DUPLICATE KEY UPDATE 
+				name = VALUES(name),
+				age = VALUES(age),
+				updated_at = CURRENT_TIMESTAMP`), email, name, age)
+		require.NoError(suite.T(), err)
+		lastID, err := result.LastInsertId()
+		require.NoError(suite.T(), err)
+		if lastID == 0 {
+			err = suite.db.QueryRowContext(ctx, suite.convertPlaceholders("SELECT id FROM users WHERE email = ?"), email).Scan(&userID)
+			require.NoError(suite.T(), err)
+		} else {
+			userID = int(lastID)
+		}
+	} else {
+		// SQLite
+		_, err = suite.db.ExecContext(ctx, suite.convertPlaceholders(`
+			INSERT INTO users (email, name, age) 
+			VALUES (?, ?, ?) 
+			ON CONFLICT (email) DO UPDATE SET 
+				name = excluded.name,
+				age = excluded.age,
+				updated_at = CURRENT_TIMESTAMP`), email, name, age)
+		require.NoError(suite.T(), err)
+		err = suite.db.QueryRowContext(ctx, suite.convertPlaceholders("SELECT id FROM users WHERE email = ?"), email).Scan(&userID)
+		require.NoError(suite.T(), err)
+	}
+	return userID
+}
+
 // testBasicUpsert tests basic upsert functionality
 func (suite *TestSuite) testBasicUpsert(ctx context.Context) {
 	// Test upsert that creates a new record
-	var userID int
-	err := suite.db.QueryRowContext(ctx, `
-		INSERT INTO users (email, name, age) 
-		VALUES (?, ?, ?) 
-		ON CONFLICT (email) DO UPDATE SET 
-			name = EXCLUDED.name,
-			age = EXCLUDED.age,
-			updated_at = CURRENT_TIMESTAMP
-		RETURNING id`, "newuser@example.com", "New User", 25).Scan(&userID)
-
-	// For MySQL and SQLite, we need a different approach
-	if err != nil {
-		// Try MySQL/SQLite approach
-		_, err = suite.db.ExecContext(ctx, `
-			INSERT OR IGNORE INTO users (email, name, age) VALUES (?, ?, ?)`,
-			"newuser@example.com", "New User", 25)
-		require.NoError(suite.T(), err)
-
-		// Get the ID
-		err = suite.db.QueryRowContext(ctx, "SELECT id FROM users WHERE email = ?", "newuser@example.com").Scan(&userID)
-		require.NoError(suite.T(), err)
-	}
+	userID := suite.upsertUser(ctx, "newuser@example.com", "New User", 25)
 
 	require.Greater(suite.T(), userID, 0)
 
 	// Verify the record was created
 	var name string
 	var age int
-	err = suite.db.QueryRowContext(ctx, "SELECT name, age FROM users WHERE email = ?", "newuser@example.com").Scan(&name, &age)
+	err := suite.db.QueryRowContext(ctx, suite.convertPlaceholders("SELECT name, age FROM users WHERE email = ?"), "newuser@example.com").Scan(&name, &age)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), "New User", name)
 	require.Equal(suite.T(), 25, age)
 
 	// Test upsert that updates an existing record
-	var updatedUserID int
-	err = suite.db.QueryRowContext(ctx, `
-		INSERT INTO users (email, name, age) 
-		VALUES (?, ?, ?) 
-		ON CONFLICT (email) DO UPDATE SET 
-			name = EXCLUDED.name,
-			age = EXCLUDED.age,
-			updated_at = CURRENT_TIMESTAMP
-		RETURNING id`, "newuser@example.com", "Updated User", 26).Scan(&updatedUserID)
-
-	// For MySQL and SQLite, we need a different approach
-	if err != nil {
-		// Update the existing record
-		_, err = suite.db.ExecContext(ctx, `
-			UPDATE users SET name = ?, age = ? WHERE email = ?`,
-			"Updated User", 26, "newuser@example.com")
-		require.NoError(suite.T(), err)
-		updatedUserID = userID
-	}
-
+	updatedUserID := suite.upsertUser(ctx, "newuser@example.com", "Updated User", 26)
 	require.Equal(suite.T(), userID, updatedUserID)
 
 	// Verify the record was updated
-	err = suite.db.QueryRowContext(ctx, "SELECT name, age FROM users WHERE email = ?", "newuser@example.com").Scan(&name, &age)
+	err = suite.db.QueryRowContext(ctx, suite.convertPlaceholders("SELECT name, age FROM users WHERE email = ?"), "newuser@example.com").Scan(&name, &age)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), "Updated User", name)
 	require.Equal(suite.T(), 26, age)
 
 	// Verify only one record exists
 	var count int
-	err = suite.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users WHERE email = ?", "newuser@example.com").Scan(&count)
+	err = suite.db.QueryRowContext(ctx, suite.convertPlaceholders("SELECT COUNT(*) FROM users WHERE email = ?"), "newuser@example.com").Scan(&count)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), 1, count)
 }
@@ -216,66 +224,38 @@ func (suite *TestSuite) testUpsertWithConditions(ctx context.Context) {
 	updatedName := "Updated Name"
 
 	// Insert initial record
-	var userID int
-	err := suite.db.QueryRowContext(ctx, `
-		INSERT INTO users (email, name, age) 
-		VALUES (?, ?, ?) 
-		ON CONFLICT (email) DO UPDATE SET 
-			name = EXCLUDED.name,
-			age = EXCLUDED.age,
-			updated_at = CURRENT_TIMESTAMP
-		RETURNING id`, email, initialName, 30).Scan(&userID)
-
-	if err != nil {
-		_, err = suite.db.ExecContext(ctx, `
-			INSERT OR IGNORE INTO users (email, name, age) VALUES (?, ?, ?)`,
-			email, initialName, 30)
-		require.NoError(suite.T(), err)
-		err = suite.db.QueryRowContext(ctx, "SELECT id FROM users WHERE email = ?", email).Scan(&userID)
-		require.NoError(suite.T(), err)
-	}
+	suite.upsertUser(ctx, email, initialName, 30)
 
 	// Try to update with same name (should not trigger update in some databases)
-	_, err = suite.db.ExecContext(ctx, `
-		INSERT INTO users (email, name, age) 
-		VALUES (?, ?, ?) 
-		ON CONFLICT (email) DO UPDATE SET 
-			name = CASE WHEN users.name != EXCLUDED.name THEN EXCLUDED.name ELSE users.name END,
-			age = EXCLUDED.age,
-			updated_at = CURRENT_TIMESTAMP`, email, initialName, 31)
-
-	if err != nil {
+	// Just update age
+	if suite.config.Provider == "postgresql" || suite.config.Provider == "postgres" {
+		_, err := suite.db.ExecContext(ctx, suite.convertPlaceholders(`
+			INSERT INTO users (email, name, age) 
+			VALUES (?, ?, ?) 
+			ON CONFLICT (email) DO UPDATE SET 
+				name = CASE WHEN users.name != EXCLUDED.name THEN EXCLUDED.name ELSE users.name END,
+				age = EXCLUDED.age,
+				updated_at = CURRENT_TIMESTAMP`), email, initialName, 31)
+		require.NoError(suite.T(), err)
+	} else {
 		// For MySQL/SQLite, just update
-		_, err = suite.db.ExecContext(ctx, `
-			UPDATE users SET age = ? WHERE email = ?`, 31, email)
+		_, err := suite.db.ExecContext(ctx, suite.convertPlaceholders(`
+			UPDATE users SET age = ? WHERE email = ?`), 31, email)
 		require.NoError(suite.T(), err)
 	}
 
 	// Verify age was updated but name might remain the same
 	var name string
 	var age int
-	err = suite.db.QueryRowContext(ctx, "SELECT name, age FROM users WHERE email = ?", email).Scan(&name, &age)
+	err := suite.db.QueryRowContext(ctx, suite.convertPlaceholders("SELECT name, age FROM users WHERE email = ?"), email).Scan(&name, &age)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), 31, age)
 
 	// Now update with different name
-	_, err = suite.db.ExecContext(ctx, `
-		INSERT INTO users (email, name, age) 
-		VALUES (?, ?, ?) 
-		ON CONFLICT (email) DO UPDATE SET 
-			name = EXCLUDED.name,
-			age = EXCLUDED.age,
-			updated_at = CURRENT_TIMESTAMP`, email, updatedName, 32)
-
-	if err != nil {
-		// For MySQL/SQLite, just update
-		_, err = suite.db.ExecContext(ctx, `
-			UPDATE users SET name = ?, age = ? WHERE email = ?`, updatedName, 32, email)
-		require.NoError(suite.T(), err)
-	}
+	suite.upsertUser(ctx, email, updatedName, 32)
 
 	// Verify both name and age were updated
-	err = suite.db.QueryRowContext(ctx, "SELECT name, age FROM users WHERE email = ?", email).Scan(&name, &age)
+	err = suite.db.QueryRowContext(ctx, suite.convertPlaceholders("SELECT name, age FROM users WHERE email = ?"), email).Scan(&name, &age)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), updatedName, name)
 	require.Equal(suite.T(), 32, age)
@@ -284,47 +264,56 @@ func (suite *TestSuite) testUpsertWithConditions(ctx context.Context) {
 // testUpsertWithRelationships tests upsert operations with related data
 func (suite *TestSuite) testUpsertWithRelationships(ctx context.Context) {
 	// Create a user first
-	var userID int
-	err := suite.db.QueryRowContext(ctx, `
-		INSERT INTO users (email, name, age) 
-		VALUES (?, ?, ?) 
-		ON CONFLICT (email) DO UPDATE SET 
-			name = EXCLUDED.name,
-			age = EXCLUDED.age,
-			updated_at = CURRENT_TIMESTAMP
-		RETURNING id`, "author@example.com", "Author User", 35).Scan(&userID)
-
-	if err != nil {
-		_, err = suite.db.ExecContext(ctx, `
-			INSERT OR IGNORE INTO users (email, name, age) VALUES (?, ?, ?)`,
-			"author@example.com", "Author User", 35)
-		require.NoError(suite.T(), err)
-		err = suite.db.QueryRowContext(ctx, "SELECT id FROM users WHERE email = ?", "author@example.com").Scan(&userID)
-		require.NoError(suite.T(), err)
-	}
+	userID := suite.upsertUser(ctx, "author@example.com", "Author User", 35)
 
 	// Test upsert on posts with foreign key
 	title := "Unique Post Title"
 	content := "Initial content"
 
-	// Insert post
+	// Insert post using provider-specific upsert
 	var postID int
-	err = suite.db.QueryRowContext(ctx, `
-		INSERT INTO posts (title, content, published, author_id) 
-		VALUES (?, ?, ?, ?) 
-		ON CONFLICT (title) DO UPDATE SET 
-			content = EXCLUDED.content,
-			published = EXCLUDED.published,
-			author_id = EXCLUDED.author_id,
-			updated_at = CURRENT_TIMESTAMP
-		RETURNING id`, title, content, false, userID).Scan(&postID)
-
-	if err != nil {
-		_, err = suite.db.ExecContext(ctx, `
-			INSERT OR IGNORE INTO posts (title, content, published, author_id) VALUES (?, ?, ?, ?)`,
-			title, content, false, userID)
+	var err error
+	if suite.config.Provider == "postgresql" || suite.config.Provider == "postgres" {
+		err = suite.db.QueryRowContext(ctx, suite.convertPlaceholders(`
+			INSERT INTO posts (title, content, published, author_id) 
+			VALUES (?, ?, ?, ?) 
+			ON CONFLICT (title) DO UPDATE SET 
+				content = EXCLUDED.content,
+				published = EXCLUDED.published,
+				author_id = EXCLUDED.author_id,
+				updated_at = CURRENT_TIMESTAMP
+			RETURNING id`), title, content, false, userID).Scan(&postID)
 		require.NoError(suite.T(), err)
-		err = suite.db.QueryRowContext(ctx, "SELECT id FROM posts WHERE title = ?", title).Scan(&postID)
+	} else if suite.config.Provider == "mysql" {
+		result, err := suite.db.ExecContext(ctx, suite.convertPlaceholders(`
+			INSERT INTO posts (title, content, published, author_id) 
+			VALUES (?, ?, ?, ?)
+			ON DUPLICATE KEY UPDATE 
+				content = VALUES(content),
+				published = VALUES(published),
+				author_id = VALUES(author_id),
+				updated_at = CURRENT_TIMESTAMP`), title, content, false, userID)
+		require.NoError(suite.T(), err)
+		lastID, err := result.LastInsertId()
+		require.NoError(suite.T(), err)
+		if lastID == 0 {
+			err = suite.db.QueryRowContext(ctx, suite.convertPlaceholders("SELECT id FROM posts WHERE title = ?"), title).Scan(&postID)
+			require.NoError(suite.T(), err)
+		} else {
+			postID = int(lastID)
+		}
+	} else {
+		// SQLite
+		_, err = suite.db.ExecContext(ctx, suite.convertPlaceholders(`
+			INSERT INTO posts (title, content, published, author_id) 
+			VALUES (?, ?, ?, ?) 
+			ON CONFLICT (title) DO UPDATE SET 
+				content = excluded.content,
+				published = excluded.published,
+				author_id = excluded.author_id,
+				updated_at = CURRENT_TIMESTAMP`), title, content, false, userID)
+		require.NoError(suite.T(), err)
+		err = suite.db.QueryRowContext(ctx, suite.convertPlaceholders("SELECT id FROM posts WHERE title = ?"), title).Scan(&postID)
 		require.NoError(suite.T(), err)
 	}
 
@@ -332,7 +321,7 @@ func (suite *TestSuite) testUpsertWithRelationships(ctx context.Context) {
 	var initialContent string
 	var published bool
 	var authorID int
-	err = suite.db.QueryRowContext(ctx, "SELECT content, published, author_id FROM posts WHERE title = ?", title).Scan(&initialContent, &published, &authorID)
+	err = suite.db.QueryRowContext(ctx, suite.convertPlaceholders("SELECT content, published, author_id FROM posts WHERE title = ?"), title).Scan(&initialContent, &published, &authorID)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), content, initialContent)
 	require.False(suite.T(), published)
@@ -340,25 +329,41 @@ func (suite *TestSuite) testUpsertWithRelationships(ctx context.Context) {
 
 	// Update the post
 	updatedContent := "Updated content"
-	_, err = suite.db.ExecContext(ctx, `
-		INSERT INTO posts (title, content, published, author_id) 
-		VALUES (?, ?, ?, ?) 
-		ON CONFLICT (title) DO UPDATE SET 
-			content = EXCLUDED.content,
-			published = EXCLUDED.published,
-			author_id = EXCLUDED.author_id,
-			updated_at = CURRENT_TIMESTAMP`, title, updatedContent, true, userID)
-
-	if err != nil {
-		_, err = suite.db.ExecContext(ctx, `
-			UPDATE posts SET content = ?, published = ? WHERE title = ?`,
-			updatedContent, true, title)
+	if suite.config.Provider == "postgresql" || suite.config.Provider == "postgres" {
+		_, err = suite.db.ExecContext(ctx, suite.convertPlaceholders(`
+			INSERT INTO posts (title, content, published, author_id) 
+			VALUES (?, ?, ?, ?) 
+			ON CONFLICT (title) DO UPDATE SET 
+				content = EXCLUDED.content,
+				published = EXCLUDED.published,
+				author_id = EXCLUDED.author_id,
+				updated_at = CURRENT_TIMESTAMP`), title, updatedContent, true, userID)
+		require.NoError(suite.T(), err)
+	} else if suite.config.Provider == "mysql" {
+		_, err = suite.db.ExecContext(ctx, suite.convertPlaceholders(`
+			INSERT INTO posts (title, content, published, author_id) 
+			VALUES (?, ?, ?, ?)
+			ON DUPLICATE KEY UPDATE 
+				content = VALUES(content),
+				published = VALUES(published),
+				author_id = VALUES(author_id),
+				updated_at = CURRENT_TIMESTAMP`), title, updatedContent, true, userID)
+		require.NoError(suite.T(), err)
+	} else {
+		_, err = suite.db.ExecContext(ctx, suite.convertPlaceholders(`
+			INSERT INTO posts (title, content, published, author_id) 
+			VALUES (?, ?, ?, ?) 
+			ON CONFLICT (title) DO UPDATE SET 
+				content = excluded.content,
+				published = excluded.published,
+				author_id = excluded.author_id,
+				updated_at = CURRENT_TIMESTAMP`), title, updatedContent, true, userID)
 		require.NoError(suite.T(), err)
 	}
 
 	// Verify updated post
 	var finalContent string
-	err = suite.db.QueryRowContext(ctx, "SELECT content, published FROM posts WHERE title = ?", title).Scan(&finalContent, &published)
+	err = suite.db.QueryRowContext(ctx, suite.convertPlaceholders("SELECT content, published FROM posts WHERE title = ?"), title).Scan(&finalContent, &published)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), updatedContent, finalContent)
 	require.True(suite.T(), published)
@@ -397,29 +402,43 @@ func (suite *TestSuite) testUpsertWithRelationships(ctx context.Context) {
 
 	// Update profile
 	updatedBio := "Senior software developer and tech enthusiast"
-	_, err = suite.db.ExecContext(ctx, `
-		INSERT INTO profiles (user_id, bio, website) 
-		VALUES (?, ?, ?) 
-		ON CONFLICT (user_id) DO UPDATE SET 
-			bio = EXCLUDED.bio,
-			website = EXCLUDED.website,
-			updated_at = CURRENT_TIMESTAMP`, userID, updatedBio, website)
-
-	if err != nil {
-		_, err = suite.db.ExecContext(ctx, `
-			UPDATE profiles SET bio = ? WHERE user_id = ?`,
-			updatedBio, userID)
+	if suite.config.Provider == "postgresql" || suite.config.Provider == "postgres" {
+		_, err = suite.db.ExecContext(ctx, suite.convertPlaceholders(`
+			INSERT INTO profiles (user_id, bio, website) 
+			VALUES (?, ?, ?) 
+			ON CONFLICT (user_id) DO UPDATE SET 
+				bio = EXCLUDED.bio,
+				website = EXCLUDED.website,
+				updated_at = CURRENT_TIMESTAMP`), userID, updatedBio, website)
+		require.NoError(suite.T(), err)
+	} else if suite.config.Provider == "mysql" {
+		_, err = suite.db.ExecContext(ctx, suite.convertPlaceholders(`
+			INSERT INTO profiles (user_id, bio, website) 
+			VALUES (?, ?, ?)
+			ON DUPLICATE KEY UPDATE 
+				bio = VALUES(bio),
+				website = VALUES(website),
+				updated_at = CURRENT_TIMESTAMP`), userID, updatedBio, website)
+		require.NoError(suite.T(), err)
+	} else {
+		_, err = suite.db.ExecContext(ctx, suite.convertPlaceholders(`
+			INSERT INTO profiles (user_id, bio, website) 
+			VALUES (?, ?, ?) 
+			ON CONFLICT (user_id) DO UPDATE SET 
+				bio = excluded.bio,
+				website = excluded.website,
+				updated_at = CURRENT_TIMESTAMP`), userID, updatedBio, website)
 		require.NoError(suite.T(), err)
 	}
 
 	// Verify updated profile
-	err = suite.db.QueryRowContext(ctx, "SELECT bio FROM profiles WHERE user_id = ?", userID).Scan(&bio)
+	err = suite.db.QueryRowContext(ctx, suite.convertPlaceholders("SELECT bio FROM profiles WHERE user_id = ?"), userID).Scan(&bio)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), updatedBio, bio)
 
 	// Verify only one profile exists per user
 	var profileCount int
-	err = suite.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM profiles WHERE user_id = ?", userID).Scan(&profileCount)
+	err = suite.db.QueryRowContext(ctx, suite.convertPlaceholders("SELECT COUNT(*) FROM profiles WHERE user_id = ?"), userID).Scan(&profileCount)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), 1, profileCount)
 }
