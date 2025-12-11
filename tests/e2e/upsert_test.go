@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -115,24 +116,54 @@ func (suite *TestSuite) createUpsertTables(ctx context.Context) {
 		);`
 	}
 
-	_, err := suite.db.ExecContext(ctx, createSQL)
-	require.NoError(suite.T(), err)
+	// MySQL doesn't support multiple CREATE TABLE statements in one Exec
+	if suite.config.Provider == "mysql" {
+		statements := strings.Split(createSQL, ";")
+		for _, stmt := range statements {
+			trimmedStmt := strings.TrimSpace(stmt)
+			if trimmedStmt != "" {
+				_, err := suite.db.ExecContext(ctx, trimmedStmt)
+				if err != nil {
+					suite.T().Logf("Table creation error for statement '%s': %v", trimmedStmt, err)
+					require.NoError(suite.T(), err)
+				}
+			}
+		}
+	} else {
+		_, err := suite.db.ExecContext(ctx, createSQL)
+		require.NoError(suite.T(), err)
+	}
 }
 
 // cleanupUpsertTables removes upsert test tables
 func (suite *TestSuite) cleanupUpsertTables(ctx context.Context) {
-	// SQLite doesn't support multiple tables in one DROP statement
+	// SQLite and MySQL don't support multiple tables in one DROP statement
+	// Also need to drop in reverse order due to foreign key constraints
+	// First disable foreign key checks for MySQL to avoid dependency issues
+	if suite.config.Provider == "mysql" {
+		_, _ = suite.db.ExecContext(ctx, "SET FOREIGN_KEY_CHECKS = 0")
+		defer func() {
+			_, _ = suite.db.ExecContext(ctx, "SET FOREIGN_KEY_CHECKS = 1")
+		}()
+	}
+	
 	if suite.config.Provider == "sqlite" || suite.config.Provider == "mysql" {
-		tables := []string{"profiles", "posts", "users"}
+		tables := []string{"profiles", "posts", "users"} // Drop in reverse order of dependencies
 		for _, table := range tables {
 			_, err := suite.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", table))
 			if err != nil {
+				// Log but don't fail - table might not exist or might have dependencies
+				// SQLite error messages can be confusing (e.g., "no such table: main.posts" when dropping users)
+				// This is expected if tables don't exist
 				suite.T().Logf("Error dropping table %s (may not exist): %v", table, err)
 			}
 		}
 	} else {
-		_, err := suite.db.ExecContext(ctx, "DROP TABLE IF EXISTS profiles, posts, users")
-		require.NoError(suite.T(), err)
+		// PostgreSQL can drop multiple tables with CASCADE
+		_, err := suite.db.ExecContext(ctx, "DROP TABLE IF EXISTS profiles, posts, users CASCADE")
+		if err != nil {
+			suite.T().Logf("Error dropping tables (may not exist): %v", err)
+		}
 	}
 }
 

@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -100,8 +101,23 @@ func (suite *TestSuite) createAggregationTables(ctx context.Context) {
 		);`
 	}
 
-	_, err := suite.db.ExecContext(ctx, createSQL)
-	require.NoError(suite.T(), err)
+	// MySQL doesn't support multiple CREATE TABLE statements in one Exec
+	if suite.config.Provider == "mysql" {
+		statements := strings.Split(createSQL, ";")
+		for _, stmt := range statements {
+			trimmedStmt := strings.TrimSpace(stmt)
+			if trimmedStmt != "" {
+				_, err := suite.db.ExecContext(ctx, trimmedStmt)
+				if err != nil {
+					suite.T().Logf("Table creation error for statement '%s': %v", trimmedStmt, err)
+					require.NoError(suite.T(), err)
+				}
+			}
+		}
+	} else {
+		_, err := suite.db.ExecContext(ctx, createSQL)
+		require.NoError(suite.T(), err)
+	}
 }
 
 // cleanupAggregationTables removes aggregation test tables
@@ -145,10 +161,22 @@ func (suite *TestSuite) insertAggregationTestData(ctx context.Context) {
 
 	for _, user := range users {
 		var userID int
-		err := suite.db.QueryRowContext(ctx,
-			suite.convertPlaceholders("INSERT INTO users (email, name, age, salary) VALUES (?, ?, ?, ?) RETURNING id"),
-			user.Email, user.Name, user.Age, user.Salary).Scan(&userID)
-		require.NoError(suite.T(), err)
+		var err error
+		if suite.config.Provider == "postgresql" || suite.config.Provider == "postgres" {
+			err = suite.db.QueryRowContext(ctx,
+				suite.convertPlaceholders("INSERT INTO users (email, name, age, salary) VALUES (?, ?, ?, ?) RETURNING id"),
+				user.Email, user.Name, user.Age, user.Salary).Scan(&userID)
+			require.NoError(suite.T(), err)
+		} else {
+			// MySQL and SQLite don't support RETURNING
+			result, err := suite.db.ExecContext(ctx,
+				suite.convertPlaceholders("INSERT INTO users (email, name, age, salary) VALUES (?, ?, ?, ?)"),
+				user.Email, user.Name, user.Age, user.Salary)
+			require.NoError(suite.T(), err)
+			lastID, err := result.LastInsertId()
+			require.NoError(suite.T(), err)
+			userID = int(lastID)
+		}
 
 		// Insert posts for each user
 		posts := []struct {
@@ -245,7 +273,8 @@ func (suite *TestSuite) testAverageOperations(ctx context.Context) {
 	var avgHighEarnerSalary float64
 	err = suite.db.QueryRowContext(ctx, "SELECT AVG(salary) FROM users WHERE salary >= 60000").Scan(&avgHighEarnerSalary)
 	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), 66666.66666666667, avgHighEarnerSalary) // 200000/3
+	// MySQL returns different precision, so use InDelta for floating point comparison
+	require.InDelta(suite.T(), 66666.66666666667, avgHighEarnerSalary, 0.01) // 200000/3
 }
 
 // testMinMaxOperations tests min/max aggregation
