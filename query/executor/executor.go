@@ -91,6 +91,11 @@ func (e *Executor) ClearStmtCache() {
 	e.stmtCache = make(map[string]*sql.Stmt)
 }
 
+// GetGenerator returns the SQL generator for this executor
+func (e *Executor) GetGenerator() sqlgen.Generator {
+	return e.generator
+}
+
 // FindMany executes a SELECT query and maps results to a slice
 func (e *Executor) FindMany(ctx context.Context, table string, selectFields map[string]bool, where *sqlgen.WhereClause, orderBy []sqlgen.OrderBy, limit, offset *int, include map[string]bool, dest interface{}) error {
 	return e.FindManyWithRelations(ctx, table, selectFields, where, orderBy, limit, offset, include, nil, dest)
@@ -161,6 +166,141 @@ func (e *Executor) FindManyWithRelations(ctx context.Context, table string, sele
 		cachedValue := reflect.New(reflect.TypeOf(dest).Elem())
 		if err := e.copyCachedResult(dest, cachedValue.Interface()); err == nil {
 			e.queryCache.Set(cacheKey, cachedValue.Elem().Interface(), 0) // Use default TTL
+		}
+	}
+
+	return nil
+}
+
+// FindManyWithJoins executes a SELECT query with explicit JOINs and maps results to a slice
+func (e *Executor) FindManyWithJoins(ctx context.Context, table string, selectFields map[string]bool, joins []sqlgen.Join, where *sqlgen.WhereClause, orderBy []sqlgen.OrderBy, limit, offset *int, include map[string]bool, relations map[string]RelationMetadata, dest interface{}) error {
+	// Convert selectFields map to slice
+	var columns []string
+	if selectFields != nil && len(selectFields) > 0 {
+		for field := range selectFields {
+			columns = append(columns, field)
+		}
+	}
+
+	var query *sqlgen.Query
+
+	// Merge explicit joins with relation-based joins
+	var allJoins []sqlgen.Join
+	allJoins = append(allJoins, joins...)
+	
+	// Add relation-based joins if includes are specified
+	if include != nil && len(include) > 0 && relations != nil {
+		relationJoins := buildJoinsFromIncludes(table, include, relations, e.provider)
+		allJoins = append(allJoins, relationJoins...)
+	}
+
+	if len(allJoins) > 0 {
+		query = e.generator.GenerateSelectWithJoins(table, columns, allJoins, where, orderBy, limit, offset)
+	} else {
+		query = e.generator.GenerateSelect(table, columns, where, orderBy, limit, offset)
+	}
+
+	// Check cache if enabled
+	if e.cacheEnabled && e.queryCache != nil {
+		cacheKey := cache.GenerateCacheKey(query.SQL, query.Args)
+		if cached, ok := e.queryCache.Get(cacheKey); ok {
+			return e.copyCachedResult(cached, dest)
+		}
+	}
+
+	rows, err := e.db.QueryContext(ctx, query.SQL, query.Args...)
+	if err != nil {
+		return fmt.Errorf("query execution failed: %w", err)
+	}
+	defer rows.Close()
+
+	// Use optimized JOIN mapping if we have JOINs
+	if len(allJoins) > 0 && relations != nil {
+		if err := validateRelations(relations); err != nil {
+			return fmt.Errorf("invalid relations: %w", err)
+		}
+		err = e.scanJoinResults(rows, table, allJoins, relations, dest)
+		if err != nil {
+			return err
+		}
+	} else {
+		// Simple scan without JOINs - use existing scanJoinResults with empty joins
+		err = e.scanJoinResults(rows, table, []sqlgen.Join{}, nil, dest)
+		if err != nil {
+			return fmt.Errorf("failed to scan results: %w", err)
+		}
+	}
+
+	// Cache result if enabled
+	if e.cacheEnabled && e.queryCache != nil {
+		cacheKey := cache.GenerateCacheKey(query.SQL, query.Args)
+		cachedValue := reflect.New(reflect.TypeOf(dest).Elem())
+		if err := e.copyCachedResult(dest, cachedValue.Interface()); err == nil {
+			e.queryCache.Set(cacheKey, cachedValue.Elem().Interface(), 0)
+		}
+	}
+
+	return nil
+}
+
+// FindFirstWithJoins executes a SELECT query with explicit JOINs and returns the first result
+func (e *Executor) FindFirstWithJoins(ctx context.Context, table string, selectFields map[string]bool, joins []sqlgen.Join, where *sqlgen.WhereClause, orderBy []sqlgen.OrderBy, include map[string]bool, relations map[string]RelationMetadata, dest interface{}) error {
+	// Convert selectFields map to slice
+	var columns []string
+	if selectFields != nil && len(selectFields) > 0 {
+		for field := range selectFields {
+			columns = append(columns, field)
+		}
+	}
+
+	var query *sqlgen.Query
+	limit := 1
+
+	// Merge explicit joins with relation-based joins
+	var allJoins []sqlgen.Join
+	allJoins = append(allJoins, joins...)
+	
+	// Add relation-based joins if includes are specified
+	if include != nil && len(include) > 0 && relations != nil {
+		relationJoins := buildJoinsFromIncludes(table, include, relations, e.provider)
+		allJoins = append(allJoins, relationJoins...)
+	}
+
+	if len(allJoins) > 0 {
+		query = e.generator.GenerateSelectWithJoins(table, columns, allJoins, where, orderBy, &limit, nil)
+	} else {
+		query = e.generator.GenerateSelect(table, columns, where, orderBy, &limit, nil)
+	}
+
+	rows, err := e.db.QueryContext(ctx, query.SQL, query.Args...)
+	if err != nil {
+		return fmt.Errorf("query execution failed: %w", err)
+	}
+	defer rows.Close()
+
+	if !rows.Next() {
+		return sql.ErrNoRows
+	}
+
+	// Use optimized JOIN mapping if we have JOINs
+	if len(allJoins) > 0 && relations != nil {
+		if err := validateRelations(relations); err != nil {
+			return fmt.Errorf("invalid relations: %w", err)
+		}
+		// For single row, we still use scanJoinResults but limit to first result
+		err = e.scanJoinResults(rows, table, allJoins, relations, dest)
+		if err != nil {
+			return err
+		}
+	} else {
+		// Simple scan without JOINs - scan first row only
+		if rows.Next() {
+			err = e.scanRows(rows, dest)
+			if err != nil {
+				return fmt.Errorf("failed to scan result: %w", err)
+			}
+		} else {
+			return sql.ErrNoRows
 		}
 	}
 

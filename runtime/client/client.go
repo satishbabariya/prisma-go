@@ -117,6 +117,26 @@ func (c *PrismaClient) Disconnect(ctx context.Context) error {
 	return c.db.Close()
 }
 
+// Raw executes a raw SQL query and returns the result
+func (c *PrismaClient) Raw(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+	return c.db.QueryContext(ctx, query, args...)
+}
+
+// RawScan executes a raw SQL query and scans the results into the destination
+// Note: This is a placeholder - full implementation would require reflection or sqlx
+func (c *PrismaClient) RawScan(ctx context.Context, dest interface{}, query string, args ...interface{}) error {
+	rows, err := c.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	// Basic implementation - can be enhanced with reflection or sqlx
+	// For now, this is a placeholder that would need proper implementation
+	// based on the destination type (slice, struct, etc.)
+	return fmt.Errorf("RawScan not fully implemented - use Raw() and scan manually for now")
+}
+
 // DB returns the underlying database connection
 func (c *PrismaClient) DB() *sql.DB {
 	return c.db

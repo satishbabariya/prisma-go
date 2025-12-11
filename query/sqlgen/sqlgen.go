@@ -12,10 +12,50 @@ type Query struct {
 	Args []interface{}
 }
 
+// CTE represents a Common Table Expression
+type CTE struct {
+	Name      string
+	Query     *Query
+	Columns   []string // Optional column names for the CTE
+	Recursive bool     // Whether this is a RECURSIVE CTE
+}
+
+// WindowFunction represents a window function
+type WindowFunction struct {
+	Function string
+	Field    string
+	Alias    string
+	Window   *WindowDefinition
+}
+
+// WindowDefinition defines the window frame
+type WindowDefinition struct {
+	PartitionByFields []string
+	OrderByFields     []OrderBy
+	FrameSpec         *WindowFrame
+}
+
+// WindowFrame defines the window frame
+type WindowFrame struct {
+	Type          string // "ROWS" or "RANGE"
+	Start         *FrameBound
+	End           *FrameBound
+	ExclusionType string
+}
+
+// FrameBound defines a frame boundary
+type FrameBound struct {
+	Type   string
+	Offset *int
+}
+
 // Generator generates SQL for a specific provider
 type Generator interface {
 	GenerateSelect(table string, columns []string, where *WhereClause, orderBy []OrderBy, limit, offset *int) *Query
 	GenerateSelectWithJoins(table string, columns []string, joins []Join, where *WhereClause, orderBy []OrderBy, limit, offset *int) *Query
+	GenerateSelectWithAggregates(table string, columns []string, aggregates []AggregateFunction, joins []Join, where *WhereClause, groupBy *GroupBy, having *Having, orderBy []OrderBy, limit, offset *int) *Query
+	GenerateSelectWithCTE(table string, columns []string, ctes []CTE, joins []Join, where *WhereClause, orderBy []OrderBy, limit, offset *int) *Query
+	GenerateSelectWithWindows(table string, columns []string, windowFuncs []WindowFunction, joins []Join, where *WhereClause, orderBy []OrderBy, limit, offset *int) *Query
 	GenerateInsert(table string, columns []string, values []interface{}) *Query
 	GenerateUpdate(table string, set map[string]interface{}, where *WhereClause) *Query
 	GenerateDelete(table string, where *WhereClause) *Query
@@ -102,6 +142,464 @@ func (g *PostgresGenerator) GenerateSelect(table string, columns []string, where
 	if offset != nil && *offset > 0 {
 		parts = append(parts, fmt.Sprintf("OFFSET $%d", argIndex))
 		args = append(args, *offset)
+	}
+
+	return &Query{
+		SQL:  strings.Join(parts, " "),
+		Args: args,
+	}
+}
+
+// GenerateSelectWithCTE generates a SELECT query with CTEs
+func (g *PostgresGenerator) GenerateSelectWithCTE(
+	table string,
+	columns []string,
+	ctes []CTE,
+	joins []Join,
+	where *WhereClause,
+	orderBy []OrderBy,
+	limit, offset *int,
+) *Query {
+	var parts []string
+	var args []interface{}
+	argIndex := 1
+
+	// Build WITH clause if CTEs are present
+	if len(ctes) > 0 {
+		withParts := []string{}
+		isRecursive := false
+		for _, cte := range ctes {
+			if cte.Recursive {
+				isRecursive = true
+				break
+			}
+		}
+
+		if isRecursive {
+			withParts = append(withParts, "WITH RECURSIVE")
+		} else {
+			withParts = append(withParts, "WITH")
+		}
+
+		cteParts := []string{}
+		for _, cte := range ctes {
+			cteSQL := quoteIdentifier(cte.Name)
+			if len(cte.Columns) > 0 {
+				colParts := make([]string, len(cte.Columns))
+				for j, col := range cte.Columns {
+					colParts[j] = quoteIdentifier(col)
+				}
+				cteSQL += " (" + strings.Join(colParts, ", ") + ")"
+			}
+			cteSQL += " AS (" + cte.Query.SQL + ")"
+			cteParts = append(cteParts, cteSQL)
+			args = append(args, cte.Query.Args...)
+		}
+		withParts = append(withParts, strings.Join(cteParts, ", "))
+		parts = append(parts, strings.Join(withParts, " "))
+	}
+
+	// SELECT columns
+	if len(columns) == 0 {
+		parts = append(parts, "SELECT *")
+	} else {
+		quotedCols := make([]string, len(columns))
+		for i, col := range columns {
+			quotedCols[i] = quoteIdentifier(col)
+		}
+		parts = append(parts, fmt.Sprintf("SELECT %s", strings.Join(quotedCols, ", ")))
+	}
+
+	// FROM table
+	parts = append(parts, fmt.Sprintf("FROM %s", quoteIdentifier(table)))
+
+	// JOIN clauses
+	for _, join := range joins {
+		joinType := strings.ToUpper(join.Type)
+		if joinType == "" {
+			joinType = "LEFT"
+		}
+		joinSQL := fmt.Sprintf("%s JOIN %s", joinType, quoteIdentifier(join.Table))
+		if join.Alias != "" {
+			joinSQL += " AS " + quoteIdentifier(join.Alias)
+		}
+		if join.Condition != "" {
+			joinSQL += " ON " + join.Condition
+		}
+		parts = append(parts, joinSQL)
+	}
+
+	// WHERE clause
+	if where != nil && !where.IsEmpty() {
+		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
+			return fmt.Sprintf("$%d", i)
+		}, quoteIdentifier, "postgresql")
+		if whereSQL != "" {
+			parts = append(parts, "WHERE "+whereSQL)
+			args = append(args, whereArgs...)
+		}
+	}
+
+	// ORDER BY
+	if len(orderBy) > 0 {
+		orderParts := make([]string, len(orderBy))
+		for i, ob := range orderBy {
+			direction := "ASC"
+			if ob.Direction == "DESC" || ob.Direction == "desc" {
+				direction = "DESC"
+			}
+			orderParts[i] = fmt.Sprintf("%s %s", quoteIdentifier(ob.Field), direction)
+		}
+		parts = append(parts, "ORDER BY "+strings.Join(orderParts, ", "))
+	}
+
+	// LIMIT
+	if limit != nil && *limit > 0 {
+		parts = append(parts, fmt.Sprintf("LIMIT $%d", argIndex))
+		args = append(args, *limit)
+		argIndex++
+	}
+
+	// OFFSET
+	if offset != nil && *offset > 0 {
+		parts = append(parts, fmt.Sprintf("OFFSET $%d", argIndex))
+		args = append(args, *offset)
+		argIndex++
+	}
+
+	return &Query{
+		SQL:  strings.Join(parts, " "),
+		Args: args,
+	}
+}
+
+// GenerateSelectWithWindows generates a SELECT query with window functions
+func (g *PostgresGenerator) GenerateSelectWithWindows(
+	table string,
+	columns []string,
+	windowFuncs []WindowFunction,
+	joins []Join,
+	where *WhereClause,
+	orderBy []OrderBy,
+	limit, offset *int,
+) *Query {
+	var parts []string
+	var args []interface{}
+	argIndex := 1
+
+	// Build SELECT clause with columns and window functions
+	var selectParts []string
+
+	// Add regular columns
+	if len(columns) > 0 {
+		for _, col := range columns {
+			selectParts = append(selectParts, quoteIdentifier(col))
+		}
+	}
+
+	// Add window functions
+	for _, wf := range windowFuncs {
+		funcSQL := g.buildWindowFunction(wf, &argIndex)
+		if wf.Alias != "" {
+			funcSQL += " AS " + quoteIdentifier(wf.Alias)
+		}
+		selectParts = append(selectParts, funcSQL)
+	}
+
+	// If no columns or window functions, select all
+	if len(selectParts) == 0 {
+		selectParts = append(selectParts, "*")
+	}
+
+	parts = append(parts, "SELECT "+strings.Join(selectParts, ", "))
+
+	// FROM table
+	parts = append(parts, fmt.Sprintf("FROM %s", quoteIdentifier(table)))
+
+	// JOIN clauses
+	for _, join := range joins {
+		joinType := strings.ToUpper(join.Type)
+		if joinType == "" {
+			joinType = "LEFT"
+		}
+		joinSQL := fmt.Sprintf("%s JOIN %s", joinType, quoteIdentifier(join.Table))
+		if join.Alias != "" {
+			joinSQL += " AS " + quoteIdentifier(join.Alias)
+		}
+		if join.Condition != "" {
+			joinSQL += " ON " + join.Condition
+		}
+		parts = append(parts, joinSQL)
+	}
+
+	// WHERE clause
+	if where != nil && !where.IsEmpty() {
+		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
+			return fmt.Sprintf("$%d", i)
+		}, quoteIdentifier, "postgresql")
+		if whereSQL != "" {
+			parts = append(parts, "WHERE "+whereSQL)
+			args = append(args, whereArgs...)
+		}
+	}
+
+	// ORDER BY
+	if len(orderBy) > 0 {
+		orderParts := make([]string, len(orderBy))
+		for i, ob := range orderBy {
+			direction := "ASC"
+			if ob.Direction == "DESC" || ob.Direction == "desc" {
+				direction = "DESC"
+			}
+			orderParts[i] = fmt.Sprintf("%s %s", quoteIdentifier(ob.Field), direction)
+		}
+		parts = append(parts, "ORDER BY "+strings.Join(orderParts, ", "))
+	}
+
+	// LIMIT
+	if limit != nil && *limit > 0 {
+		parts = append(parts, fmt.Sprintf("LIMIT $%d", argIndex))
+		args = append(args, *limit)
+		argIndex++
+	}
+
+	// OFFSET
+	if offset != nil && *offset > 0 {
+		parts = append(parts, fmt.Sprintf("OFFSET $%d", argIndex))
+		args = append(args, *offset)
+		argIndex++
+	}
+
+	return &Query{
+		SQL:  strings.Join(parts, " "),
+		Args: args,
+	}
+}
+
+// buildWindowFunction builds a window function SQL
+func (g *PostgresGenerator) buildWindowFunction(wf WindowFunction, argIndex *int) string {
+	var funcSQL string
+
+	// Build function call
+	switch wf.Function {
+	case "ROW_NUMBER", "RANK", "DENSE_RANK":
+		funcSQL = fmt.Sprintf("%s()", wf.Function)
+	case "LAG", "LEAD":
+		// LAG/LEAD need field, offset, and optional default
+		if wf.Field != "" {
+			funcSQL = fmt.Sprintf("%s(%s", wf.Function, quoteIdentifier(wf.Field))
+			// Note: offset and default would need to be stored in WindowFunction
+			// For now, simplified version
+			funcSQL += ")"
+		}
+	case "FIRST_VALUE", "LAST_VALUE":
+		if wf.Field != "" {
+			funcSQL = fmt.Sprintf("%s(%s)", wf.Function, quoteIdentifier(wf.Field))
+		}
+	default:
+		// SUM, AVG, COUNT, MAX, MIN
+		if wf.Field == "*" {
+			funcSQL = fmt.Sprintf("%s(*)", wf.Function)
+		} else if wf.Field != "" {
+			funcSQL = fmt.Sprintf("%s(%s)", wf.Function, quoteIdentifier(wf.Field))
+		}
+	}
+
+	// Build OVER clause
+	if wf.Window != nil {
+		funcSQL += " OVER ("
+		windowParts := []string{}
+
+		// PARTITION BY
+		if len(wf.Window.PartitionByFields) > 0 {
+			partParts := make([]string, len(wf.Window.PartitionByFields))
+			for i, part := range wf.Window.PartitionByFields {
+				partParts[i] = quoteIdentifier(part)
+			}
+			windowParts = append(windowParts, "PARTITION BY "+strings.Join(partParts, ", "))
+		}
+
+		// ORDER BY
+		if len(wf.Window.OrderByFields) > 0 {
+			orderParts := make([]string, len(wf.Window.OrderByFields))
+			for i, ob := range wf.Window.OrderByFields {
+				direction := "ASC"
+				if ob.Direction == "DESC" || ob.Direction == "desc" {
+					direction = "DESC"
+				}
+				orderParts[i] = fmt.Sprintf("%s %s", quoteIdentifier(ob.Field), direction)
+			}
+			windowParts = append(windowParts, "ORDER BY "+strings.Join(orderParts, ", "))
+		}
+
+		// Frame
+		if wf.Window.FrameSpec != nil {
+			frameSQL := wf.Window.FrameSpec.Type
+			if wf.Window.FrameSpec.Start != nil && wf.Window.FrameSpec.End != nil {
+				frameSQL += " BETWEEN " + g.buildFrameBound(wf.Window.FrameSpec.Start) + " AND " + g.buildFrameBound(wf.Window.FrameSpec.End)
+			} else if wf.Window.FrameSpec.Start != nil {
+				frameSQL += " " + g.buildFrameBound(wf.Window.FrameSpec.Start)
+			}
+			if wf.Window.FrameSpec.ExclusionType != "" {
+				frameSQL += " " + wf.Window.FrameSpec.ExclusionType
+			}
+			windowParts = append(windowParts, frameSQL)
+		}
+
+		funcSQL += strings.Join(windowParts, " ")
+		funcSQL += ")"
+	}
+
+	return funcSQL
+}
+
+// buildFrameBound builds a frame boundary SQL
+func (g *PostgresGenerator) buildFrameBound(bound *FrameBound) string {
+	switch bound.Type {
+	case "UNBOUNDED PRECEDING":
+		return "UNBOUNDED PRECEDING"
+	case "PRECEDING":
+		if bound.Offset != nil {
+			return fmt.Sprintf("%d PRECEDING", *bound.Offset)
+		}
+		return "PRECEDING"
+	case "CURRENT ROW":
+		return "CURRENT ROW"
+	case "FOLLOWING":
+		if bound.Offset != nil {
+			return fmt.Sprintf("%d FOLLOWING", *bound.Offset)
+		}
+		return "FOLLOWING"
+	case "UNBOUNDED FOLLOWING":
+		return "UNBOUNDED FOLLOWING"
+	default:
+		return bound.Type
+	}
+}
+
+// GenerateSelectWithAggregates generates a SELECT query with aggregations
+func (g *PostgresGenerator) GenerateSelectWithAggregates(
+	table string,
+	columns []string,
+	aggregates []AggregateFunction,
+	joins []Join,
+	where *WhereClause,
+	groupBy *GroupBy,
+	having *Having,
+	orderBy []OrderBy,
+	limit, offset *int,
+) *Query {
+	var parts []string
+	var args []interface{}
+	argIndex := 1
+
+	// Build SELECT clause with columns and aggregates
+	var selectParts []string
+
+	// Add regular columns
+	if len(columns) > 0 {
+		for _, col := range columns {
+			selectParts = append(selectParts, quoteIdentifier(col))
+		}
+	}
+
+	// Add aggregates
+	for _, agg := range aggregates {
+		if agg.Field == "*" {
+			if agg.Alias != "" {
+				selectParts = append(selectParts, fmt.Sprintf("%s(*) AS %s", agg.Function, quoteIdentifier(agg.Alias)))
+			} else {
+				selectParts = append(selectParts, fmt.Sprintf("%s(*)", agg.Function))
+			}
+		} else {
+			if agg.Alias != "" {
+				selectParts = append(selectParts, fmt.Sprintf("%s(%s) AS %s", agg.Function, quoteIdentifier(agg.Field), quoteIdentifier(agg.Alias)))
+			} else {
+				selectParts = append(selectParts, fmt.Sprintf("%s(%s)", agg.Function, quoteIdentifier(agg.Field)))
+			}
+		}
+	}
+
+	// If no columns or aggregates, select all
+	if len(selectParts) == 0 {
+		selectParts = append(selectParts, "*")
+	}
+
+	parts = append(parts, "SELECT "+strings.Join(selectParts, ", "))
+
+	// FROM table
+	parts = append(parts, fmt.Sprintf("FROM %s", quoteIdentifier(table)))
+
+	// JOIN clauses
+	for _, join := range joins {
+		joinType := strings.ToUpper(join.Type)
+		if joinType == "" {
+			joinType = "LEFT"
+		}
+		joinSQL := fmt.Sprintf("%s JOIN %s", joinType, quoteIdentifier(join.Table))
+		if join.Alias != "" {
+			joinSQL += " AS " + quoteIdentifier(join.Alias)
+		}
+		if join.Condition != "" {
+			joinSQL += " ON " + join.Condition
+		}
+		parts = append(parts, joinSQL)
+	}
+
+	// WHERE clause
+	if where != nil && !where.IsEmpty() {
+		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
+			return fmt.Sprintf("$%d", i)
+		}, quoteIdentifier, "postgresql")
+		if whereSQL != "" {
+			parts = append(parts, "WHERE "+whereSQL)
+			args = append(args, whereArgs...)
+		}
+	}
+
+	// GROUP BY
+	if groupBy != nil && len(groupBy.Fields) > 0 {
+		groupByParts := make([]string, len(groupBy.Fields))
+		for i, field := range groupBy.Fields {
+			groupByParts[i] = quoteIdentifier(field)
+		}
+		parts = append(parts, "GROUP BY "+strings.Join(groupByParts, ", "))
+	}
+
+	// HAVING
+	if having != nil && len(having.Conditions) > 0 {
+		havingSQL, havingArgs := g.buildHaving(having, &argIndex)
+		if havingSQL != "" {
+			parts = append(parts, "HAVING "+havingSQL)
+			args = append(args, havingArgs...)
+		}
+	}
+
+	// ORDER BY
+	if len(orderBy) > 0 {
+		orderParts := make([]string, len(orderBy))
+		for i, ob := range orderBy {
+			direction := "ASC"
+			if ob.Direction == "DESC" || ob.Direction == "desc" {
+				direction = "DESC"
+			}
+			orderParts[i] = fmt.Sprintf("%s %s", quoteIdentifier(ob.Field), direction)
+		}
+		parts = append(parts, "ORDER BY "+strings.Join(orderParts, ", "))
+	}
+
+	// LIMIT
+	if limit != nil && *limit > 0 {
+		parts = append(parts, fmt.Sprintf("LIMIT $%d", argIndex))
+		args = append(args, *limit)
+		argIndex++
+	}
+
+	// OFFSET
+	if offset != nil && *offset > 0 {
+		parts = append(parts, fmt.Sprintf("OFFSET $%d", argIndex))
+		args = append(args, *offset)
+		argIndex++
 	}
 
 	return &Query{
@@ -362,6 +860,133 @@ func (g *MySQLGenerator) GenerateSelect(table string, columns []string, where *W
 	}
 }
 
+// GenerateSelectWithCTE for MySQL
+func (g *MySQLGenerator) GenerateSelectWithCTE(
+	table string,
+	columns []string,
+	ctes []CTE,
+	joins []Join,
+	where *WhereClause,
+	orderBy []OrderBy,
+	limit, offset *int,
+) *Query {
+	var parts []string
+	var args []interface{}
+	argIndex := 1
+
+	// Build WITH clause if CTEs are present
+	if len(ctes) > 0 {
+		withParts := []string{}
+		isRecursive := false
+		for _, cte := range ctes {
+			if cte.Recursive {
+				isRecursive = true
+				break
+			}
+		}
+
+		if isRecursive {
+			withParts = append(withParts, "WITH RECURSIVE")
+		} else {
+			withParts = append(withParts, "WITH")
+		}
+
+		cteParts := []string{}
+		for _, cte := range ctes {
+			cteSQL := quoteIdentifierMySQL(cte.Name)
+			if len(cte.Columns) > 0 {
+				colParts := make([]string, len(cte.Columns))
+				for j, col := range cte.Columns {
+					colParts[j] = quoteIdentifierMySQL(col)
+				}
+				cteSQL += " (" + strings.Join(colParts, ", ") + ")"
+			}
+			cteSQL += " AS (" + cte.Query.SQL + ")"
+			cteParts = append(cteParts, cteSQL)
+			args = append(args, cte.Query.Args...)
+		}
+		withParts = append(withParts, strings.Join(cteParts, ", "))
+		parts = append(parts, strings.Join(withParts, " "))
+	}
+
+	// SELECT columns
+	if len(columns) == 0 {
+		parts = append(parts, "SELECT *")
+	} else {
+		quotedCols := make([]string, len(columns))
+		for i, col := range columns {
+			quotedCols[i] = quoteIdentifierMySQL(col)
+		}
+		parts = append(parts, fmt.Sprintf("SELECT %s", strings.Join(quotedCols, ", ")))
+	}
+
+	// FROM table
+	parts = append(parts, fmt.Sprintf("FROM %s", quoteIdentifierMySQL(table)))
+
+	// JOIN clauses
+	for _, join := range joins {
+		joinType := strings.ToUpper(join.Type)
+		if joinType == "" {
+			joinType = "LEFT"
+		}
+		joinSQL := fmt.Sprintf("%s JOIN %s", joinType, quoteIdentifierMySQL(join.Table))
+		if join.Alias != "" {
+			joinSQL += " AS " + quoteIdentifierMySQL(join.Alias)
+		}
+		if join.Condition != "" {
+			joinSQL += " ON " + join.Condition
+		}
+		parts = append(parts, joinSQL)
+	}
+
+	// WHERE clause
+	if where != nil && !where.IsEmpty() {
+		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
+			return "?"
+		}, quoteIdentifierMySQL, "mysql")
+		if whereSQL != "" {
+			parts = append(parts, "WHERE "+whereSQL)
+			args = append(args, whereArgs...)
+		}
+	}
+
+	// ORDER BY
+	if len(orderBy) > 0 {
+		orderParts := make([]string, len(orderBy))
+		for i, ob := range orderBy {
+			direction := "ASC"
+			if ob.Direction == "DESC" || ob.Direction == "desc" {
+				direction = "DESC"
+			}
+			orderParts[i] = fmt.Sprintf("%s %s", quoteIdentifierMySQL(ob.Field), direction)
+		}
+		parts = append(parts, "ORDER BY "+strings.Join(orderParts, ", "))
+	}
+
+	// LIMIT
+	if limit != nil && *limit > 0 {
+		parts = append(parts, "LIMIT ?")
+		args = append(args, *limit)
+		argIndex++
+	}
+
+	// OFFSET
+	if offset != nil && *offset > 0 {
+		if limit == nil || *limit == 0 {
+			parts = append(parts, "LIMIT 18446744073709551615")
+		}
+		parts = append(parts, "OFFSET ?")
+		args = append(args, *offset)
+	}
+
+	return &Query{
+		SQL:  strings.Join(parts, " "),
+		Args: args,
+	}
+}
+
+// GenerateSelectWithAggregates for MySQL - see implementation added earlier in file
+
 func (g *MySQLGenerator) GenerateInsert(table string, columns []string, values []interface{}) *Query {
 	var parts []string
 	var args []interface{}
@@ -392,6 +1017,24 @@ func (g *MySQLGenerator) GenerateInsert(table string, columns []string, values [
 		Args: args,
 	}
 }
+
+// GenerateSelectWithWindows for MySQL
+func (g *MySQLGenerator) GenerateSelectWithWindows(
+	table string,
+	columns []string,
+	windowFuncs []WindowFunction,
+	joins []Join,
+	where *WhereClause,
+	orderBy []OrderBy,
+	limit, offset *int,
+) *Query {
+	// MySQL 8.0+ supports window functions, similar to PostgreSQL
+	pgGen := &PostgresGenerator{}
+	return pgGen.GenerateSelectWithWindows(table, columns, windowFuncs, joins, where, orderBy, limit, offset)
+}
+
+// GenerateSelectWithAggregates for MySQL (already added above, this is just a marker)
+// See implementation above after GenerateSelectWithJoins
 
 func (g *MySQLGenerator) GenerateUpsert(table string, columns []string, values []interface{}, updateColumns []string, conflictTarget []string) *Query {
 	var parts []string
@@ -583,6 +1226,145 @@ func (g *SQLiteGenerator) GenerateSelect(table string, columns []string, where *
 		Args: args,
 	}
 }
+
+// GenerateSelectWithCTE for SQLite
+func (g *SQLiteGenerator) GenerateSelectWithCTE(
+	table string,
+	columns []string,
+	ctes []CTE,
+	joins []Join,
+	where *WhereClause,
+	orderBy []OrderBy,
+	limit, offset *int,
+) *Query {
+	var parts []string
+	var args []interface{}
+	argIndex := 1
+
+	// Build WITH clause if CTEs are present
+	if len(ctes) > 0 {
+		withParts := []string{}
+		isRecursive := false
+		for _, cte := range ctes {
+			if cte.Recursive {
+				isRecursive = true
+				break
+			}
+		}
+
+		if isRecursive {
+			withParts = append(withParts, "WITH RECURSIVE")
+		} else {
+			withParts = append(withParts, "WITH")
+		}
+
+		cteParts := []string{}
+		for _, cte := range ctes {
+			cteSQL := quoteIdentifierSQLite(cte.Name)
+			if len(cte.Columns) > 0 {
+				colParts := make([]string, len(cte.Columns))
+				for j, col := range cte.Columns {
+					colParts[j] = quoteIdentifierSQLite(col)
+				}
+				cteSQL += " (" + strings.Join(colParts, ", ") + ")"
+			}
+			cteSQL += " AS (" + cte.Query.SQL + ")"
+			cteParts = append(cteParts, cteSQL)
+			args = append(args, cte.Query.Args...)
+		}
+		withParts = append(withParts, strings.Join(cteParts, ", "))
+		parts = append(parts, strings.Join(withParts, " "))
+	}
+
+	// SELECT columns
+	if len(columns) == 0 {
+		parts = append(parts, "SELECT *")
+	} else {
+		quotedCols := make([]string, len(columns))
+		for i, col := range columns {
+			quotedCols[i] = quoteIdentifierSQLite(col)
+		}
+		parts = append(parts, fmt.Sprintf("SELECT %s", strings.Join(quotedCols, ", ")))
+	}
+
+	// FROM table
+	parts = append(parts, fmt.Sprintf("FROM %s", quoteIdentifierSQLite(table)))
+
+	// JOIN clauses
+	for _, join := range joins {
+		joinType := strings.ToUpper(join.Type)
+		if joinType == "" {
+			joinType = "LEFT"
+		}
+		joinSQL := fmt.Sprintf("%s JOIN %s", joinType, quoteIdentifierSQLite(join.Table))
+		if join.Alias != "" {
+			joinSQL += " AS " + quoteIdentifierSQLite(join.Alias)
+		}
+		if join.Condition != "" {
+			joinSQL += " ON " + join.Condition
+		}
+		parts = append(parts, joinSQL)
+	}
+
+	// WHERE clause
+	if where != nil && !where.IsEmpty() {
+		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
+			return "?"
+		}, quoteIdentifierSQLite, "sqlite")
+		if whereSQL != "" {
+			parts = append(parts, "WHERE "+whereSQL)
+			args = append(args, whereArgs...)
+		}
+	}
+
+	// ORDER BY
+	if len(orderBy) > 0 {
+		orderParts := make([]string, len(orderBy))
+		for i, ob := range orderBy {
+			direction := "ASC"
+			if ob.Direction == "DESC" || ob.Direction == "desc" {
+				direction = "DESC"
+			}
+			orderParts[i] = fmt.Sprintf("%s %s", quoteIdentifierSQLite(ob.Field), direction)
+		}
+		parts = append(parts, "ORDER BY "+strings.Join(orderParts, ", "))
+	}
+
+	// LIMIT
+	if limit != nil && *limit > 0 {
+		parts = append(parts, "LIMIT ?")
+		args = append(args, *limit)
+		argIndex++
+	}
+
+	// OFFSET
+	if offset != nil && *offset > 0 {
+		parts = append(parts, "OFFSET ?")
+		args = append(args, *offset)
+	}
+
+	return &Query{
+		SQL:  strings.Join(parts, " "),
+		Args: args,
+	}
+}
+
+// GenerateSelectWithWindows for SQLite
+func (g *SQLiteGenerator) GenerateSelectWithWindows(
+	table string,
+	columns []string,
+	windowFuncs []WindowFunction,
+	joins []Join,
+	where *WhereClause,
+	orderBy []OrderBy,
+	limit, offset *int,
+) *Query {
+	// SQLite 3.25.0+ supports window functions, similar to PostgreSQL
+	pgGen := &PostgresGenerator{}
+	return pgGen.GenerateSelectWithWindows(table, columns, windowFuncs, joins, where, orderBy, limit, offset)
+}
+
+// GenerateSelectWithAggregates for SQLite - see implementation added earlier in file
 
 func (g *SQLiteGenerator) GenerateInsert(table string, columns []string, values []interface{}) *Query {
 	var parts []string
