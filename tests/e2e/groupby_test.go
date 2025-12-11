@@ -12,6 +12,9 @@ func (suite *TestSuite) TestGroupByQueries() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	// Clean up first to ensure isolation
+	suite.cleanupGroupByTables(ctx)
+	
 	// Create test tables with sample data
 	suite.createGroupByTables(ctx)
 	defer suite.cleanupGroupByTables(ctx)
@@ -112,8 +115,25 @@ func (suite *TestSuite) createGroupByTables(ctx context.Context) {
 
 // cleanupGroupByTables removes GROUP BY test tables
 func (suite *TestSuite) cleanupGroupByTables(ctx context.Context) {
-	_, err := suite.db.ExecContext(ctx, "DROP TABLE IF EXISTS posts, users")
-	require.NoError(suite.T(), err)
+	// Clean up data first, then drop tables
+	// SQLite and MySQL don't support multiple tables in one DROP statement
+	if suite.config.Provider == "sqlite" || suite.config.Provider == "mysql" {
+		_, _ = suite.db.ExecContext(ctx, "DELETE FROM posts")
+		_, _ = suite.db.ExecContext(ctx, "DELETE FROM users")
+		_, err := suite.db.ExecContext(ctx, "DROP TABLE IF EXISTS posts")
+		if err != nil {
+			suite.T().Logf("Error dropping posts table: %v", err)
+		}
+		_, err = suite.db.ExecContext(ctx, "DROP TABLE IF EXISTS users")
+		if err != nil {
+			suite.T().Logf("Error dropping users table: %v", err)
+		}
+	} else {
+		_, err := suite.db.ExecContext(ctx, "DROP TABLE IF EXISTS posts, users")
+		if err != nil {
+			suite.T().Logf("Error dropping tables: %v", err)
+		}
+	}
 }
 
 // insertGroupByTestData inserts sample data for GROUP BY tests
@@ -403,9 +423,9 @@ func (suite *TestSuite) testGroupByWithAggregations(ctx context.Context) {
 	for _, result := range results {
 		require.Greater(suite.T(), result.TotalPosts, 0)
 		require.GreaterOrEqual(suite.T(), result.PublishedPosts, 0)
-		require.GreaterOrEqual(suite.T(), result.PublishedPosts, result.TotalPosts)
+		require.LessOrEqual(suite.T(), result.PublishedPosts, result.TotalPosts) // Published can't exceed total
 		require.Greater(suite.T(), result.TotalViews, 0)
-		require.Greater(suite.T(), result.AvgViews, 0)
+		require.Greater(suite.T(), result.AvgViews, 0.0) // Use float64 literal
 		require.GreaterOrEqual(suite.T(), result.MinViews, 0)
 		require.GreaterOrEqual(suite.T(), result.MaxViews, result.MinViews)
 	}
@@ -463,6 +483,6 @@ func (suite *TestSuite) testGroupByWithAggregations(ctx context.Context) {
 		key := result.Department + "-" + result.Category
 		expectedDeptCategories[key] = true
 		require.Greater(suite.T(), result.PostCount, 0)
-		require.Greater(suite.T(), result.AvgViews, 0)
+		require.Greater(suite.T(), result.AvgViews, 0.0) // Use float64 literal
 	}
 }

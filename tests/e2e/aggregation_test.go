@@ -106,8 +106,25 @@ func (suite *TestSuite) createAggregationTables(ctx context.Context) {
 
 // cleanupAggregationTables removes aggregation test tables
 func (suite *TestSuite) cleanupAggregationTables(ctx context.Context) {
-	_, err := suite.db.ExecContext(ctx, "DROP TABLE IF EXISTS posts, users")
-	require.NoError(suite.T(), err)
+	// Clean up data first, then drop tables
+	// SQLite and MySQL don't support multiple tables in one DROP statement
+	if suite.config.Provider == "sqlite" || suite.config.Provider == "mysql" {
+		_, _ = suite.db.ExecContext(ctx, "DELETE FROM posts")
+		_, _ = suite.db.ExecContext(ctx, "DELETE FROM users")
+		_, err := suite.db.ExecContext(ctx, "DROP TABLE IF EXISTS posts")
+		if err != nil {
+			suite.T().Logf("Error dropping posts table: %v", err)
+		}
+		_, err = suite.db.ExecContext(ctx, "DROP TABLE IF EXISTS users")
+		if err != nil {
+			suite.T().Logf("Error dropping users table: %v", err)
+		}
+	} else {
+		_, err := suite.db.ExecContext(ctx, "DROP TABLE IF EXISTS posts, users")
+		if err != nil {
+			suite.T().Logf("Error dropping tables: %v", err)
+		}
+	}
 }
 
 // insertAggregationTestData inserts sample data for aggregation tests
@@ -201,10 +218,13 @@ func (suite *TestSuite) testSumOperations(ctx context.Context) {
 	require.Equal(suite.T(), 200000.00, highEarnerTotal) // 60000+75000+65000
 
 	// Sum of view counts
+	// 5 users * 3 posts each = 15 posts total
+	// Each user's posts: 100 + 50 + 200 = 350 views
+	// Total: 5 * 350 = 1750 views
 	var totalViews int
 	err = suite.db.QueryRowContext(ctx, "SELECT SUM(view_count) FROM posts").Scan(&totalViews)
 	require.NoError(suite.T(), err)
-	require.Equal(suite.T(), 1050, totalViews) // 5 users * (100+50+200)
+	require.Equal(suite.T(), 1750, totalViews) // 5 users * (100+50+200) = 1750
 }
 
 // testAverageOperations tests average aggregation
