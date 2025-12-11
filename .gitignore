@@ -74,3 +74,5 @@ QUERY_COMPILATION.md
 
 generated/
 examples/*/generated/
+
+examples/

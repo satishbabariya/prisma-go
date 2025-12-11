@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	"github.com/satishbabariya/prisma-go/internal/debug"
 	"github.com/satishbabariya/prisma-go/cli/internal/ui"
 	"github.com/satishbabariya/prisma-go/cli/internal/version"
 )
@@ -14,6 +15,7 @@ import (
 var (
 	cfgFile      string
 	verbose      bool
+	debugFlag    bool
 	noColor      bool
 	skipEnvCheck bool
 )
@@ -31,6 +33,9 @@ var rootCmd = &cobra.Command{
 For more information, visit: https://github.com/satishbabariya/prisma-go`,
 	Version: version.Version,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		// Initialize debug logger
+		debug.Init(debugFlag)
+
 		// Initialize UI settings
 		if noColor {
 			// Disable colors
@@ -57,12 +62,14 @@ func init() {
 	// Global flags
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.config/prisma-go/.prisma-go.yaml)")
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
+	rootCmd.PersistentFlags().BoolVar(&debugFlag, "debug", false, "enable debug logging")
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "disable colored output")
 	rootCmd.PersistentFlags().BoolVar(&skipEnvCheck, "skip-env-check", false, "skip environment variable checks")
 	rootCmd.PersistentFlags().Bool("no-telemetry", false, "disable telemetry collection")
 
 	// Bind flags to viper
 	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))
+	viper.BindPFlag("debug", rootCmd.PersistentFlags().Lookup("debug"))
 	viper.BindPFlag("no_color", rootCmd.PersistentFlags().Lookup("no-color"))
 	viper.BindPFlag("skip_env_check", rootCmd.PersistentFlags().Lookup("skip-env-check"))
 
@@ -111,5 +118,6 @@ func initConfig() {
 		if verbose {
 			ui.PrintInfo("Using config file: %s", viper.ConfigFileUsed())
 		}
+		debug.Debug("Config file loaded", "path", viper.ConfigFileUsed())
 	}
 }

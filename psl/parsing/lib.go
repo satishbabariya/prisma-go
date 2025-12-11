@@ -4,6 +4,7 @@ package parsing
 import (
 	"fmt"
 
+	"github.com/satishbabariya/prisma-go/internal/debug"
 	"github.com/satishbabariya/prisma-go/psl/core"
 	"github.com/satishbabariya/prisma-go/psl/diagnostics"
 	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
@@ -52,11 +53,15 @@ func StringLiteralValue(s string) string {
 
 // ParseSchema parses a Prisma schema string into an AST.
 func ParseSchema(input string) (*ast.SchemaAst, diagnostics.Diagnostics) {
+	debug.Debug("Starting schema parsing", "inputLength", len(input))
 	diags := diagnostics.NewDiagnostics()
 
+	debug.Debug("Creating lexer")
 	lex := lexer.NewLexer(input)
+	debug.Debug("Tokenizing input")
 	tokens, err := lex.Tokenize()
 	if err != nil {
+		debug.Error("Lexer error", "error", err)
 		// Report lexer error with proper span information
 		// Create a span at the beginning of the file for lexer errors
 		span := diagnostics.NewSpan(0, len(input), diagnostics.FileIDZero)
@@ -66,14 +71,19 @@ func ParseSchema(input string) (*ast.SchemaAst, diagnostics.Diagnostics) {
 		))
 		return &ast.SchemaAst{Tops: []ast.Top{}}, diags
 	}
+	debug.Debug("Tokenization completed", "tokenCount", len(tokens))
 
+	debug.Debug("Creating parser")
 	parser := ast.NewParser(tokens, &diags)
+	debug.Debug("Parsing AST")
 	astResult := parser.Parse()
+	debug.Debug("AST parsing completed", "topLevelCount", len(astResult.Tops), "errorCount", len(diags.Errors()), "warningCount", len(diags.Warnings()))
 
 	return astResult, diags
 }
 
 // ParseSchemaFromSourceFile parses a Prisma schema from a source file.
 func ParseSchemaFromSourceFile(file core.SourceFile) (*ast.SchemaAst, diagnostics.Diagnostics) {
+	debug.Debug("Parsing schema from source file", "path", file.Path, "dataLength", len(file.Data))
 	return ParseSchema(file.Data)
 }

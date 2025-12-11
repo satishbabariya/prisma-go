@@ -13,6 +13,7 @@ import (
 	"github.com/satishbabariya/prisma-go/cli/internal/ui"
 	"github.com/satishbabariya/prisma-go/cli/internal/watch"
 	"github.com/satishbabariya/prisma-go/generator"
+	"github.com/satishbabariya/prisma-go/internal/debug"
 	psl "github.com/satishbabariya/prisma-go/psl"
 )
 
@@ -45,9 +46,11 @@ func init() {
 
 func runGenerate(cmd *cobra.Command, args []string) error {
 	schemaPath := getSchemaPath(generateSchemaPath, args)
+	debug.Debug("Generate command started", "schemaPath", schemaPath, "watch", generateWatch, "watchOnly", generateWatchOnly)
 
 	// Watch mode
 	if generateWatch || generateWatchOnly {
+		debug.Debug("Starting watch mode")
 		return runGenerateWatch(schemaPath, !generateWatchOnly)
 	}
 
@@ -57,28 +60,36 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	defer spinner.Stop()
 
 	// Check if schema file exists
+	debug.Debug("Checking if schema file exists", "path", schemaPath)
 	if _, err := os.Stat(schemaPath); os.IsNotExist(err) {
 		spinner.Stop()
+		debug.Error("Schema file not found", "path", schemaPath)
 		return fmt.Errorf("schema file not found: %s", schemaPath)
 	}
 
 	// Read schema
+	debug.Debug("Reading schema file", "path", schemaPath)
 	content, err := os.ReadFile(schemaPath)
 	if err != nil {
 		spinner.Stop()
+		debug.Error("Failed to read schema file", "path", schemaPath, "error", err)
 		return fmt.Errorf("failed to read schema: %w", err)
 	}
+	debug.Debug("Schema file read successfully", "size", len(content))
 
 	// Parse schema
+	debug.Debug("Parsing schema")
 	sourceFile := psl.NewSourceFile(schemaPath, string(content))
 	ast, diags := psl.ParseSchemaFromFile(sourceFile)
 
 	if diags.HasErrors() {
 		spinner.Stop()
+		debug.Error("Schema parsing failed", "errorCount", len(diags.Errors()))
 		ui.PrintError("Schema parsing failed:")
 		fmt.Fprintf(os.Stderr, "\n%s\n", diags.ToPrettyString(schemaPath, string(content)))
 		return fmt.Errorf("cannot generate from invalid schema")
 	}
+	debug.Debug("Schema parsed successfully", "topLevelCount", len(ast.Tops))
 
 	// Determine output directory from generator config or use default
 	outputDir := "./generated"
@@ -86,19 +97,23 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 
 	// Get schema file directory for resolving relative paths
 	schemaDir := filepath.Dir(schemaPath)
+	debug.Debug("Extracting configuration from AST", "schemaDir", schemaDir)
 
 	// Extract provider from datasource
 	for _, top := range ast.Tops {
 		if datasource := top.AsSource(); datasource != nil {
+			debug.Debug("Found datasource block")
 			for _, prop := range datasource.Properties {
 				if prop.Name.Name == "provider" {
 					if value, _ := prop.Value.AsStringValue(); value != nil {
 						provider = value.Value
+						debug.Debug("Extracted provider", "provider", provider)
 					}
 				}
 			}
 		}
 		if gen := top.AsGenerator(); gen != nil {
+			debug.Debug("Found generator block")
 			for _, prop := range gen.Properties {
 				if prop.Name.Name == "output" {
 					if value, _ := prop.Value.AsStringValue(); value != nil {
@@ -107,11 +122,13 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 						if !filepath.IsAbs(outputDir) {
 							outputDir = filepath.Join(schemaDir, outputDir)
 						}
+						debug.Debug("Extracted output directory", "outputDir", outputDir)
 					}
 				}
 			}
 		}
 	}
+	debug.Debug("Configuration extracted", "provider", provider, "outputDir", outputDir)
 
 	spinner.UpdateText("Parsing schema...")
 	spinner.Stop()
@@ -129,17 +146,21 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 
 	// Create generator
 	spinner, _ = ui.PrintSpinner("Generating code...")
+	debug.Debug("Creating generator", "provider", provider)
 	gen := generator.NewGenerator(ast, provider)
 
 	// Generate client code
+	debug.Debug("Starting code generation", "outputDir", outputDir)
 	if err := gen.GenerateClient(outputDir); err != nil {
 		spinner.Stop()
+		debug.Error("Code generation failed", "error", err)
 		return fmt.Errorf("code generation failed: %w", err)
 	}
 
 	spinner.Stop()
 
 	absPath, _ := filepath.Abs(outputDir)
+	debug.Info("Code generation completed successfully", "outputDir", absPath)
 	ui.PrintSuccess("Generated Prisma Client at %s", absPath)
 	fmt.Println()
 
@@ -173,23 +194,29 @@ func runGenerateWatch(schemaPath string, generateInitially bool) error {
 
 	// Generate callback function
 	generateCallback := func() error {
+		debug.Debug("Watch callback triggered - schema changed")
 		ui.PrintInfo("Schema changed, regenerating...")
 
 		// Read schema
+		debug.Debug("Reading schema file in watch mode", "path", schemaPath)
 		content, err := os.ReadFile(schemaPath)
 		if err != nil {
+			debug.Error("Failed to read schema in watch mode", "error", err)
 			return fmt.Errorf("failed to read schema: %w", err)
 		}
 
 		// Parse schema
+		debug.Debug("Parsing schema in watch mode")
 		sourceFile := psl.NewSourceFile(schemaPath, string(content))
 		ast, diags := psl.ParseSchemaFromFile(sourceFile)
 
 		if diags.HasErrors() {
+			debug.Error("Schema parsing failed in watch mode", "errorCount", len(diags.Errors()))
 			ui.PrintError("Schema parsing failed:")
 			fmt.Fprintf(os.Stderr, "\n%s\n", diags.ToPrettyString(schemaPath, string(content)))
 			return fmt.Errorf("cannot generate from invalid schema")
 		}
+		debug.Debug("Schema parsed successfully in watch mode")
 
 		// Determine output directory from generator config or use default
 		outputDir := "./generated"

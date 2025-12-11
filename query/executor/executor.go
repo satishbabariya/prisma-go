@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/satishbabariya/prisma-go/internal/debug"
 	"github.com/satishbabariya/prisma-go/query/builder"
 	"github.com/satishbabariya/prisma-go/query/cache"
 	"github.com/satishbabariya/prisma-go/query/sqlgen"
@@ -28,6 +29,7 @@ type Executor struct {
 
 // NewExecutor creates a new query executor
 func NewExecutor(db *sql.DB, provider string) *Executor {
+	debug.Debug("Creating new query executor", "provider", provider)
 	return &Executor{
 		db:           db,
 		provider:     provider,
@@ -44,6 +46,7 @@ func (e *Executor) SetCache(c cache.Cache) {
 	defer e.cacheMu.Unlock()
 	e.queryCache = c
 	e.cacheEnabled = c != nil
+	debug.Debug("Query cache updated", "enabled", e.cacheEnabled)
 }
 
 // EnableCache enables query caching with default settings
@@ -63,20 +66,25 @@ func (e *Executor) getCachedStmt(ctx context.Context, query string) (*sql.Stmt, 
 	e.cacheMu.RUnlock()
 
 	if ok && stmt != nil {
+		debug.Debug("Using cached prepared statement", "query", query)
 		return stmt, nil
 	}
 
 	// Create new prepared statement
+	debug.Debug("Creating new prepared statement", "query", query)
 	stmt, err := e.db.PrepareContext(ctx, query)
 	if err != nil {
+		debug.Error("Failed to prepare statement", "query", query, "error", err)
 		return nil, fmt.Errorf("failed to prepare statement: %w", err)
 	}
 
 	// Cache it
 	e.cacheMu.Lock()
 	e.stmtCache[query] = stmt
+	cacheSize := len(e.stmtCache)
 	e.cacheMu.Unlock()
 
+	debug.Debug("Prepared statement cached", "query", query, "cacheSize", cacheSize)
 	return stmt, nil
 }
 
@@ -103,6 +111,8 @@ func (e *Executor) FindMany(ctx context.Context, table string, selectFields map[
 
 // FindManyWithRelations executes a SELECT query with relations and maps results to a slice
 func (e *Executor) FindManyWithRelations(ctx context.Context, table string, selectFields map[string]bool, where *sqlgen.WhereClause, orderBy []sqlgen.OrderBy, limit, offset *int, include map[string]bool, relations map[string]RelationMetadata, dest interface{}) error {
+	debug.Debug("FindManyWithRelations called", "table", table, "hasJoins", include != nil && len(include) > 0)
+
 	// Convert selectFields map to slice
 	var columns []string
 	if selectFields != nil && len(selectFields) > 0 {
@@ -110,6 +120,7 @@ func (e *Executor) FindManyWithRelations(ctx context.Context, table string, sele
 			columns = append(columns, field)
 		}
 	}
+	debug.Debug("Select fields", "columns", columns, "count", len(columns))
 
 	var query *sqlgen.Query
 
@@ -117,6 +128,7 @@ func (e *Executor) FindManyWithRelations(ctx context.Context, table string, sele
 	var joins []sqlgen.Join
 	if include != nil && len(include) > 0 && relations != nil {
 		joins = buildJoinsFromIncludes(table, include, relations, e.provider)
+		debug.Debug("Built joins from includes", "joinCount", len(joins))
 	}
 
 	if len(joins) > 0 {
@@ -124,37 +136,51 @@ func (e *Executor) FindManyWithRelations(ctx context.Context, table string, sele
 	} else {
 		query = e.generator.GenerateSelect(table, columns, where, orderBy, limit, offset)
 	}
+	debug.Debug("Generated SQL query", "sql", query.SQL, "args", query.Args)
 
 	// Check cache if enabled
 	if e.cacheEnabled && e.queryCache != nil {
 		cacheKey := cache.GenerateCacheKey(query.SQL, query.Args)
 		if cached, ok := e.queryCache.Get(cacheKey); ok {
+			debug.Debug("Cache hit", "cacheKey", cacheKey)
 			// Copy cached result to destination
 			return e.copyCachedResult(cached, dest)
 		}
+		debug.Debug("Cache miss", "cacheKey", cacheKey)
 	}
 
+	debug.Debug("Executing query", "sql", query.SQL, "args", query.Args)
 	rows, err := e.db.QueryContext(ctx, query.SQL, query.Args...)
 	if err != nil {
+		debug.Error("Query execution failed", "table", table, "sql", query.SQL, "args", query.Args, "error", err)
 		return fmt.Errorf("query execution failed for table %q: SQL=%q, args=%v: %w", table, query.SQL, query.Args, err)
 	}
 	defer rows.Close()
+	debug.Debug("Query executed successfully")
 
 	// Use optimized JOIN mapping if we have JOINs
 	if len(joins) > 0 && relations != nil {
 		// Validate relations before scanning
+		debug.Debug("Validating relations before scanning")
 		if err := validateRelations(relations); err != nil {
+			debug.Error("Relation validation failed", "error", err)
 			return fmt.Errorf("invalid relations: %w", err)
 		}
+		debug.Debug("Scanning join results", "joinCount", len(joins))
 		err = e.scanJoinResults(rows, table, joins, relations, dest)
 		if err != nil {
+			debug.Error("Failed to scan join results", "table", table, "error", err)
 			return fmt.Errorf("failed to scan join results for table %q: %w", table, err)
 		}
+		debug.Debug("Join results scanned successfully")
 	} else {
+		debug.Debug("Scanning rows without joins")
 		err = e.scanRows(rows, dest)
 		if err != nil {
+			debug.Error("Failed to scan rows", "table", table, "error", err)
 			return fmt.Errorf("failed to scan rows for table %q: %w", table, err)
 		}
+		debug.Debug("Rows scanned successfully")
 
 		// Relations are loaded via JOINs above, no need for N+1 fallback
 	}
@@ -166,9 +192,13 @@ func (e *Executor) FindManyWithRelations(ctx context.Context, table string, sele
 		cachedValue := reflect.New(reflect.TypeOf(dest).Elem())
 		if err := e.copyCachedResult(dest, cachedValue.Interface()); err == nil {
 			e.queryCache.Set(cacheKey, cachedValue.Elem().Interface(), 0) // Use default TTL
+			debug.Debug("Result cached", "cacheKey", cacheKey)
+		} else {
+			debug.Debug("Failed to cache result", "error", err)
 		}
 	}
 
+	debug.Debug("FindManyWithRelations completed successfully", "table", table)
 	return nil
 }
 
