@@ -88,6 +88,15 @@ func (w *EnumWalker) IsDefinedInFile(fileID diagnostics.FileID) bool {
 	return w.id.FileID == fileID
 }
 
+// Schema returns the schema name if @@schema is present.
+func (w *EnumWalker) Schema() *SchemaInfo {
+	attrs := w.Attributes()
+	if attrs == nil {
+		return nil
+	}
+	return attrs.Schema
+}
+
 // EnumValueWalker provides access to an enum value.
 type EnumValueWalker struct {
 	db      *ParserDatabase
@@ -106,6 +115,13 @@ func (w *EnumValueWalker) Name() string {
 
 // DatabaseName returns the database name of the enum value if @map is present.
 func (w *EnumValueWalker) DatabaseName() string {
-	// TODO: Get mapped name from EnumAttributes.mapped_values
-	return w.Name()
+	attrs := w.db.WalkEnum(w.enumID).Attributes()
+	if attrs == nil || attrs.MappedValues == nil {
+		return w.Name()
+	}
+	mappedNameID, exists := attrs.MappedValues[w.valueID]
+	if !exists {
+		return w.Name()
+	}
+	return w.db.interner.Get(mappedNameID)
 }

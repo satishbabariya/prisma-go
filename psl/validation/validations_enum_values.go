@@ -81,13 +81,10 @@ func validateEnumValueReservedNames(enum *database.EnumWalker, ctx *ValidationCo
 			if name == reserved {
 				astEnum := enum.AstEnum()
 				if astEnum != nil {
-					// TODO: Add warning support when available
-					// For now, we'll skip warnings since they're not yet implemented
-					// ctx.PushWarning(diagnostics.NewDatamodelWarning(
-					// 	fmt.Sprintf("Enum value '%s' in enum '%s' uses reserved name '%s'.", name, enum.Name(), reserved),
-					// 	astEnum.Span(),
-					// ))
-					_ = astEnum
+					ctx.PushWarning(diagnostics.NewDatamodelWarning(
+						fmt.Sprintf("Enum value '%s' in enum '%s' uses reserved name '%s'.", name, enum.Name(), reserved),
+						astEnum.Span(),
+					))
 				}
 			}
 		}

@@ -2,6 +2,7 @@
 package database
 
 import (
+	"github.com/satishbabariya/prisma-go/psl/diagnostics"
 	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
 )
 
@@ -176,4 +177,13 @@ func (w *IndexFieldWalker) ScalarFieldType() ScalarFieldType {
 		return ScalarFieldType{}
 	}
 	return field.ScalarFieldType()
+}
+
+// SpanForArgument returns the span for a specific argument name in the index attribute.
+func (w *IndexWalker) SpanForArgument(argumentName string) *diagnostics.Span {
+	attr := w.AstAttribute()
+	if attr == nil {
+		return nil
+	}
+	return attr.SpanForArgument(argumentName)
 }

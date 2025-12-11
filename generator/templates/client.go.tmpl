@@ -3,7 +3,10 @@ package generated
 import (
 	"context"
 	"database/sql"
+	"fmt"
 
+	"github.com/satishbabariya/prisma-go/query/ast"
+	"github.com/satishbabariya/prisma-go/query/compiler"
 	"github.com/satishbabariya/prisma-go/runtime/client"
 )
 
@@ -27,7 +30,7 @@ func NewPrismaClient(connectionString string) (*PrismaClient, error) {
 	}
 
 {{- range .Models}}
-	c.{{.Name}} = &{{.Name}}Client{client: baseClient}
+	c.{{.Name}} = new{{.Name}}Client(baseClient)
 {{- end}}
 
 	return c, nil
@@ -36,43 +39,150 @@ func NewPrismaClient(connectionString string) (*PrismaClient, error) {
 {{range .Models}}
 // {{.Name}}Client provides methods for {{.Name}} operations
 type {{.Name}}Client struct {
-	client *client.PrismaClient
+	client   *client.PrismaClient
+	compiler *compiler.Compiler
+	table    string
+}
+
+func new{{.Name}}Client(baseClient *client.PrismaClient) *{{.Name}}Client {
+	return &{{.Name}}Client{
+		client:   baseClient,
+		compiler: compiler.NewCompiler("{{$.Provider}}"),
+		table:    "{{.TableName}}",
+	}
 }
 
 // FindMany retrieves multiple {{.Name}} records
-func (c *{{.Name}}Client) FindMany(ctx context.Context) ([]{{.Name}}, error) {
-	// TODO: Implement query execution
-	return []{{.Name}}{}, nil
+func (c *{{.Name}}Client) FindMany(ctx context.Context, where *ast.WhereClause, orderBy []ast.OrderByClause, take, skip *int) ([]{{.Name}}, error) {
+	query := &ast.FindManyQuery{
+		Model:   c.table,
+		Where:   where,
+		OrderBy: orderBy,
+		Take:    take,
+		Skip:    skip,
+	}
+	
+	sql, args, err := c.compiler.Compile(query)
+	if err != nil {
+		return nil, err
+	}
+	
+	rows, err := c.client.RawQuery(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	
+	return client.ScanRows[{{.Name}}](rows)
 }
 
 // FindFirst retrieves the first {{.Name}} record
-func (c *{{.Name}}Client) FindFirst(ctx context.Context) (*{{.Name}}, error) {
-	// TODO: Implement query execution
-	return &{{.Name}}{}, nil
+func (c *{{.Name}}Client) FindFirst(ctx context.Context, where *ast.WhereClause, orderBy []ast.OrderByClause) (*{{.Name}}, error) {
+	take := 1
+	results, err := c.FindMany(ctx, where, orderBy, &take, nil)
+	if err != nil {
+		return nil, err
+	}
+	if len(results) == 0 {
+		return nil, sql.ErrNoRows
+	}
+	return &results[0], nil
 }
 
 // FindUnique retrieves a unique {{.Name}} record
-func (c *{{.Name}}Client) FindUnique(ctx context.Context) (*{{.Name}}, error) {
-	// TODO: Implement query execution
-	return &{{.Name}}{}, nil
+func (c *{{.Name}}Client) FindUnique(ctx context.Context, where *ast.WhereClause) (*{{.Name}}, error) {
+	return c.FindFirst(ctx, where, nil)
 }
 
 // Create creates a new {{.Name}} record
 func (c *{{.Name}}Client) Create(ctx context.Context, data {{.Name}}) (*{{.Name}}, error) {
-	// TODO: Implement insert execution
-	return &data, nil
+	// Convert struct to map for query
+	dataMap := make(map[string]interface{})
+	{{- range .Fields}}
+	{{- if not .IsRelation}}
+	dataMap["{{.Name}}"] = data.{{.GoName}}
+	{{- end}}
+	{{- end}}
+	
+	query := &ast.CreateQuery{
+		Model: c.table,
+		Data:  dataMap,
+	}
+	
+	sql, args, err := c.compiler.Compile(query)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Execute INSERT and get the created record
+	rows, err := c.client.RawQuery(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	
+	results, err := client.ScanRows[{{.Name}}](rows)
+	if err != nil {
+		return nil, err
+	}
+	if len(results) == 0 {
+		return nil, fmt.Errorf("no record returned from INSERT")
+	}
+	return &results[0], nil
 }
 
 // Update updates a {{.Name}} record
-func (c *{{.Name}}Client) Update(ctx context.Context, data {{.Name}}) (*{{.Name}}, error) {
-	// TODO: Implement update execution
-	return &data, nil
+func (c *{{.Name}}Client) Update(ctx context.Context, where *ast.WhereClause, data {{.Name}}) (*{{.Name}}, error) {
+	// Convert struct to map for query
+	dataMap := make(map[string]interface{})
+	{{- range .Fields}}
+	{{- if not .IsRelation}}
+	dataMap["{{.Name}}"] = data.{{.GoName}}
+	{{- end}}
+	{{- end}}
+	
+	query := &ast.UpdateQuery{
+		Model: c.table,
+		Where: where,
+		Data:  dataMap,
+	}
+	
+	sql, args, err := c.compiler.Compile(query)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Execute UPDATE and get the updated record
+	rows, err := c.client.RawQuery(ctx, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	
+	results, err := client.ScanRows[{{.Name}}](rows)
+	if err != nil {
+		return nil, err
+	}
+	if len(results) == 0 {
+		return nil, sql.ErrNoRows
+	}
+	return &results[0], nil
 }
 
 // Delete deletes a {{.Name}} record
-func (c *{{.Name}}Client) Delete(ctx context.Context, id interface{}) error {
-	// TODO: Implement delete execution
-	return nil
+func (c *{{.Name}}Client) Delete(ctx context.Context, where *ast.WhereClause) error {
+	query := &ast.DeleteQuery{
+		Model: c.table,
+		Where: where,
+	}
+	
+	sql, args, err := c.compiler.Compile(query)
+	if err != nil {
+		return err
+	}
+	
+	_, err = c.client.RawExec(ctx, sql, args...)
+	return err
 }
 {{end}}
 

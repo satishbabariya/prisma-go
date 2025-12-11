@@ -16,8 +16,13 @@ func validateNativeTypeArguments(field *database.ScalarFieldWalker, ctx *Validat
 		return
 	}
 
-	// TODO: Get raw native type when RawNativeType() method is available
-	// For now, check if field has native type
+	// Get raw native type string
+	rawNativeType := field.RawNativeType()
+	if rawNativeType == nil {
+		return
+	}
+
+	// Get native type info for scope validation
 	nativeType := field.NativeType()
 	if nativeType == nil {
 		return
@@ -31,8 +36,10 @@ func validateNativeTypeArguments(field *database.ScalarFieldWalker, ctx *Validat
 
 	// Validate that the attribute is scoped with the right datasource name
 	if ctx.Datasource != nil {
-		// TODO: Check if native type scope matches datasource name
-		// For now, this is a placeholder
+		// Get scope from native type - scope is stored as StringId
+		// We need to get it from the database walker's interner
+		// For now, skip this check as we don't have direct access to interner
+		// TODO: Add method to get scope string from native type
 		_ = datasourceName
 	}
 
@@ -40,7 +47,7 @@ func validateNativeTypeArguments(field *database.ScalarFieldWalker, ctx *Validat
 	// TODO: Validate argument count matches constructor requirements
 	// TODO: Validate native type is compatible with scalar type
 	// This requires connector support which is not yet fully implemented
-	_ = nativeType
+	_ = rawNativeType
 }
 
 // validateUnsupportedFieldType validates unsupported field types.

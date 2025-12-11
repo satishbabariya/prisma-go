@@ -279,11 +279,15 @@ func validateRelationFieldMissingIndexes(field *database.RelationFieldWalker, ct
 	}
 
 	// Referencing fields are not covered by any index or primary key
-	// TODO: Add warning support when available
-	// For now, we'll skip this since warnings are not yet implemented
 	astField := field.AstField()
 	if astField != nil {
-		// ctx.PushWarning(diagnostics.NewDatamodelWarning(...))
-		_ = astField
+		fieldNames := make([]string, len(referencingFields))
+		for i, f := range referencingFields {
+			fieldNames[i] = f.Name()
+		}
+		ctx.PushWarning(diagnostics.NewDatamodelWarning(
+			fmt.Sprintf("The relation field '%s' on model '%s' references fields [%s] that are not covered by any index or primary key. This may cause performance issues.", field.Name(), model.Name(), fmt.Sprintf("%v", fieldNames)),
+			astField.Span(),
+		))
 	}
 }

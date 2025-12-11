@@ -135,3 +135,46 @@ func (w *CompositeTypeFieldWalker) DatabaseName() string {
 	}
 	return w.db.interner.Get(*ctf.MappedName)
 }
+
+// DefaultValue returns the default value expression if @default is present.
+// For composite type fields, we return the expression directly from AST.
+func (w *CompositeTypeFieldWalker) DefaultValue() ast.Expression {
+	key := CompositeTypeFieldKeyByID{
+		CompositeTypeID: w.ctID,
+		FieldID:         w.fieldID,
+	}
+	ctf, exists := w.db.types.CompositeTypeFields[key]
+	if !exists || ctf.Default == nil {
+		return nil
+	}
+	
+	astCT := w.db.WalkCompositeType(w.ctID).AstCompositeType()
+	if astCT == nil || int(w.fieldID) >= len(astCT.Fields) {
+		return nil
+	}
+	
+	astField := &astCT.Fields[w.fieldID]
+	if int(ctf.Default.ArgumentIdx) >= len(astField.Attributes) {
+		return nil
+	}
+	
+	// Find the @default attribute
+	for _, attr := range astField.Attributes {
+		if attr.Name.Name == "default" {
+			if int(ctf.Default.ArgumentIdx) < len(attr.Arguments.Arguments) {
+				return attr.Arguments.Arguments[ctf.Default.ArgumentIdx].Value
+			}
+		}
+	}
+	
+	return nil
+}
+
+// Span returns the span of the field from the AST.
+func (w *CompositeTypeFieldWalker) Span() diagnostics.Span {
+	astField := w.AstField()
+	if astField == nil {
+		return diagnostics.EmptySpan()
+	}
+	return astField.Name.Span()
+}

@@ -82,11 +82,47 @@ func validateEnumSchemaAttribute(enum *database.EnumWalker, ctx *ValidationConte
 		return
 	}
 
-	attrs := enum.Attributes()
-	if attrs == nil {
-		return
-	}
+	schema := enum.Schema()
+	if schema != nil {
+		// Get schema name from StringId
+		schemaName := ctx.Db.GetString(schema.Name)
 
-	// TODO: Check schema attribute when Schema field is added to EnumAttributes
-	_ = attrs
+		// Check if schema is in datasource schemas list
+		if len(ctx.Datasource.Schemas) > 0 {
+			found := false
+			for _, dsSchema := range ctx.Datasource.Schemas {
+				if dsSchema == schemaName {
+					found = true
+					break
+				}
+			}
+			if !found {
+				astEnum := enum.AstEnum()
+				if astEnum != nil {
+					ctx.PushError(diagnostics.NewValidationError(
+						fmt.Sprintf("Enum '%s' schema '%s' is not defined in datasource schemas.", enum.Name(), schemaName),
+						astEnum.Span(),
+					))
+				} else {
+					ctx.PushError(diagnostics.NewValidationError(
+						fmt.Sprintf("Enum '%s' schema '%s' is not defined in datasource schemas.", enum.Name(), schemaName),
+						diagnostics.NewSpan(0, 0, enum.FileID()),
+					))
+				}
+			}
+		} else if !ctx.HasCapability(ConnectorCapabilityMultiSchema) {
+			astEnum := enum.AstEnum()
+			if astEnum != nil {
+				ctx.PushError(diagnostics.NewValidationError(
+					fmt.Sprintf("Enum '%s' has @@schema attribute but connector does not support multi-schema.", enum.Name()),
+					astEnum.Span(),
+				))
+			} else {
+				ctx.PushError(diagnostics.NewValidationError(
+					fmt.Sprintf("Enum '%s' has @@schema attribute but connector does not support multi-schema.", enum.Name()),
+					diagnostics.NewSpan(0, 0, enum.FileID()),
+				))
+			}
+		}
+	}
 }

@@ -238,3 +238,12 @@ func (w *ModelWalker) FieldIsIndexedForAutoincrement(fieldID ScalarFieldId) bool
 
 	return false
 }
+
+// IsView returns whether this model is a view (as opposed to a table).
+func (w *ModelWalker) IsView() bool {
+	astModel := w.AstModel()
+	if astModel == nil {
+		return false
+	}
+	return astModel.IsView
+}

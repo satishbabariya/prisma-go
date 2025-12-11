@@ -199,19 +199,15 @@ func validateRequiredFieldSetNull(field *database.RelationFieldWalker, ctx *Vali
 
 	if allowsSetNull {
 		// Connector allows SetNull on non-nullable fields, but we should still warn
-		// For now, we'll add an error since we don't have a warning system yet
-		// TODO: Add warning support when available
 		if hasSetNullOnDelete {
-			ctx.PushError(diagnostics.NewAttributeValidationError(
+			ctx.PushWarning(diagnostics.NewDatamodelWarning(
 				"The `onDelete` referential action of a relation should not be set to `SetNull` when a referenced field is required. We recommend either to choose another referential action, or to make the referenced fields optional. Read more at https://pris.ly/d/postgres-set-null",
-				"@relation",
 				span,
 			))
 		}
 		if hasSetNullOnUpdate {
-			ctx.PushError(diagnostics.NewAttributeValidationError(
+			ctx.PushWarning(diagnostics.NewDatamodelWarning(
 				"The `onUpdate` referential action of a relation should not be set to `SetNull` when a referenced field is required. We recommend either to choose another referential action, or to make the referenced fields optional. Read more at https://pris.ly/d/postgres-set-null",
-				"@relation",
 				span,
 			))
 		}

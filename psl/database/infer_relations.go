@@ -7,6 +7,28 @@ import (
 	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
 )
 
+// fieldsMatchUniqueCriteria checks if the given field IDs exactly match the fields in a unique criteria.
+func fieldsMatchUniqueCriteria(fieldIDs []ScalarFieldId, criteriaFields []FieldWithArgs) bool {
+	if len(fieldIDs) != len(criteriaFields) {
+		return false
+	}
+	
+	// Create a map of criteria field IDs for quick lookup
+	criteriaFieldMap := make(map[ScalarFieldId]bool)
+	for _, fieldWithArgs := range criteriaFields {
+		criteriaFieldMap[fieldWithArgs.Field] = true
+	}
+	
+	// Check if all field IDs are in the criteria
+	for _, fieldID := range fieldIDs {
+		if !criteriaFieldMap[fieldID] {
+			return false
+		}
+	}
+	
+	return true
+}
+
 // InferRelations detects relation types and constructs relation objects.
 // This is the fourth pass of validation after attribute resolution.
 func InferRelations(ctx *Context) {
@@ -223,14 +245,58 @@ func ingestRelation(evidence *RelationEvidence, relations *Relations, ctx *Conte
 			}
 		}
 	} else {
-		// No opposite field - 1:m relation (forward side)
-		// TODO: Check if fields are unique to determine 1:1 vs 1:m
+		// No opposite field - check if referencing fields are unique to determine 1:1 vs 1:m
+		relationField := ctx.types.RelationFields[evidence.FieldID]
+		
+		// Get referencing fields
+		var referencingFieldIDs []ScalarFieldId
+		if relationField.Fields != nil {
+			referencingFieldIDs = *relationField.Fields
+		}
+		
+		if len(referencingFieldIDs) > 0 {
+			// Check if referencing fields form a unique constraint
+			modelAttrs, exists := ctx.types.ModelAttributes[relationField.ModelID]
+			if exists {
+				// Check primary key
+				if pk := modelAttrs.PrimaryKey; pk != nil {
+					if fieldsMatchUniqueCriteria(referencingFieldIDs, pk.Fields) {
+						// Referencing fields match primary key - this is a 1:1 relation
+						relationAttrs = RelationAttributes{
+							Type:   RelationAttributeTypeOneToOne,
+							FieldA: &evidence.FieldID,
+							FieldB: nil,
+						}
+						goto relationCreated
+					}
+				}
+				
+				// Check unique indexes
+				for _, indexEntry := range modelAttrs.AstIndexes {
+					if indexEntry.Index.Type == IndexTypeUnique {
+						if fieldsMatchUniqueCriteria(referencingFieldIDs, indexEntry.Index.Fields) {
+							// Referencing fields match unique index - this is a 1:1 relation
+							relationAttrs = RelationAttributes{
+								Type:   RelationAttributeTypeOneToOne,
+								FieldA: &evidence.FieldID,
+								FieldB: nil,
+							}
+							goto relationCreated
+						}
+					}
+				}
+			}
+		}
+		
+		// Referencing fields are not unique - 1:m relation (forward side)
 		relationAttrs = RelationAttributes{
 			Type:   RelationAttributeTypeOneToMany,
 			FieldA: &evidence.FieldID,
 			FieldB: nil,
 		}
 	}
+	
+relationCreated:
 
 	// Determine model A and model B
 	modelA := evidence.RelationField.ModelID

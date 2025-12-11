@@ -11,26 +11,36 @@ import (
 )
 
 // StringLiteralValue transforms the input string into a valid PSL string literal.
+// Implements proper JSON-style string escaping as per RFC 7159.
 func StringLiteralValue(s string) string {
-	// TODO: Implement proper JSON-style string escaping
-	// For now, just wrap in quotes and escape basic characters
 	result := "\""
 	for _, r := range s {
 		switch r {
-		case '\t':
-			result += "\\t"
+		case '\b':
+			result += "\\b"
+		case '\f':
+			result += "\\f"
 		case '\n':
 			result += "\\n"
-		case '"':
-			result += "\\\""
 		case '\r':
 			result += "\\r"
+		case '\t':
+			result += "\\t"
+		case '"':
+			result += "\\\""
 		case '\\':
 			result += "\\\\"
 		default:
 			if r < 32 {
-				// Control character - escape as \uXXXX
+				// Control character - escape as \uXXXX (4-digit hex)
 				result += fmt.Sprintf("\\u%04x", r)
+			} else if r > 0xFFFF {
+				// Surrogate pair for characters > U+FFFF
+				// Encode as two \uXXXX sequences
+				r -= 0x10000
+				high := 0xD800 + (r >> 10)
+				low := 0xDC00 + (r & 0x3FF)
+				result += fmt.Sprintf("\\u%04x\\u%04x", high, low)
 			} else {
 				result += string(r)
 			}
@@ -42,15 +52,21 @@ func StringLiteralValue(s string) string {
 
 // ParseSchema parses a Prisma schema string into an AST.
 func ParseSchema(input string) (*ast.SchemaAst, diagnostics.Diagnostics) {
+	diags := diagnostics.NewDiagnostics()
+	
 	lex := lexer.NewLexer(input)
 	tokens, err := lex.Tokenize()
 	if err != nil {
-		diags := diagnostics.NewDiagnostics()
-		// TODO: Add proper error handling
+		// Report lexer error with proper span information
+		// Create a span at the beginning of the file for lexer errors
+		span := diagnostics.NewSpan(0, len(input), diagnostics.FileIDZero)
+		diags.PushError(diagnostics.NewDatamodelError(
+			fmt.Sprintf("Lexer error: %v", err),
+			span,
+		))
 		return &ast.SchemaAst{Tops: []ast.Top{}}, diags
 	}
 
-	diags := diagnostics.NewDiagnostics()
 	parser := ast.NewParser(tokens, &diags)
 	astResult := parser.Parse()
 

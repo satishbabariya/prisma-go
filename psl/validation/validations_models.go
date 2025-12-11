@@ -161,9 +161,8 @@ func validatePrimaryKeyConnectorSpecific(model *database.ModelWalker, ctx *Valid
 	}
 
 	containerType := "model"
-	astModel := model.AstModel()
-	if astModel != nil {
-		// TODO: Check if model is a view when IsView() method is available
+	if model.IsView() {
+		containerType = "view"
 	}
 
 	// Check if named primary keys are supported
@@ -179,6 +178,7 @@ func validatePrimaryKeyConnectorSpecific(model *database.ModelWalker, ctx *Valid
 	// Check if compound primary keys are supported
 	fields := pk.Fields()
 	if len(fields) > 1 && !ctx.HasCapability(ConnectorCapabilityCompoundIds) {
+		astModel := model.AstModel()
 		if astModel != nil {
 			ctx.PushError(diagnostics.NewModelValidationError(
 				"The current connector does not support compound ids.",
@@ -201,8 +201,23 @@ func validatePrimaryKeyLengthPrefixSupported(model *database.ModelWalker, ctx *V
 		return
 	}
 
-	// TODO: Check if any field has length() when scalar_field_attributes is available
-	_ = pk
+	// Check if any field has length()
+	fields := pk.Fields()
+	for _, field := range fields {
+		if field.Length() != nil {
+			containerType := "model"
+			if model.IsView() {
+				containerType = "view"
+			}
+			ctx.PushError(diagnostics.NewModelValidationError(
+				"The current connector does not support length prefix on primary key fields.",
+				containerType,
+				model.Name(),
+				diagnostics.NewSpan(0, 0, model.FileID()),
+			))
+			return
+		}
+	}
 }
 
 // validatePrimaryKeySortOrderSupported validates that primary key sort order is supported.
@@ -216,8 +231,23 @@ func validatePrimaryKeySortOrderSupported(model *database.ModelWalker, ctx *Vali
 		return
 	}
 
-	// TODO: Check if any field has sort_order() when scalar_field_attributes is available
-	_ = pk
+	// Check if any field has sort_order()
+	fields := pk.Fields()
+	for _, field := range fields {
+		if field.SortOrder() != nil {
+			containerType := "model"
+			if model.IsView() {
+				containerType = "view"
+			}
+			ctx.PushError(diagnostics.NewModelValidationError(
+				"The current connector does not support sort order on primary key fields.",
+				containerType,
+				model.Name(),
+				diagnostics.NewSpan(0, 0, model.FileID()),
+			))
+			return
+		}
+	}
 }
 
 // validatePrimaryKeyClientNameDoesNotClashWithField validates that primary key client name doesn't clash with field names.
@@ -253,9 +283,11 @@ func validatePrimaryKeyClientNameDoesNotClashWithField(model *database.ModelWalk
 	for _, field := range model.ScalarFields() {
 		if field.Name() == idClientName {
 			containerType := "model"
+			if model.IsView() {
+				containerType = "view"
+			}
 			astModel := model.AstModel()
 			if astModel != nil {
-				// TODO: Check if model is a view when IsView() method is available
 				ctx.PushError(diagnostics.NewModelValidationError(
 					fmt.Sprintf("The field `%s` clashes with the `@@id` attribute's name. Please resolve the conflict by providing a custom id name: `@@id([...], name: \"custom_name\")`", idClientName),
 					containerType,

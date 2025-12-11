@@ -15,9 +15,7 @@ func HandleModelSchema(modelAttrs *ModelAttributes, ctx *Context) {
 func HandleEnumSchema(enumAttrs *EnumAttributes, ctx *Context) {
 	schemaInfo := visitSchemaAttribute(ctx)
 	if schemaInfo != nil {
-		// EnumAttributes.Schema is not yet defined in the Go types, so we'll skip for now
-		// TODO: Add Schema field to EnumAttributes
-		_ = schemaInfo
+		enumAttrs.Schema = schemaInfo
 	}
 }
 

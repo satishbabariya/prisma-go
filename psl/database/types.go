@@ -161,7 +161,9 @@ func NewTypes() Types {
 
 // EnumAttributes holds attributes for an enum.
 type EnumAttributes struct {
-	MappedName *StringId
+	MappedName   *StringId
+	Schema       *SchemaInfo
+	MappedValues map[uint32]StringId // Maps enum value ID to mapped name StringId
 }
 
 // ModelAttributes holds attributes for a model.

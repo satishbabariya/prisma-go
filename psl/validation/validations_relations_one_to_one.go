@@ -27,9 +27,8 @@ func validateOneToOneBothSidesAreDefined(relation *database.InlineRelationWalker
 		containerType = "view"
 	}
 
-	// TODO: Get related model when RelatedModel() method is available
-	// For now, get it from the relation
-	referencedModel := relation.ReferencedModel()
+	// Get related model from the forward relation field
+	referencedModel := forwardField.ReferencedModel()
 	if referencedModel == nil {
 		return
 	}

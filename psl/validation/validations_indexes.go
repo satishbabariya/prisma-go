@@ -126,8 +126,9 @@ func validateIndexAlgorithm(index *database.IndexWalker, model *database.ModelWa
 
 	// Try to get span for "type" argument, otherwise use full attribute span
 	span := astAttr.Span
-	// TODO: Implement span_for_argument when available in AST
-	// For now, use the full attribute span
+	if typeSpan := index.SpanForArgument("type"); typeSpan != nil {
+		span = *typeSpan
+	}
 
 	ctx.PushError(diagnostics.NewAttributeValidationError(
 		message,
@@ -487,9 +488,11 @@ func validateUniqueIndexClientNameDoesNotClashWithField(index *database.IndexWal
 	for _, field := range model.ScalarFields() {
 		if field.Name() == idxClientName {
 			containerType := "model"
+			if model.IsView() {
+				containerType = "view"
+			}
 			astModel := model.AstModel()
 			if astModel != nil {
-				// TODO: Check if model is a view when IsView() method is available
 				ctx.PushError(diagnostics.NewModelValidationError(
 					fmt.Sprintf("The field `%s` clashes with the `@@unique` name. Please resolve the conflict by providing a custom id name: `@@unique([...], name: \"custom_name\")`", idxClientName),
 					containerType,

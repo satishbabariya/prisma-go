@@ -26,8 +26,18 @@ func HandleFieldId(
 
 	mappedName := primaryKeyMappedName(ctx)
 
-	// TODO: Handle length argument for @id fields
-	// var length *uint32
+	// Handle length argument for @id fields
+	var length *int
+	if expr := ctx.VisitOptionalArg("length"); expr != nil {
+		if intVal, ok := CoerceInteger(expr, ctx.diagnostics); ok {
+			if intVal > 0 {
+				lengthInt := int(intVal)
+				length = &lengthInt
+			} else {
+				ctx.PushAttributeValidationError("The `length` argument must be a positive integer.")
+			}
+		}
+	}
 
 	var sortOrder *SortOrder
 	if expr := ctx.VisitOptionalArg("sort"); expr != nil {
@@ -53,11 +63,11 @@ func HandleFieldId(
 
 	// Create a FieldWithArgs for the single field
 	fieldWithArgs := FieldWithArgs{
-		Field:     sfid,
-		Path:      nil, // No composite type path for simple @id
-		SortOrder: sortOrder,
-		// Length and OperatorClass would go here if we had them in FieldWithArgs
-		// For now, we'll add them later if needed
+		Field:         sfid,
+		Path:          nil, // No composite type path for simple @id
+		SortOrder:     sortOrder,
+		Length:        length,
+		OperatorClass: nil, // Operator class not supported for @id
 	}
 
 	// Convert AttributeId to uint32 for storage

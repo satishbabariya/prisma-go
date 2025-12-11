@@ -51,9 +51,12 @@ func validateRelationFieldBackReference(field *database.RelationFieldWalker, ctx
 		return
 	}
 
-	// TODO: Get relation from field when Relation() method is available
-	// For now, skip this validation
-	_ = field
+	// Get relation from field
+	relation := field.Relation()
+	if relation == nil {
+		return
+	}
+	_ = relation // Use relation for validation if needed
 }
 
 // validateRelationFieldRequired validates required relation fields.

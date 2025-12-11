@@ -283,15 +283,31 @@ func visitScalarFieldAttributes(sfid ScalarFieldId, modelAttrs *ModelAttributes,
 // resolveEnumAttributes processes attributes on an enum.
 func resolveEnumAttributes(enumID EnumId, astEnum *ast.Enum, ctx *Context) {
 	enumAttrs := EnumAttributes{
-		MappedName: nil,
+		MappedName:   nil,
+		Schema:       nil,
+		MappedValues: make(map[uint32]StringId),
 	}
 
 	// Process enum value attributes (@map on values)
-	for i, value := range astEnum.Values {
-		// TODO: Visit attributes for enum value
-		_ = i
-		_ = value
-		// TODO: Process @map attribute on enum values
+	for i := range astEnum.Values {
+		valueID := uint32(i)
+		// Visit attributes for this enum value
+		container := AttributeContainer{
+			FileID: enumID.FileID,
+			ID:     enumID.ID, // TODO: Properly encode enum + value in container
+		}
+		ctx.VisitAttributes(container)
+
+		// Process @map attribute on enum value
+		if ctx.VisitOptionalSingleAttr("map") {
+			mappedName := VisitMapAttribute(ctx)
+			if mappedName != nil {
+				enumAttrs.MappedValues[valueID] = *mappedName
+			}
+			ctx.ValidateVisitedArguments()
+		}
+
+		ctx.ValidateVisitedAttributes()
 	}
 
 	// Process enum-level attributes
@@ -303,7 +319,7 @@ func resolveEnumAttributes(enumID EnumId, astEnum *ast.Enum, ctx *Context) {
 
 	// @@map
 	if ctx.VisitOptionalSingleAttr("map") {
-		// TODO: Implement HandleEnumMap
+		enumAttrs.MappedName = VisitMapAttribute(ctx)
 		ctx.ValidateVisitedArguments()
 	}
 

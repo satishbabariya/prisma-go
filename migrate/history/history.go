@@ -8,6 +8,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"time"
+
+	"github.com/satishbabariya/prisma-go/migrate/introspect"
 )
 
 // MigrationRecord represents a migration in the history
@@ -18,6 +20,9 @@ type MigrationRecord struct {
 	ExecutionTime int64 // milliseconds
 	Checksum      string
 	RolledBack    bool
+	// SchemaSnapshot stores the database schema state before this migration was applied
+	// Serialized as JSON string
+	SchemaSnapshot string
 }
 
 // Manager manages migration history
@@ -53,6 +58,7 @@ func (m *Manager) Record(ctx context.Context, record *MigrationRecord) error {
 		record.Checksum,
 		record.ExecutionTime,
 		record.RolledBack,
+		record.SchemaSnapshot,
 	)
 	return err
 }
@@ -70,6 +76,7 @@ func (m *Manager) GetAll(ctx context.Context) ([]MigrationRecord, error) {
 	for rows.Next() {
 		var record MigrationRecord
 		var rolledBackInt int
+		var schemaSnapshot sql.NullString
 		err := rows.Scan(
 			&record.ID,
 			&record.Name,
@@ -77,11 +84,15 @@ func (m *Manager) GetAll(ctx context.Context) ([]MigrationRecord, error) {
 			&record.Checksum,
 			&record.ExecutionTime,
 			&rolledBackInt,
+			&schemaSnapshot,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan migration: %w", err)
 		}
 		record.RolledBack = (rolledBackInt == 1)
+		if schemaSnapshot.Valid {
+			record.SchemaSnapshot = schemaSnapshot.String
+		}
 		records = append(records, record)
 	}
 
@@ -138,6 +149,37 @@ func (m *Manager) MarkRolledBack(ctx context.Context, migrationName string) erro
 	return err
 }
 
+// GetSchemaSnapshot retrieves the schema snapshot for a specific migration
+func (m *Manager) GetSchemaSnapshot(ctx context.Context, migrationName string) (*introspect.DatabaseSchema, error) {
+	query := m.getSelectSchemaSnapshotSQL()
+	var schemaSnapshot sql.NullString
+	err := m.db.QueryRowContext(ctx, query, migrationName).Scan(&schemaSnapshot)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("migration '%s' not found", migrationName)
+		}
+		return nil, fmt.Errorf("failed to query schema snapshot: %w", err)
+	}
+
+	if !schemaSnapshot.Valid || schemaSnapshot.String == "" {
+		return nil, nil // No schema snapshot stored
+	}
+
+	return DeserializeSchema(schemaSnapshot.String)
+}
+
+// RecordWithSchema records a migration execution with schema snapshot
+func (m *Manager) RecordWithSchema(ctx context.Context, record *MigrationRecord, schema *introspect.DatabaseSchema) error {
+	if schema != nil {
+		schemaJSON, err := SerializeSchema(schema)
+		if err != nil {
+			return fmt.Errorf("failed to serialize schema: %w", err)
+		}
+		record.SchemaSnapshot = schemaJSON
+	}
+	return m.Record(ctx, record)
+}
+
 // CalculateChecksum calculates a checksum for migration SQL
 func CalculateChecksum(migrationSQL string) string {
 	hash := sha256.Sum256([]byte(migrationSQL))
@@ -155,7 +197,8 @@ func (m *Manager) getMigrationTableSQL() string {
 				applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 				checksum VARCHAR(64) NOT NULL,
 				execution_time INTEGER,
-				rolled_back BOOLEAN DEFAULT FALSE
+				rolled_back BOOLEAN DEFAULT FALSE,
+				schema_snapshot TEXT
 			)
 		`
 	case "mysql":
@@ -166,7 +209,8 @@ func (m *Manager) getMigrationTableSQL() string {
 				applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 				checksum VARCHAR(64) NOT NULL,
 				execution_time INT,
-				rolled_back TINYINT(1) DEFAULT 0
+				rolled_back TINYINT(1) DEFAULT 0,
+				schema_snapshot TEXT
 			)
 		`
 	case "sqlite":
@@ -177,7 +221,8 @@ func (m *Manager) getMigrationTableSQL() string {
 				applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 				checksum TEXT NOT NULL,
 				execution_time INTEGER,
-				rolled_back INTEGER DEFAULT 0
+				rolled_back INTEGER DEFAULT 0,
+				schema_snapshot TEXT
 			)
 		`
 	default:
@@ -190,13 +235,13 @@ func (m *Manager) getInsertSQL() string {
 	switch m.provider {
 	case "postgresql", "postgres":
 		return `
-			INSERT INTO _prisma_migrations (migration_name, applied_at, checksum, execution_time, rolled_back)
-			VALUES ($1, $2, $3, $4, $5)
+			INSERT INTO _prisma_migrations (migration_name, applied_at, checksum, execution_time, rolled_back, schema_snapshot)
+			VALUES ($1, $2, $3, $4, $5, $6)
 		`
 	case "mysql", "sqlite":
 		return `
-			INSERT INTO _prisma_migrations (migration_name, applied_at, checksum, execution_time, rolled_back)
-			VALUES (?, ?, ?, ?, ?)
+			INSERT INTO _prisma_migrations (migration_name, applied_at, checksum, execution_time, rolled_back, schema_snapshot)
+			VALUES (?, ?, ?, ?, ?, ?)
 		`
 	default:
 		return ""
@@ -206,7 +251,7 @@ func (m *Manager) getInsertSQL() string {
 // getSelectAllSQL returns SQL to select all migrations
 func (m *Manager) getSelectAllSQL() string {
 	return `
-		SELECT id, migration_name, applied_at, checksum, execution_time, rolled_back
+		SELECT id, migration_name, applied_at, checksum, execution_time, rolled_back, schema_snapshot
 		FROM _prisma_migrations
 		ORDER BY applied_at ASC
 	`
@@ -246,4 +291,13 @@ func (m *Manager) getUpdateRolledBackSQL() string {
 	default:
 		return ""
 	}
+}
+
+// getSelectSchemaSnapshotSQL returns SQL to select schema snapshot for a migration
+func (m *Manager) getSelectSchemaSnapshotSQL() string {
+	return `
+		SELECT schema_snapshot
+		FROM _prisma_migrations
+		WHERE migration_name = ?
+	`
 }

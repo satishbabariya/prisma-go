@@ -189,6 +189,15 @@ func (w *InlineRelationWalker) IsOneToOne() bool {
 	return rel.Attributes.Type == RelationAttributeTypeOneToOne
 }
 
+// IsOneToMany returns whether this is a one-to-many relation.
+func (w *InlineRelationWalker) IsOneToMany() bool {
+	rel := w.get()
+	if rel == nil {
+		return false
+	}
+	return rel.Attributes.Type == RelationAttributeTypeOneToMany
+}
+
 // ReferencingModel returns the model which holds the relation arguments.
 func (w *InlineRelationWalker) ReferencingModel() *ModelWalker {
 	rel := w.get()
@@ -255,6 +264,11 @@ func (w *InlineRelationWalker) MappedName() *string {
 	}
 	name := w.db.interner.Get(*rf.MappedName)
 	return &name
+}
+
+// ConstraintName returns the constraint name (foreign key name) from the @map attribute on the relation field.
+func (w *InlineRelationWalker) ConstraintName() *string {
+	return w.MappedName()
 }
 
 // get returns the relation attributes.

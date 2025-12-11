@@ -469,9 +469,7 @@ func validateRelationWithNames(relation *database.RelationWalker, ctx *Validatio
 				validateOneToOneFieldsAndReferencesOnWrongSide(inline, ctx)
 				validateOneToOneBackRelationArityIsOptional(inline, ctx)
 				validateOneToOneFieldsMustBeUnique(inline, ctx)
-			} else {
-				// Assume one-to-many if not one-to-one
-				// TODO: Add IsOneToMany() method check when available
+			} else if inline.IsOneToMany() {
 				validateOneToManyBothSidesAreDefined(inline, ctx)
 				validateOneToManyFieldsAndReferencesAreDefined(inline, ctx)
 				validateOneToManyReferentialActions(inline, ctx)

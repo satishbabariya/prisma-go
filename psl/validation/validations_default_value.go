@@ -30,6 +30,14 @@ func validateDefaultValueType(field *database.ScalarFieldWalker, ctx *Validation
 	}
 
 	scalarType := field.ScalarType()
+	fieldType := field.ScalarFieldType()
+
+	// Check if this is an enum type
+	if fieldType.EnumID != nil {
+		validateEnumDefaultValue(field, value, ctx)
+		return
+	}
+
 	if scalarType == nil {
 		return
 	}
@@ -50,6 +58,53 @@ func validateDefaultValueType(field *database.ScalarFieldWalker, ctx *Validation
 		validateJsonDefaultValue(value, ctx)
 	case database.ScalarTypeBytes:
 		validateBytesDefaultValue(value, ctx)
+	}
+}
+
+// validateEnumDefaultValue validates that enum default values are valid enum values.
+func validateEnumDefaultValue(field *database.ScalarFieldWalker, value ast.Expression, ctx *ValidationContext) {
+	fieldType := field.ScalarFieldType()
+	if fieldType.EnumID == nil {
+		return
+	}
+
+	enum := ctx.Db.WalkEnum(*fieldType.EnumID)
+	if enum == nil {
+		return
+	}
+
+	// Get the enum value name from the default value
+	var enumValueName string
+	switch v := value.(type) {
+	case ast.StringLiteral:
+		enumValueName = v.Value
+	case ast.ConstantValue:
+		enumValueName = v.Value
+	default:
+		ctx.PushError(diagnostics.NewAttributeValidationError(
+			"Enum default value must be a valid enum value name.",
+			"@default",
+			value.Span(),
+		))
+		return
+	}
+
+	// Check if the value exists in the enum
+	values := enum.Values()
+	found := false
+	for _, enumValue := range values {
+		if enumValue.Name() == enumValueName {
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		ctx.PushError(diagnostics.NewAttributeValidationError(
+			fmt.Sprintf("Enum value '%s' is not a valid value for enum '%s'.", enumValueName, enum.Name()),
+			"@default",
+			value.Span(),
+		))
 	}
 }
 

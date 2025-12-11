@@ -99,3 +99,28 @@ type RelationInclude struct {
 type SelectClause struct {
 	Fields []string
 }
+
+// CreateQuery represents a create operation
+type CreateQuery struct {
+	Model string
+	Data  map[string]interface{}
+}
+
+func (q *CreateQuery) Type() NodeType { return NodeTypeCreate }
+
+// UpdateQuery represents an update operation
+type UpdateQuery struct {
+	Model string
+	Where *WhereClause
+	Data  map[string]interface{}
+}
+
+func (q *UpdateQuery) Type() NodeType { return NodeTypeUpdate }
+
+// DeleteQuery represents a delete operation
+type DeleteQuery struct {
+	Model string
+	Where *WhereClause
+}
+
+func (q *DeleteQuery) Type() NodeType { return NodeTypeDelete }

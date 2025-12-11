@@ -33,13 +33,12 @@ func validateOneToManyBothSidesAreDefined(relation *database.InlineRelationWalke
 		containerType = "view"
 	}
 
-	// TODO: Get related model when RelatedModel() method is available
-	// For now, get it from the relation
+	// Get related model from the forward relation field
 	var relatedModel *database.ModelWalker
 	if forwardField != nil {
-		relatedModel = relation.ReferencedModel()
+		relatedModel = forwardField.ReferencedModel()
 	} else if backField != nil {
-		relatedModel = relation.ReferencingModel()
+		relatedModel = backField.ReferencedModel()
 	}
 	if relatedModel == nil {
 		return

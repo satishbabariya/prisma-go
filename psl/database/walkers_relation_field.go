@@ -132,3 +132,37 @@ func (w *RelationFieldWalker) OnUpdate() *ReferentialActionInfo {
 	}
 	return rf.OnUpdate
 }
+
+// Relation returns the RelationWalker for this relation field.
+func (w *RelationFieldWalker) Relation() *RelationWalker {
+	rf := w.attributes()
+	if rf == nil {
+		return nil
+	}
+	// Use the fields map to efficiently find the relation ID
+	relationID, ok := w.db.relations.GetRelationID(w.id)
+	if !ok {
+		return nil
+	}
+	return w.db.WalkRelation(relationID)
+}
+
+// MappedName returns the mapped name from the @map attribute on the relation field.
+func (w *RelationFieldWalker) MappedName() *string {
+	rf := w.attributes()
+	if rf == nil || rf.MappedName == nil {
+		return nil
+	}
+	name := w.db.interner.Get(*rf.MappedName)
+	return &name
+}
+
+// ExplicitOnDelete returns whether onDelete was explicitly specified.
+func (w *RelationFieldWalker) ExplicitOnDelete() bool {
+	return w.OnDelete() != nil
+}
+
+// ExplicitOnUpdate returns whether onUpdate was explicitly specified.
+func (w *RelationFieldWalker) ExplicitOnUpdate() bool {
+	return w.OnUpdate() != nil
+}

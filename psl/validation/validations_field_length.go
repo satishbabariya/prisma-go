@@ -2,6 +2,8 @@
 package validation
 
 import (
+	"fmt"
+
 	"github.com/satishbabariya/prisma-go/psl/database"
 	"github.com/satishbabariya/prisma-go/psl/diagnostics"
 )
@@ -12,11 +14,26 @@ func validateLengthUsedWithCorrectTypes(field *database.ScalarFieldWalker, attri
 		return
 	}
 
-	// TODO: Check if field has length() when scalar_field_attributes is available
-	// For now, this is a placeholder
-	_ = field
-	_ = attributeName
-	_ = span
+	// Check if field has length()
+	if field.Length() == nil {
+		return
+	}
+	
+	scalarType := field.ScalarType()
+	if scalarType == nil {
+		return
+	}
+	
+	// Length is only allowed with String or Bytes
+	if *scalarType != database.ScalarTypeString && *scalarType != database.ScalarTypeBytes {
+		ctx.PushError(diagnostics.NewFieldValidationError(
+			fmt.Sprintf("The `%s` argument can only be used with String or Bytes types, but the field is of type %s.", attributeName, *scalarType),
+			"field",
+			field.Model().Name(),
+			field.Name(),
+			span,
+		))
+	}
 }
 
 // validateFieldLengthPrefix validates that length prefix is only used with String or Bytes.
@@ -36,7 +53,17 @@ func validateFieldLengthPrefix(field *database.ScalarFieldWalker, ctx *Validatio
 	}
 
 	// Length prefix is only allowed with String or Bytes
-	// TODO: Check if field has length() when available
-	// For now, this is a placeholder
-	_ = scalarType
+	if field.Length() == nil {
+		return
+	}
+	
+	if *scalarType != database.ScalarTypeString && *scalarType != database.ScalarTypeBytes {
+		ctx.PushError(diagnostics.NewFieldValidationError(
+			fmt.Sprintf("Length prefix can only be used with String or Bytes types, but the field is of type %s.", *scalarType),
+			"field",
+			field.Model().Name(),
+			field.Name(),
+			field.Span(),
+		))
+	}
 }

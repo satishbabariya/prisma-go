@@ -2,6 +2,7 @@
 package database
 
 import (
+	"github.com/satishbabariya/prisma-go/psl/diagnostics"
 	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
 )
 
@@ -182,4 +183,97 @@ func (w *ScalarFieldWalker) IsPartOfCompoundPK() bool {
 		}
 	}
 	return false
+}
+
+// Length returns the length prefix if this field is part of a primary key or index with length specified.
+func (w *ScalarFieldWalker) Length() *int {
+	model := w.Model()
+	if model == nil {
+		return nil
+	}
+	
+	// Check primary key
+	pk := model.PrimaryKey()
+	if pk != nil {
+		for _, pkField := range pk.Fields() {
+			if pkField.FieldID() == w.id {
+				return pkField.Length()
+			}
+		}
+	}
+	
+	// Check indexes
+	for _, index := range model.Indexes() {
+		for _, indexField := range index.Fields() {
+			if indexField.FieldID() == w.id {
+				return indexField.Length()
+			}
+		}
+	}
+	
+	return nil
+}
+
+// SortOrder returns the sort order if this field is part of a primary key or index with sort order specified.
+func (w *ScalarFieldWalker) SortOrder() *SortOrder {
+	model := w.Model()
+	if model == nil {
+		return nil
+	}
+	
+	// Check primary key
+	pk := model.PrimaryKey()
+	if pk != nil {
+		for _, pkField := range pk.Fields() {
+			if pkField.FieldID() == w.id {
+				return pkField.SortOrder()
+			}
+		}
+	}
+	
+	// Check indexes
+	for _, index := range model.Indexes() {
+		for _, indexField := range index.Fields() {
+			if indexField.FieldID() == w.id {
+				return indexField.SortOrder()
+			}
+		}
+	}
+	
+	return nil
+}
+
+// RawNativeType returns the raw native type string representation if present.
+func (w *ScalarFieldWalker) RawNativeType() *string {
+	sf := w.attributes()
+	if sf == nil || sf.NativeType == nil {
+		return nil
+	}
+	
+	// Build string representation: @scope.TypeName(args...)
+	scope := w.db.interner.Get(sf.NativeType.Scope)
+	typeName := w.db.interner.Get(sf.NativeType.TypeName)
+	
+	result := "@" + scope + "." + typeName
+	if len(sf.NativeType.Arguments) > 0 {
+		result += "("
+		for i, arg := range sf.NativeType.Arguments {
+			if i > 0 {
+				result += ", "
+			}
+			result += arg
+		}
+		result += ")"
+	}
+	
+	return &result
+}
+
+// Span returns the span of the field from the AST.
+func (w *ScalarFieldWalker) Span() diagnostics.Span {
+	astField := w.AstField()
+	if astField == nil {
+		return diagnostics.EmptySpan()
+	}
+	return astField.Name.Span()
 }
