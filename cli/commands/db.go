@@ -64,7 +64,12 @@ func initDBCommands() {
 			if len(args) > 0 {
 				schemaPath = args[0]
 			}
-			return dbPushCommand([]string{schemaPath})
+			force, _ := cmd.Flags().GetBool("force")
+			argsList := []string{schemaPath}
+			if force {
+				argsList = append(argsList, "--force")
+			}
+			return dbPushCommand(argsList)
 		},
 	}
 
@@ -96,6 +101,9 @@ func initDBCommands() {
 			return dbExecuteCommand(args)
 		},
 	}
+
+	// Add flags
+	dbPushCmd.Flags().BoolP("force", "f", false, "Skip confirmation prompts (use with caution - may cause data loss)")
 }
 
 // splitSQLStatements splits SQL into statements, handling semicolons inside string literals
@@ -282,15 +290,29 @@ func dbPushCommand(args []string) error {
 	fmt.Println(sql)
 	fmt.Println("─────────────────────────────────────────")
 
-	// Prompt for confirmation
-	fmt.Print("\n❓ Apply these changes to the database? (y/N): ")
-	var confirmation string
-	fmt.Scanln(&confirmation)
+	// Check for --force flag
+	force := false
+	for _, arg := range args {
+		if arg == "--force" {
+			force = true
+			break
+		}
+	}
 
-	confirmation = strings.TrimSpace(strings.ToLower(confirmation))
-	if confirmation != "y" && confirmation != "yes" {
-		fmt.Println("✋ Aborted. No changes applied.")
-		return nil
+	// Prompt for confirmation unless --force is set
+	if !force {
+		fmt.Print("\n❓ Apply these changes to the database? (y/N): ")
+		var confirmation string
+		fmt.Scanln(&confirmation)
+
+		confirmation = strings.TrimSpace(strings.ToLower(confirmation))
+		if confirmation != "y" && confirmation != "yes" {
+			fmt.Println("✋ Aborted. No changes applied.")
+			return nil
+		}
+	} else {
+		fmt.Println("\n⚠️  WARNING: --force flag is set. Changes will be applied without confirmation!")
+		fmt.Println("   This may cause data loss. Use with caution.")
 	}
 
 	// Apply changes directly (prototype mode - no migration history)

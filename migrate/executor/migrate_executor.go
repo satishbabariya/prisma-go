@@ -168,6 +168,109 @@ func (e *MigrationExecutor) MarkMigrationRolledBack(ctx context.Context, migrati
 	return e.history.MarkRolledBack(ctx, migrationName)
 }
 
+// RollbackMigration rolls back a migration by executing its rollback SQL
+func (e *MigrationExecutor) RollbackMigration(ctx context.Context, rollbackSQL string, migrationName string) error {
+	// Ensure migration table exists
+	if err := e.EnsureMigrationTable(ctx); err != nil {
+		return fmt.Errorf("failed to ensure migration table exists: %w", err)
+	}
+
+	// Check if migration is applied and not already rolled back
+	applied, err := e.GetAppliedMigrations(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get applied migrations: %w", err)
+	}
+
+	var migration *Migration
+	for i := range applied {
+		if applied[i].Name == migrationName {
+			migration = &applied[i]
+			break
+		}
+	}
+
+	if migration == nil {
+		return fmt.Errorf("migration '%s' not found in applied migrations", migrationName)
+	}
+
+	// Check if already rolled back
+	records, err := e.history.GetAll(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to check migration status: %w", err)
+	}
+
+	for _, record := range records {
+		if record.Name == migrationName && record.RolledBack {
+			return fmt.Errorf("migration '%s' has already been rolled back", migrationName)
+		}
+	}
+
+	startTime := time.Now()
+
+	// Start transaction
+	tx, err := e.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	defer func() {
+		if p := recover(); p != nil {
+			_ = tx.Rollback()
+			panic(p)
+		}
+	}()
+
+	// Execute rollback SQL
+	_, err = tx.ExecContext(ctx, rollbackSQL)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("failed to execute rollback SQL: %w", err)
+	}
+
+	_ = time.Since(startTime) // Track execution time for potential logging
+
+	// Mark migration as rolled back
+	err = e.markMigrationRolledBackInTx(ctx, tx, migrationName)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("failed to mark migration as rolled back: %w", err)
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit rollback: %w", err)
+	}
+
+	return nil
+}
+
+// markMigrationRolledBackInTx marks a migration as rolled back within a transaction
+func (e *MigrationExecutor) markMigrationRolledBackInTx(ctx context.Context, tx *sql.Tx, migrationName string) error {
+	updateSQL := e.getUpdateRolledBackSQL()
+	_, err := tx.ExecContext(ctx, updateSQL, migrationName)
+	return err
+}
+
+// getUpdateRolledBackSQL returns SQL to mark a migration as rolled back
+func (e *MigrationExecutor) getUpdateRolledBackSQL() string {
+	switch e.provider {
+	case "postgresql", "postgres":
+		return `
+			UPDATE _prisma_migrations
+			SET rolled_back = TRUE
+			WHERE migration_name = $1
+		`
+	case "mysql", "sqlite":
+		return `
+			UPDATE _prisma_migrations
+			SET rolled_back = 1
+			WHERE migration_name = ?
+		`
+	default:
+		return ""
+	}
+}
+
 // recordMigration records a migration in the history table
 func (e *MigrationExecutor) recordMigration(ctx context.Context, tx *sql.Tx, migrationName string, checksum string, executionTime int64) error {
 	// Use a separate connection for history recording since we're in a transaction

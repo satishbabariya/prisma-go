@@ -13,8 +13,15 @@ import (
 // extractConnectionInfo extracts provider and connection string from schema
 // It also attempts to find DATABASE_URL from environment and .env files
 func extractConnectionInfo(schema *psl.SchemaAst) (string, string) {
+	provider, connStr, _ := extractConnectionInfoWithShadow(schema)
+	return provider, connStr
+}
+
+// extractConnectionInfoWithShadow extracts provider, connection string, and shadow database URL from schema
+func extractConnectionInfoWithShadow(schema *psl.SchemaAst) (string, string, string) {
 	provider := "postgresql"
 	connStr := ""
+	shadowConnStr := ""
 
 	for _, top := range schema.Tops {
 		if source := top.AsSource(); source != nil {
@@ -43,6 +50,20 @@ func extractConnectionInfo(schema *psl.SchemaAst) (string, string) {
 						connStr = strLit.Value
 					}
 				}
+				if prop.Name.Name == "shadowDatabaseUrl" {
+					// Handle shadow database URL
+					if fnCall := prop.Value.AsFunction(); fnCall != nil && fnCall.Name.Name == "env" {
+						if len(fnCall.Arguments) > 0 {
+							if strLit, _ := fnCall.Arguments[0].AsStringValue(); strLit != nil {
+								envVar := strLit.Value
+								shadowConnStr = os.Getenv(envVar)
+							}
+						}
+					} else if strLit, _ := prop.Value.AsStringValue(); strLit != nil {
+						// Direct string literal
+						shadowConnStr = strLit.Value
+					}
+				}
 			}
 		}
 	}
@@ -52,7 +73,7 @@ func extractConnectionInfo(schema *psl.SchemaAst) (string, string) {
 		connStr = getDatabaseURLFromEnv()
 	}
 
-	return provider, connStr
+	return provider, connStr, shadowConnStr
 }
 
 func detectProvider(connStr string) string {

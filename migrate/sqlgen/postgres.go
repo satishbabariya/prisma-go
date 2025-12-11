@@ -63,6 +63,28 @@ func (g *PostgresMigrationGenerator) GenerateMigrationSQL(diffResult *diff.DiffR
 		sql.WriteString(fmt.Sprintf("DROP TABLE IF EXISTS \"%s\" CASCADE;\n\n", change.Name))
 	}
 
+	// 4. Preserve check constraints, triggers, and stored procedures
+	// These are preserved from the existing database schema
+	if dbSchema != nil {
+		// Preserve check constraints
+		for _, constraint := range dbSchema.CheckConstraints {
+			sql.WriteString(fmt.Sprintf("-- Preserving check constraint %s on table %s\n", constraint.Name, constraint.TableName))
+			sql.WriteString(fmt.Sprintf("-- ALTER TABLE \"%s\" ADD CONSTRAINT \"%s\" CHECK (%s);\n\n", constraint.TableName, constraint.Name, constraint.Definition))
+		}
+
+		// Preserve triggers
+		for _, trigger := range dbSchema.Triggers {
+			sql.WriteString(fmt.Sprintf("-- Preserving trigger %s on table %s\n", trigger.Name, trigger.TableName))
+			sql.WriteString(fmt.Sprintf("-- %s\n\n", trigger.Definition))
+		}
+
+		// Preserve stored procedures
+		for _, proc := range dbSchema.StoredProcedures {
+			sql.WriteString(fmt.Sprintf("-- Preserving stored procedure %s\n", proc.Name))
+			sql.WriteString(fmt.Sprintf("-- %s\n\n", proc.Definition))
+		}
+	}
+
 	return sql.String(), nil
 }
 

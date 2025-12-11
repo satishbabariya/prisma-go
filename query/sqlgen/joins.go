@@ -97,7 +97,7 @@ func (g *PostgresGenerator) GenerateSelectWithJoins(
 	if where != nil && !where.IsEmpty() {
 		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
 			return fmt.Sprintf("$%d", i)
-		}, quoteIdentifier)
+		}, quoteIdentifier, "postgresql")
 		if whereSQL != "" {
 			parts = append(parts, "WHERE "+whereSQL)
 			args = append(args, whereArgs...)
@@ -180,7 +180,7 @@ func (g *MySQLGenerator) GenerateSelectWithJoins(
 	if where != nil && !where.IsEmpty() {
 		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
 			return "?"
-		}, quoteIdentifierMySQL)
+		}, quoteIdentifierMySQL, "mysql")
 		if whereSQL != "" {
 			parts = append(parts, "WHERE "+whereSQL)
 			args = append(args, whereArgs...)
@@ -208,6 +208,132 @@ func (g *MySQLGenerator) GenerateSelectWithJoins(
 		parts = append(parts, fmt.Sprintf("OFFSET ?", argIndex))
 		args = append(args, *offset)
 		argIndex++
+	}
+
+	return &Query{
+		SQL:  strings.Join(parts, " "),
+		Args: args,
+	}
+}
+
+// GenerateSelectWithAggregates for MySQL
+func (g *MySQLGenerator) GenerateSelectWithAggregates(
+	table string,
+	columns []string,
+	aggregates []AggregateFunction,
+	joins []Join,
+	where *WhereClause,
+	groupBy *GroupBy,
+	having *Having,
+	orderBy []OrderBy,
+	limit, offset *int,
+) *Query {
+	var parts []string
+	var args []interface{}
+	argIndex := 1
+
+	// Build SELECT clause
+	var selectParts []string
+	if len(columns) > 0 {
+		for _, col := range columns {
+			selectParts = append(selectParts, quoteIdentifierMySQL(col))
+		}
+	}
+	for _, agg := range aggregates {
+		if agg.Field == "*" {
+			if agg.Alias != "" {
+				selectParts = append(selectParts, fmt.Sprintf("%s(*) AS %s", agg.Function, quoteIdentifierMySQL(agg.Alias)))
+			} else {
+				selectParts = append(selectParts, fmt.Sprintf("%s(*)", agg.Function))
+			}
+		} else {
+			if agg.Alias != "" {
+				selectParts = append(selectParts, fmt.Sprintf("%s(%s) AS %s", agg.Function, quoteIdentifierMySQL(agg.Field), quoteIdentifierMySQL(agg.Alias)))
+			} else {
+				selectParts = append(selectParts, fmt.Sprintf("%s(%s)", agg.Function, quoteIdentifierMySQL(agg.Field)))
+			}
+		}
+	}
+	if len(selectParts) == 0 {
+		selectParts = append(selectParts, "*")
+	}
+	parts = append(parts, "SELECT "+strings.Join(selectParts, ", "))
+
+	// FROM table
+	parts = append(parts, fmt.Sprintf("FROM %s", quoteIdentifierMySQL(table)))
+
+	// JOIN clauses
+	for _, join := range joins {
+		joinType := strings.ToUpper(join.Type)
+		if joinType == "" {
+			joinType = "LEFT"
+		}
+		joinSQL := fmt.Sprintf("%s JOIN %s", joinType, quoteIdentifierMySQL(join.Table))
+		if join.Alias != "" {
+			joinSQL += " AS " + quoteIdentifierMySQL(join.Alias)
+		}
+		if join.Condition != "" {
+			joinSQL += " ON " + join.Condition
+		}
+		parts = append(parts, joinSQL)
+	}
+
+	// WHERE clause
+	if where != nil && !where.IsEmpty() {
+		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
+			return "?"
+		}, quoteIdentifierMySQL, "mysql")
+		if whereSQL != "" {
+			parts = append(parts, "WHERE "+whereSQL)
+			args = append(args, whereArgs...)
+		}
+	}
+
+	// GROUP BY
+	if groupBy != nil && len(groupBy.Fields) > 0 {
+		groupByParts := make([]string, len(groupBy.Fields))
+		for i, field := range groupBy.Fields {
+			groupByParts[i] = quoteIdentifierMySQL(field)
+		}
+		parts = append(parts, "GROUP BY "+strings.Join(groupByParts, ", "))
+	}
+
+	// HAVING
+	if having != nil && len(having.Conditions) > 0 {
+		havingSQL, havingArgs := g.buildHavingMySQL(having)
+		if havingSQL != "" {
+			parts = append(parts, "HAVING "+havingSQL)
+			args = append(args, havingArgs...)
+		}
+	}
+
+	// ORDER BY
+	if len(orderBy) > 0 {
+		orderParts := make([]string, len(orderBy))
+		for i, ob := range orderBy {
+			direction := "ASC"
+			if ob.Direction == "DESC" || ob.Direction == "desc" {
+				direction = "DESC"
+			}
+			orderParts[i] = fmt.Sprintf("%s %s", quoteIdentifierMySQL(ob.Field), direction)
+		}
+		parts = append(parts, "ORDER BY "+strings.Join(orderParts, ", "))
+	}
+
+	// LIMIT
+	if limit != nil && *limit > 0 {
+		parts = append(parts, "LIMIT ?")
+		args = append(args, *limit)
+		argIndex++
+	}
+
+	// OFFSET
+	if offset != nil && *offset > 0 {
+		if limit == nil || *limit == 0 {
+			parts = append(parts, "LIMIT 18446744073709551615")
+		}
+		parts = append(parts, "OFFSET ?")
+		args = append(args, *offset)
 	}
 
 	return &Query{
@@ -298,7 +424,7 @@ func (g *SQLiteGenerator) GenerateSelectWithJoins(
 	if where != nil && !where.IsEmpty() {
 		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
 			return "?"
-		}, quoteIdentifierSQLite)
+		}, quoteIdentifierSQLite, "sqlite")
 		if whereSQL != "" {
 			parts = append(parts, "WHERE "+whereSQL)
 			args = append(args, whereArgs...)
@@ -326,6 +452,129 @@ func (g *SQLiteGenerator) GenerateSelectWithJoins(
 		parts = append(parts, fmt.Sprintf("OFFSET ?", argIndex))
 		args = append(args, *offset)
 		argIndex++
+	}
+
+	return &Query{
+		SQL:  strings.Join(parts, " "),
+		Args: args,
+	}
+}
+
+// GenerateSelectWithAggregates for SQLite
+func (g *SQLiteGenerator) GenerateSelectWithAggregates(
+	table string,
+	columns []string,
+	aggregates []AggregateFunction,
+	joins []Join,
+	where *WhereClause,
+	groupBy *GroupBy,
+	having *Having,
+	orderBy []OrderBy,
+	limit, offset *int,
+) *Query {
+	var parts []string
+	var args []interface{}
+	argIndex := 1
+
+	// Build SELECT clause
+	var selectParts []string
+	if len(columns) > 0 {
+		for _, col := range columns {
+			selectParts = append(selectParts, quoteIdentifierSQLite(col))
+		}
+	}
+	for _, agg := range aggregates {
+		if agg.Field == "*" {
+			if agg.Alias != "" {
+				selectParts = append(selectParts, fmt.Sprintf("%s(*) AS %s", agg.Function, quoteIdentifierSQLite(agg.Alias)))
+			} else {
+				selectParts = append(selectParts, fmt.Sprintf("%s(*)", agg.Function))
+			}
+		} else {
+			if agg.Alias != "" {
+				selectParts = append(selectParts, fmt.Sprintf("%s(%s) AS %s", agg.Function, quoteIdentifierSQLite(agg.Field), quoteIdentifierSQLite(agg.Alias)))
+			} else {
+				selectParts = append(selectParts, fmt.Sprintf("%s(%s)", agg.Function, quoteIdentifierSQLite(agg.Field)))
+			}
+		}
+	}
+	if len(selectParts) == 0 {
+		selectParts = append(selectParts, "*")
+	}
+	parts = append(parts, "SELECT "+strings.Join(selectParts, ", "))
+
+	// FROM table
+	parts = append(parts, fmt.Sprintf("FROM %s", quoteIdentifierSQLite(table)))
+
+	// JOIN clauses
+	for _, join := range joins {
+		joinType := strings.ToUpper(join.Type)
+		if joinType == "" {
+			joinType = "LEFT"
+		}
+		joinSQL := fmt.Sprintf("%s JOIN %s", joinType, quoteIdentifierSQLite(join.Table))
+		if join.Alias != "" {
+			joinSQL += " AS " + quoteIdentifierSQLite(join.Alias)
+		}
+		if join.Condition != "" {
+			joinSQL += " ON " + join.Condition
+		}
+		parts = append(parts, joinSQL)
+	}
+
+	// WHERE clause
+	if where != nil && !where.IsEmpty() {
+		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
+			return "?"
+		}, quoteIdentifierSQLite, "sqlite")
+		if whereSQL != "" {
+			parts = append(parts, "WHERE "+whereSQL)
+			args = append(args, whereArgs...)
+		}
+	}
+
+	// GROUP BY
+	if groupBy != nil && len(groupBy.Fields) > 0 {
+		groupByParts := make([]string, len(groupBy.Fields))
+		for i, field := range groupBy.Fields {
+			groupByParts[i] = quoteIdentifierSQLite(field)
+		}
+		parts = append(parts, "GROUP BY "+strings.Join(groupByParts, ", "))
+	}
+
+	// HAVING
+	if having != nil && len(having.Conditions) > 0 {
+		havingSQL, havingArgs := g.buildHavingSQLite(having)
+		if havingSQL != "" {
+			parts = append(parts, "HAVING "+havingSQL)
+			args = append(args, havingArgs...)
+		}
+	}
+
+	// ORDER BY
+	if len(orderBy) > 0 {
+		orderParts := make([]string, len(orderBy))
+		for i, ob := range orderBy {
+			direction := "ASC"
+			if ob.Direction == "DESC" || ob.Direction == "desc" {
+				direction = "DESC"
+			}
+			orderParts[i] = fmt.Sprintf("%s %s", quoteIdentifierSQLite(ob.Field), direction)
+		}
+		parts = append(parts, "ORDER BY "+strings.Join(orderParts, ", "))
+	}
+
+	// LIMIT
+	if limit != nil && *limit > 0 {
+		parts = append(parts, "LIMIT ?")
+		args = append(args, *limit)
+		argIndex++
+	}
+
+	// OFFSET
+	if offset != nil && *offset > 0 {
+		parts = append(parts, "OFFSET ?")
+		args = append(args, *offset)
 	}
 
 	return &Query{

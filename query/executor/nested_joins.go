@@ -3,6 +3,7 @@ package executor
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/satishbabariya/prisma-go/query/builder"
 	"github.com/satishbabariya/prisma-go/query/optimizer"
@@ -114,7 +115,7 @@ func buildJoinsForRelation(
 	// Process nested includes
 	if nestedInclude.HasNested() {
 		// Get relations for the related model
-		relatedModelName := toPascalCase(relMeta.RelatedTable)
+		relatedModelName := toPascalCaseFromTable(relMeta.RelatedTable)
 		relatedModelRelations, ok := allRelations[relatedModelName]
 		if ok {
 			for nestedRelationName, nestedIncludeChild := range nestedInclude.GetNestedIncludes() {
@@ -132,4 +133,19 @@ func buildJoinsForRelation(
 	}
 
 	return joins
+}
+
+// toPascalCaseFromTable converts a table name (snake_case) to PascalCase model name
+func toPascalCaseFromTable(s string) string {
+	parts := strings.Split(s, "_")
+	var result strings.Builder
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		first := strings.ToUpper(string(part[0]))
+		rest := strings.ToLower(part[1:])
+		result.WriteString(first + rest)
+	}
+	return result.String()
 }

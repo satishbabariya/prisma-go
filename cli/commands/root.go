@@ -59,6 +59,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
 	rootCmd.PersistentFlags().BoolVar(&noColor, "no-color", false, "disable colored output")
 	rootCmd.PersistentFlags().BoolVar(&skipEnvCheck, "skip-env-check", false, "skip environment variable checks")
+	rootCmd.PersistentFlags().Bool("no-telemetry", false, "disable telemetry collection")
 
 	// Bind flags to viper
 	viper.BindPFlag("verbose", rootCmd.PersistentFlags().Lookup("verbose"))

@@ -8,7 +8,10 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/satishbabariya/prisma-go/query/builder"
+	"github.com/satishbabariya/prisma-go/query/cache"
 	"github.com/satishbabariya/prisma-go/query/sqlgen"
 )
 
@@ -19,16 +22,38 @@ type Executor struct {
 	generator sqlgen.Generator
 	stmtCache map[string]*sql.Stmt
 	cacheMu   sync.RWMutex
+	queryCache cache.Cache
+	cacheEnabled bool
 }
 
 // NewExecutor creates a new query executor
 func NewExecutor(db *sql.DB, provider string) *Executor {
 	return &Executor{
-		db:        db,
-		provider:  provider,
-		generator: sqlgen.NewGenerator(provider),
-		stmtCache: make(map[string]*sql.Stmt),
+		db:          db,
+		provider:    provider,
+		generator:   sqlgen.NewGenerator(provider),
+		stmtCache:   make(map[string]*sql.Stmt),
+		queryCache:  nil, // Cache disabled by default
+		cacheEnabled: false,
 	}
+}
+
+// SetCache enables query caching with the provided cache instance
+func (e *Executor) SetCache(c cache.Cache) {
+	e.cacheMu.Lock()
+	defer e.cacheMu.Unlock()
+	e.queryCache = c
+	e.cacheEnabled = c != nil
+}
+
+// EnableCache enables query caching with default settings
+func (e *Executor) EnableCache(maxSize int, defaultTTL time.Duration) {
+	e.SetCache(cache.NewLRUCache(maxSize, defaultTTL))
+}
+
+// DisableCache disables query caching
+func (e *Executor) DisableCache() {
+	e.SetCache(nil)
 }
 
 // getCachedStmt gets a cached prepared statement or creates a new one
@@ -66,6 +91,11 @@ func (e *Executor) ClearStmtCache() {
 	e.stmtCache = make(map[string]*sql.Stmt)
 }
 
+// GetGenerator returns the SQL generator for this executor
+func (e *Executor) GetGenerator() sqlgen.Generator {
+	return e.generator
+}
+
 // FindMany executes a SELECT query and maps results to a slice
 func (e *Executor) FindMany(ctx context.Context, table string, selectFields map[string]bool, where *sqlgen.WhereClause, orderBy []sqlgen.OrderBy, limit, offset *int, include map[string]bool, dest interface{}) error {
 	return e.FindManyWithRelations(ctx, table, selectFields, where, orderBy, limit, offset, include, nil, dest)
@@ -95,6 +125,15 @@ func (e *Executor) FindManyWithRelations(ctx context.Context, table string, sele
 		query = e.generator.GenerateSelect(table, columns, where, orderBy, limit, offset)
 	}
 
+	// Check cache if enabled
+	if e.cacheEnabled && e.queryCache != nil {
+		cacheKey := cache.GenerateCacheKey(query.SQL, query.Args)
+		if cached, ok := e.queryCache.Get(cacheKey); ok {
+			// Copy cached result to destination
+			return e.copyCachedResult(cached, dest)
+		}
+	}
+
 	rows, err := e.db.QueryContext(ctx, query.SQL, query.Args...)
 	if err != nil {
 		return fmt.Errorf("query execution failed: %w", err)
@@ -117,15 +156,201 @@ func (e *Executor) FindManyWithRelations(ctx context.Context, table string, sele
 			return err
 		}
 
-		// Load relations if include is specified (fallback to N+1)
-		if include != nil && len(include) > 0 && relations != nil {
-			if err := e.loadRelations(ctx, table, include, relations, dest); err != nil {
-				return fmt.Errorf("failed to load relations: %w", err)
-			}
+		// Relations are loaded via JOINs above, no need for N+1 fallback
+	}
+
+	// Cache result if enabled
+	if e.cacheEnabled && e.queryCache != nil {
+		cacheKey := cache.GenerateCacheKey(query.SQL, query.Args)
+		// Create a deep copy for caching
+		cachedValue := reflect.New(reflect.TypeOf(dest).Elem())
+		if err := e.copyCachedResult(dest, cachedValue.Interface()); err == nil {
+			e.queryCache.Set(cacheKey, cachedValue.Elem().Interface(), 0) // Use default TTL
 		}
 	}
 
 	return nil
+}
+
+// FindManyWithJoins executes a SELECT query with explicit JOINs and maps results to a slice
+func (e *Executor) FindManyWithJoins(ctx context.Context, table string, selectFields map[string]bool, joins []sqlgen.Join, where *sqlgen.WhereClause, orderBy []sqlgen.OrderBy, limit, offset *int, include map[string]bool, relations map[string]RelationMetadata, dest interface{}) error {
+	// Convert selectFields map to slice
+	var columns []string
+	if selectFields != nil && len(selectFields) > 0 {
+		for field := range selectFields {
+			columns = append(columns, field)
+		}
+	}
+
+	var query *sqlgen.Query
+
+	// Merge explicit joins with relation-based joins
+	var allJoins []sqlgen.Join
+	allJoins = append(allJoins, joins...)
+	
+	// Add relation-based joins if includes are specified
+	if include != nil && len(include) > 0 && relations != nil {
+		relationJoins := buildJoinsFromIncludes(table, include, relations, e.provider)
+		allJoins = append(allJoins, relationJoins...)
+	}
+
+	if len(allJoins) > 0 {
+		query = e.generator.GenerateSelectWithJoins(table, columns, allJoins, where, orderBy, limit, offset)
+	} else {
+		query = e.generator.GenerateSelect(table, columns, where, orderBy, limit, offset)
+	}
+
+	// Check cache if enabled
+	if e.cacheEnabled && e.queryCache != nil {
+		cacheKey := cache.GenerateCacheKey(query.SQL, query.Args)
+		if cached, ok := e.queryCache.Get(cacheKey); ok {
+			return e.copyCachedResult(cached, dest)
+		}
+	}
+
+	rows, err := e.db.QueryContext(ctx, query.SQL, query.Args...)
+	if err != nil {
+		return fmt.Errorf("query execution failed: %w", err)
+	}
+	defer rows.Close()
+
+	// Use optimized JOIN mapping if we have JOINs
+	if len(allJoins) > 0 && relations != nil {
+		if err := validateRelations(relations); err != nil {
+			return fmt.Errorf("invalid relations: %w", err)
+		}
+		err = e.scanJoinResults(rows, table, allJoins, relations, dest)
+		if err != nil {
+			return err
+		}
+	} else {
+		// Simple scan without JOINs - use existing scanJoinResults with empty joins
+		err = e.scanJoinResults(rows, table, []sqlgen.Join{}, nil, dest)
+		if err != nil {
+			return fmt.Errorf("failed to scan results: %w", err)
+		}
+	}
+
+	// Cache result if enabled
+	if e.cacheEnabled && e.queryCache != nil {
+		cacheKey := cache.GenerateCacheKey(query.SQL, query.Args)
+		cachedValue := reflect.New(reflect.TypeOf(dest).Elem())
+		if err := e.copyCachedResult(dest, cachedValue.Interface()); err == nil {
+			e.queryCache.Set(cacheKey, cachedValue.Elem().Interface(), 0)
+		}
+	}
+
+	return nil
+}
+
+// FindFirstWithJoins executes a SELECT query with explicit JOINs and returns the first result
+func (e *Executor) FindFirstWithJoins(ctx context.Context, table string, selectFields map[string]bool, joins []sqlgen.Join, where *sqlgen.WhereClause, orderBy []sqlgen.OrderBy, include map[string]bool, relations map[string]RelationMetadata, dest interface{}) error {
+	// Convert selectFields map to slice
+	var columns []string
+	if selectFields != nil && len(selectFields) > 0 {
+		for field := range selectFields {
+			columns = append(columns, field)
+		}
+	}
+
+	var query *sqlgen.Query
+	limit := 1
+
+	// Merge explicit joins with relation-based joins
+	var allJoins []sqlgen.Join
+	allJoins = append(allJoins, joins...)
+	
+	// Add relation-based joins if includes are specified
+	if include != nil && len(include) > 0 && relations != nil {
+		relationJoins := buildJoinsFromIncludes(table, include, relations, e.provider)
+		allJoins = append(allJoins, relationJoins...)
+	}
+
+	if len(allJoins) > 0 {
+		query = e.generator.GenerateSelectWithJoins(table, columns, allJoins, where, orderBy, &limit, nil)
+	} else {
+		query = e.generator.GenerateSelect(table, columns, where, orderBy, &limit, nil)
+	}
+
+	rows, err := e.db.QueryContext(ctx, query.SQL, query.Args...)
+	if err != nil {
+		return fmt.Errorf("query execution failed: %w", err)
+	}
+	defer rows.Close()
+
+	if !rows.Next() {
+		return sql.ErrNoRows
+	}
+
+	// Use optimized JOIN mapping if we have JOINs
+	if len(allJoins) > 0 && relations != nil {
+		if err := validateRelations(relations); err != nil {
+			return fmt.Errorf("invalid relations: %w", err)
+		}
+		// For single row, we still use scanJoinResults but limit to first result
+		err = e.scanJoinResults(rows, table, allJoins, relations, dest)
+		if err != nil {
+			return err
+		}
+	} else {
+		// Simple scan without JOINs - scan first row only
+		if rows.Next() {
+			err = e.scanRows(rows, dest)
+			if err != nil {
+				return fmt.Errorf("failed to scan result: %w", err)
+			}
+		} else {
+			return sql.ErrNoRows
+		}
+	}
+
+	return nil
+}
+
+// copyCachedResult copies a cached result to the destination
+func (e *Executor) copyCachedResult(cached interface{}, dest interface{}) error {
+	cachedValue := reflect.ValueOf(cached)
+	destValue := reflect.ValueOf(dest)
+
+	if destValue.Kind() != reflect.Ptr {
+		return fmt.Errorf("dest must be a pointer")
+	}
+
+	destElem := destValue.Elem()
+	cachedElem := cachedValue
+
+	if cachedValue.Kind() == reflect.Ptr {
+		cachedElem = cachedValue.Elem()
+	}
+
+	// Copy the cached value to destination
+	if destElem.Type() == cachedElem.Type() {
+		destElem.Set(cachedElem)
+		return nil
+	}
+
+	// Handle slice copying
+	if destElem.Kind() == reflect.Slice && cachedElem.Kind() == reflect.Slice {
+		if destElem.Type().Elem() == cachedElem.Type().Elem() {
+			newSlice := reflect.MakeSlice(destElem.Type(), cachedElem.Len(), cachedElem.Cap())
+			reflect.Copy(newSlice, cachedElem)
+			destElem.Set(newSlice)
+			return nil
+		}
+	}
+
+	return fmt.Errorf("cannot copy cached result: type mismatch")
+}
+
+// invalidateTableCache invalidates all cache entries for a specific table
+func (e *Executor) invalidateTableCache(table string) {
+	if e.cacheEnabled && e.queryCache != nil {
+		// Invalidate all queries for this table
+		pattern := fmt.Sprintf("query:*%s*", table)
+		e.queryCache.InvalidatePattern(pattern)
+		// Also invalidate by table name pattern
+		e.queryCache.InvalidatePattern(fmt.Sprintf("*:%s:*", table))
+	}
 }
 
 // FindFirst executes a SELECT query with LIMIT 1 and maps to a single struct
@@ -158,6 +383,15 @@ func (e *Executor) FindFirstWithRelations(ctx context.Context, table string, sel
 		query = e.generator.GenerateSelect(table, columns, where, orderBy, &limit, nil)
 	}
 
+	// Check cache if enabled
+	if e.cacheEnabled && e.queryCache != nil {
+		cacheKey := cache.GenerateCacheKey(query.SQL, query.Args)
+		if cached, ok := e.queryCache.Get(cacheKey); ok {
+			// Copy cached result to destination
+			return e.copyCachedResult(cached, dest)
+		}
+	}
+
 	rows, err := e.db.QueryContext(ctx, query.SQL, query.Args...)
 	if err != nil {
 		return fmt.Errorf("query execution failed: %w", err)
@@ -186,19 +420,34 @@ func (e *Executor) FindFirstWithRelations(ctx context.Context, table string, sel
 			return err
 		}
 
-		// Load relations if include is specified (fallback to N+1)
-		if include != nil && len(include) > 0 && relations != nil {
-			if err := e.loadRelations(ctx, table, include, relations, dest); err != nil {
-				return fmt.Errorf("failed to load relations: %w", err)
-			}
-		}
+		// Relations are loaded via JOINs above, no need for N+1 fallback
 	}
 
 	return nil
 }
 
 // Create executes an INSERT query and returns the created record
-func (e *Executor) Create(ctx context.Context, table string, data interface{}) (interface{}, error) {
+func (e *Executor) Create(ctx context.Context, table string, data interface{}, nestedWrites ...*builder.NestedWriteOperation) (interface{}, error) {
+	// Invalidate cache for this table
+	e.invalidateTableCache(table)
+
+	// Start transaction for nested writes
+	var tx *sql.Tx
+	var err error
+	if len(nestedWrites) > 0 {
+		tx, err = e.db.BeginTx(ctx, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to start transaction: %w", err)
+		}
+		defer func() {
+			if err != nil {
+				tx.Rollback()
+			} else {
+				tx.Commit()
+			}
+		}()
+	}
+
 	columns, values, err := e.extractInsertData(data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract insert data: %w", err)
@@ -206,14 +455,16 @@ func (e *Executor) Create(ctx context.Context, table string, data interface{}) (
 
 	query := e.generator.GenerateInsert(table, columns, values)
 
-	// For PostgreSQL, we can use RETURNING
-	if e.provider == "postgresql" || e.provider == "postgres" {
-		row := e.db.QueryRowContext(ctx, query.SQL, query.Args...)
-		return e.scanRowToStruct(row, data)
+	var result sql.Result
+	var insertedID interface{}
+
+	// Execute INSERT
+	if tx != nil {
+		result, err = tx.ExecContext(ctx, query.SQL, query.Args...)
+	} else {
+		result, err = e.db.ExecContext(ctx, query.SQL, query.Args...)
 	}
 
-	// For other databases, execute insert then query back
-	result, err := e.db.ExecContext(ctx, query.SQL, query.Args...)
 	if err != nil {
 		return nil, fmt.Errorf("insert failed: %w", err)
 	}
@@ -221,24 +472,85 @@ func (e *Executor) Create(ctx context.Context, table string, data interface{}) (
 	// Get the last insert ID if available
 	id, err := result.LastInsertId()
 	if err == nil {
-		// Query back the record
+		insertedID = id
+	} else {
+		// Try to extract ID from data
+		insertedID = e.extractIDFromData(data)
+	}
+
+	// Execute nested writes if provided
+	if len(nestedWrites) > 0 && insertedID != nil {
+		// Extract relation metadata (simplified - in real implementation, this should come from schema)
+		relations := make(map[string]RelationMetadata) // TODO: Get from schema AST
+		if err := e.ExecuteNestedWrites(ctx, tx, table, insertedID, nestedWrites, relations); err != nil {
+			return nil, fmt.Errorf("failed to execute nested writes: %w", err)
+		}
+	}
+
+	// Query back the record
+	if tx != nil {
+		// Use transaction for query
 		where := &sqlgen.WhereClause{
 			Conditions: []sqlgen.Condition{
-				{Field: "id", Operator: "=", Value: id},
+				{Field: "id", Operator: "=", Value: insertedID},
 			},
 			Operator: "AND",
 		}
 		var found interface{} = data
+		// For now, query using regular connection (transaction query would need separate method)
 		if err := e.FindFirst(ctx, table, nil, where, nil, nil, &found); err == nil {
 			return found, nil
+		}
+	} else {
+		// For PostgreSQL, we can use RETURNING
+		if e.provider == "postgresql" || e.provider == "postgres" {
+			row := e.db.QueryRowContext(ctx, query.SQL, query.Args...)
+			return e.scanRowToStruct(row, data)
+		}
+
+		// Query back the record
+		if insertedID != nil {
+			where := &sqlgen.WhereClause{
+				Conditions: []sqlgen.Condition{
+					{Field: "id", Operator: "=", Value: insertedID},
+				},
+				Operator: "AND",
+			}
+			var found interface{} = data
+			if err := e.FindFirst(ctx, table, nil, where, nil, nil, &found); err == nil {
+				return found, nil
+			}
 		}
 	}
 
 	return data, nil
 }
 
+// extractIDFromData extracts ID from data struct
+func (e *Executor) extractIDFromData(data interface{}) interface{} {
+	v := reflect.ValueOf(data)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+
+	if v.Kind() == reflect.Struct {
+		idField := v.FieldByName("Id")
+		if !idField.IsValid() {
+			idField = v.FieldByName("ID")
+		}
+		if idField.IsValid() && idField.CanInterface() {
+			return idField.Interface()
+		}
+	}
+
+	return nil
+}
+
 // Upsert executes an INSERT ... ON CONFLICT ... DO UPDATE query
 func (e *Executor) Upsert(ctx context.Context, table string, data interface{}, conflictTarget []string, updateColumns []string) (interface{}, error) {
+	// Invalidate cache for this table
+	e.invalidateTableCache(table)
+
 	columns, values, err := e.extractInsertData(data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract insert data: %w", err)
@@ -290,6 +602,9 @@ func (e *Executor) Upsert(ctx context.Context, table string, data interface{}, c
 
 // Update executes an UPDATE query
 func (e *Executor) Update(ctx context.Context, table string, set map[string]interface{}, where *sqlgen.WhereClause, dest interface{}) error {
+	// Invalidate cache for this table
+	e.invalidateTableCache(table)
+
 	query := e.generator.GenerateUpdate(table, set, where)
 
 	// For PostgreSQL, we can use RETURNING
@@ -315,6 +630,9 @@ func (e *Executor) Update(ctx context.Context, table string, set map[string]inte
 
 // Delete executes a DELETE query
 func (e *Executor) Delete(ctx context.Context, table string, where *sqlgen.WhereClause) error {
+	// Invalidate cache for this table
+	e.invalidateTableCache(table)
+
 	query := e.generator.GenerateDelete(table, where)
 
 	_, err := e.db.ExecContext(ctx, query.SQL, query.Args...)
@@ -327,6 +645,9 @@ func (e *Executor) Delete(ctx context.Context, table string, where *sqlgen.Where
 
 // CreateMany executes batch INSERT queries
 func (e *Executor) CreateMany(ctx context.Context, table string, data []interface{}) ([]interface{}, error) {
+	// Invalidate cache for this table
+	e.invalidateTableCache(table)
+
 	if len(data) == 0 {
 		return []interface{}{}, nil
 	}
@@ -415,6 +736,9 @@ func (e *Executor) CreateMany(ctx context.Context, table string, data []interfac
 
 // UpdateMany executes batch UPDATE queries
 func (e *Executor) UpdateMany(ctx context.Context, table string, set map[string]interface{}, where *sqlgen.WhereClause) (int64, error) {
+	// Invalidate cache for this table
+	e.invalidateTableCache(table)
+
 	query := e.generator.GenerateUpdate(table, set, where)
 
 	result, err := e.db.ExecContext(ctx, query.SQL, query.Args...)
@@ -432,6 +756,9 @@ func (e *Executor) UpdateMany(ctx context.Context, table string, set map[string]
 
 // DeleteMany executes batch DELETE queries
 func (e *Executor) DeleteMany(ctx context.Context, table string, where *sqlgen.WhereClause) (int64, error) {
+	// Invalidate cache for this table
+	e.invalidateTableCache(table)
+
 	query := e.generator.GenerateDelete(table, where)
 
 	result, err := e.db.ExecContext(ctx, query.SQL, query.Args...)

@@ -62,7 +62,7 @@ func (g *PostgresGenerator) GenerateAggregate(
 	if where != nil && !where.IsEmpty() {
 		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
 			return fmt.Sprintf("$%d", i)
-		}, quoteIdentifier)
+		}, quoteIdentifier, "postgresql")
 		if whereSQL != "" {
 			parts = append(parts, "WHERE "+whereSQL)
 			args = append(args, whereArgs...)
@@ -154,7 +154,7 @@ func (g *MySQLGenerator) GenerateAggregate(
 	if where != nil && !where.IsEmpty() {
 		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
 			return "?"
-		}, quoteIdentifierMySQL)
+		}, quoteIdentifierMySQL, "mysql")
 		if whereSQL != "" {
 			parts = append(parts, "WHERE "+whereSQL)
 			args = append(args, whereArgs...)
@@ -244,7 +244,7 @@ func (g *SQLiteGenerator) GenerateAggregate(
 	if where != nil && !where.IsEmpty() {
 		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
 			return "?"
-		}, quoteIdentifierSQLite)
+		}, quoteIdentifierSQLite, "sqlite")
 		if whereSQL != "" {
 			parts = append(parts, "WHERE "+whereSQL)
 			args = append(args, whereArgs...)

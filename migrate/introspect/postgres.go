@@ -16,10 +16,13 @@ type PostgresIntrospector struct {
 // Introspect reads the PostgreSQL database schema
 func (i *PostgresIntrospector) Introspect(ctx context.Context) (*DatabaseSchema, error) {
 	schema := &DatabaseSchema{
-		Tables:    []Table{},
-		Enums:     []Enum{},
-		Views:     []View{},
-		Sequences: []Sequence{},
+		Tables:           []Table{},
+		Enums:            []Enum{},
+		Views:            []View{},
+		Sequences:        []Sequence{},
+		CheckConstraints: []CheckConstraint{},
+		Triggers:         []Trigger{},
+		StoredProcedures: []StoredProcedure{},
 	}
 
 	// Introspect tables
@@ -49,6 +52,27 @@ func (i *PostgresIntrospector) Introspect(ctx context.Context) (*DatabaseSchema,
 		return nil, fmt.Errorf("failed to introspect views: %w", err)
 	}
 	schema.Views = views
+
+	// Introspect check constraints
+	checkConstraints, err := i.introspectCheckConstraints(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to introspect check constraints: %w", err)
+	}
+	schema.CheckConstraints = checkConstraints
+
+	// Introspect triggers
+	triggers, err := i.introspectTriggers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to introspect triggers: %w", err)
+	}
+	schema.Triggers = triggers
+
+	// Introspect stored procedures
+	storedProcedures, err := i.introspectStoredProcedures(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to introspect stored procedures: %w", err)
+	}
+	schema.StoredProcedures = storedProcedures
 
 	return schema, nil
 }
@@ -496,4 +520,138 @@ func isAutoIncrement(defaultValue, dataType string) bool {
 	}
 
 	return false
+}
+
+// introspectCheckConstraints reads all check constraints
+func (i *PostgresIntrospector) introspectCheckConstraints(ctx context.Context) ([]CheckConstraint, error) {
+	query := `
+		SELECT 
+			tc.constraint_name,
+			tc.table_name,
+			cc.check_clause
+		FROM information_schema.table_constraints tc
+		JOIN information_schema.check_constraints cc
+			ON tc.constraint_name = cc.constraint_name
+			AND tc.table_schema = cc.constraint_schema
+		WHERE tc.constraint_type = 'CHECK'
+			AND tc.table_schema = 'public'
+		ORDER BY tc.table_name, tc.constraint_name
+	`
+
+	rows, err := i.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query check constraints: %w", err)
+	}
+	defer rows.Close()
+
+	var constraints []CheckConstraint
+	for rows.Next() {
+		var constraint CheckConstraint
+		err := rows.Scan(&constraint.Name, &constraint.TableName, &constraint.Definition)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan check constraint: %w", err)
+		}
+		constraints = append(constraints, constraint)
+	}
+
+	return constraints, rows.Err()
+}
+
+// introspectTriggers reads all triggers
+func (i *PostgresIntrospector) introspectTriggers(ctx context.Context) ([]Trigger, error) {
+	query := `
+		SELECT 
+			t.trigger_name,
+			t.event_object_table,
+			string_agg(t.event_manipulation, ', ' ORDER BY t.action_order) as events,
+			t.action_timing,
+			t.action_statement
+		FROM information_schema.triggers t
+		WHERE t.trigger_schema = 'public'
+		GROUP BY t.trigger_name, t.event_object_table, t.action_timing, t.action_statement
+		ORDER BY t.event_object_table, t.trigger_name
+	`
+
+	rows, err := i.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query triggers: %w", err)
+	}
+	defer rows.Close()
+
+	var triggers []Trigger
+	for rows.Next() {
+		var trigger Trigger
+		err := rows.Scan(&trigger.Name, &trigger.TableName, &trigger.Event, &trigger.Timing, &trigger.Definition)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan trigger: %w", err)
+		}
+		triggers = append(triggers, trigger)
+	}
+
+	return triggers, rows.Err()
+}
+
+// introspectStoredProcedures reads all stored procedures
+func (i *PostgresIntrospector) introspectStoredProcedures(ctx context.Context) ([]StoredProcedure, error) {
+	query := `
+		SELECT 
+			r.routine_name,
+			r.routine_definition,
+			p.parameter_name,
+			p.data_type,
+			p.parameter_mode,
+			p.ordinal_position
+		FROM information_schema.routines r
+		LEFT JOIN information_schema.parameters p
+			ON r.specific_schema = p.specific_schema
+			AND r.specific_name = p.specific_name
+		WHERE r.routine_schema = 'public'
+			AND r.routine_type = 'PROCEDURE'
+		ORDER BY r.routine_name, p.ordinal_position
+	`
+
+	rows, err := i.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query stored procedures: %w", err)
+	}
+	defer rows.Close()
+
+	procMap := make(map[string]*StoredProcedure)
+	for rows.Next() {
+		var procName, definition, paramName, paramType, paramMode sql.NullString
+		var paramPos sql.NullInt64
+
+		err := rows.Scan(&procName, &definition, &paramName, &paramType, &paramMode, &paramPos)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan stored procedure: %w", err)
+		}
+
+		if _, ok := procMap[procName.String]; !ok {
+			procMap[procName.String] = &StoredProcedure{
+				Name:       procName.String,
+				Definition: definition.String,
+				Parameters: []ProcedureParameter{},
+			}
+		}
+
+		if paramName.Valid {
+			procMap[procName.String].Parameters = append(procMap[procName.String].Parameters, ProcedureParameter{
+				Name:     paramName.String,
+				Type:     paramType.String,
+				Mode:     paramMode.String,
+				Position: int(paramPos.Int64),
+			})
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	var procedures []StoredProcedure
+	for _, proc := range procMap {
+		procedures = append(procedures, *proc)
+	}
+
+	return procedures, nil
 }

@@ -66,6 +66,11 @@ type RelationMetadata struct {
 	ForeignKey   string // Foreign key field name
 	LocalKey     string // Local key field name (usually "id")
 	IsList       bool   // true if one-to-many
+	// Many-to-many relation fields
+	IsManyToMany      bool   // true if many-to-many relation
+	JunctionTable     string // Junction table name for many-to-many
+	JunctionFKToSelf  string // Foreign key in junction table pointing to self
+	JunctionFKToOther  string // Foreign key in junction table pointing to other
 }
 
 func quoteIdentifier(name string) string {
