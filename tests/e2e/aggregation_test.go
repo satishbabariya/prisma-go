@@ -101,6 +101,9 @@ func (suite *TestSuite) createAggregationTables(ctx context.Context) {
 		);`
 	}
 
+	// Ensure tables are dropped first to avoid schema conflicts
+	suite.cleanupAggregationTables(ctx)
+
 	// MySQL doesn't support multiple CREATE TABLE statements in one Exec
 	if suite.config.Provider == "mysql" {
 		statements := strings.Split(createSQL, ";")

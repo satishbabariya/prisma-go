@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -131,23 +132,28 @@ func (suite *TestSuite) createGroupByTables(ctx context.Context) {
 
 // cleanupGroupByTables removes GROUP BY test tables
 func (suite *TestSuite) cleanupGroupByTables(ctx context.Context) {
-	// Clean up data first, then drop tables
 	// SQLite and MySQL don't support multiple tables in one DROP statement
+	// Drop in reverse order of dependencies
 	if suite.config.Provider == "sqlite" || suite.config.Provider == "mysql" {
-		_, _ = suite.db.ExecContext(ctx, "DELETE FROM posts")
-		_, _ = suite.db.ExecContext(ctx, "DELETE FROM users")
-		_, err := suite.db.ExecContext(ctx, "DROP TABLE IF EXISTS posts")
-		if err != nil {
-			suite.T().Logf("Error dropping posts table: %v", err)
+		// For MySQL, disable foreign key checks temporarily
+		if suite.config.Provider == "mysql" {
+			_, _ = suite.db.ExecContext(ctx, "SET FOREIGN_KEY_CHECKS = 0")
+			defer func() {
+				_, _ = suite.db.ExecContext(ctx, "SET FOREIGN_KEY_CHECKS = 1")
+			}()
 		}
-		_, err = suite.db.ExecContext(ctx, "DROP TABLE IF EXISTS users")
-		if err != nil {
-			suite.T().Logf("Error dropping users table: %v", err)
+		tables := []string{"posts", "users"} // Drop in reverse order of dependencies
+		for _, table := range tables {
+			_, err := suite.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", table))
+			if err != nil {
+				// Log but don't fail - table might not exist or might have dependencies
+				suite.T().Logf("Error dropping table %s (may not exist): %v", table, err)
+			}
 		}
 	} else {
-		_, err := suite.db.ExecContext(ctx, "DROP TABLE IF EXISTS posts, users")
+		_, err := suite.db.ExecContext(ctx, "DROP TABLE IF EXISTS posts, users CASCADE")
 		if err != nil {
-			suite.T().Logf("Error dropping tables: %v", err)
+			suite.T().Logf("Error dropping tables (may not exist): %v", err)
 		}
 	}
 }

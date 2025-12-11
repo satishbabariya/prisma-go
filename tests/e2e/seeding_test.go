@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -117,6 +118,9 @@ func (suite *TestSuite) createSeedingTables(ctx context.Context) {
 		);`
 	}
 
+	// Ensure tables are dropped first to avoid schema conflicts
+	suite.cleanupSeedingTables(ctx)
+
 	// MySQL doesn't support multiple CREATE TABLE statements in one Exec
 	if suite.config.Provider == "mysql" {
 		statements := strings.Split(createSQL, ";")
@@ -138,8 +142,22 @@ func (suite *TestSuite) createSeedingTables(ctx context.Context) {
 
 // cleanupSeedingTables removes seeding test tables
 func (suite *TestSuite) cleanupSeedingTables(ctx context.Context) {
-	_, err := suite.db.ExecContext(ctx, "DROP TABLE IF EXISTS comments, posts, users")
-	require.NoError(suite.T(), err)
+	// SQLite and MySQL don't support multiple tables in one DROP statement
+	// Drop in reverse order of dependencies
+	if suite.config.Provider == "sqlite" || suite.config.Provider == "mysql" {
+		tables := []string{"comments", "posts", "users"}
+		for _, table := range tables {
+			_, err := suite.db.ExecContext(ctx, fmt.Sprintf("DROP TABLE IF EXISTS %s", table))
+			if err != nil {
+				suite.T().Logf("Error dropping table %s (may not exist): %v", table, err)
+			}
+		}
+	} else {
+		_, err := suite.db.ExecContext(ctx, "DROP TABLE IF EXISTS comments, posts, users CASCADE")
+		if err != nil {
+			suite.T().Logf("Error dropping tables (may not exist): %v", err)
+		}
+	}
 }
 
 // testNestedSeeding tests seeding with nested relationships
