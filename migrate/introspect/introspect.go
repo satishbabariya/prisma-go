@@ -13,10 +13,13 @@ type Introspector interface {
 
 // DatabaseSchema represents the introspected database schema
 type DatabaseSchema struct {
-	Tables    []Table
-	Enums     []Enum
-	Views     []View
-	Sequences []Sequence
+	Tables           []Table
+	Enums            []Enum
+	Views            []View
+	Sequences        []Sequence
+	CheckConstraints []CheckConstraint
+	Triggers         []Trigger
+	StoredProcedures []StoredProcedure
 }
 
 // Table represents a database table
@@ -76,6 +79,37 @@ type View struct {
 // Sequence represents a database sequence
 type Sequence struct {
 	Name string
+}
+
+// CheckConstraint represents a check constraint
+type CheckConstraint struct {
+	Name       string
+	TableName  string
+	Definition string
+}
+
+// Trigger represents a database trigger
+type Trigger struct {
+	Name       string
+	TableName  string
+	Event      string // INSERT, UPDATE, DELETE, etc.
+	Timing     string // BEFORE, AFTER, INSTEAD OF
+	Definition string
+}
+
+// StoredProcedure represents a stored procedure
+type StoredProcedure struct {
+	Name       string
+	Definition string
+	Parameters []ProcedureParameter
+}
+
+// ProcedureParameter represents a stored procedure parameter
+type ProcedureParameter struct {
+	Name     string
+	Type     string
+	Mode     string // IN, OUT, INOUT
+	Position int
 }
 
 // NewIntrospector creates a new introspector for the given database

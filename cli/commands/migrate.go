@@ -22,6 +22,7 @@ import (
 	"github.com/satishbabariya/prisma-go/migrate/shadow"
 	"github.com/satishbabariya/prisma-go/migrate/sqlgen"
 	psl "github.com/satishbabariya/prisma-go/psl"
+	"github.com/satishbabariya/prisma-go/telemetry"
 )
 
 var migrateCmd = &cobra.Command{
@@ -37,13 +38,13 @@ This command provides subcommands for:
 }
 
 var (
-	migrateDevCmd     *cobra.Command
-	migrateDeployCmd  *cobra.Command
-	migrateDiffCmd    *cobra.Command
-	migrateApplyCmd   *cobra.Command
-	migrateStatusCmd  *cobra.Command
-	migrateResetCmd   *cobra.Command
-	migrateResolveCmd *cobra.Command
+	migrateDevCmd      *cobra.Command
+	migrateDeployCmd   *cobra.Command
+	migrateDiffCmd     *cobra.Command
+	migrateApplyCmd    *cobra.Command
+	migrateStatusCmd   *cobra.Command
+	migrateResetCmd    *cobra.Command
+	migrateResolveCmd  *cobra.Command
 	migrateRollbackCmd *cobra.Command
 )
 
@@ -224,6 +225,13 @@ EXAMPLES:
 }
 
 func migrateDevCommand(args []string) error {
+	startTime := time.Now()
+	var err error
+	var provider string
+	defer func() {
+		telemetry.RecordCommand("migrate dev", provider, time.Since(startTime), err)
+	}()
+
 	schemaPath := "schema.prisma"
 	migrationName := ""
 	autoApply := false
@@ -433,6 +441,7 @@ func migrateDevCommand(args []string) error {
 	}
 
 	fmt.Println("\n🎉 Migration dev workflow completed!")
+	err = nil
 	return nil
 }
 
