@@ -514,12 +514,12 @@ func (suite *TestSuite) TestQueryOptimization() {
 			Conditions: []queryAst.Condition{
 				{
 					Field:    "salary",
-					Operator: ">",
+					Operator: queryAst.OpGreaterThan,
 					Value:    50000,
 				},
 				{
 					Field:    "department_id",
-					Operator: "IN",
+					Operator: queryAst.OpIn,
 					Value:    []int{1, 2},
 				},
 			},

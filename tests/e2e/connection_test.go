@@ -76,7 +76,7 @@ func (suite *TestSuite) TestSchemaValidation() {
 
 	// Get connectors for the provider
 	connectors := getConnectorsForProvider(suite.config.Provider)
-	extensionTypes := database.NewExtensionTypes()
+	extensionTypes := database.NoExtensionTypes{}
 
 	// Validate schema
 	validatedSchema := validation.Validate(sourceFile, connectors, extensionTypes)
