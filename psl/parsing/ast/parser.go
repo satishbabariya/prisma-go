@@ -394,13 +394,36 @@ func (p *Parser) parseAttributeAfterAt() *Attribute {
 		p.error(fmt.Sprintf("Expected attribute name after '@', but got token type %d (%s)", currentToken.Type, currentToken.Value))
 		return nil
 	}
-	name := p.expect(lexer.TokenIdentifier)
-	debug.Debug("Attribute name", "name", name.Value)
+	nameToken := p.expect(lexer.TokenIdentifier)
+	attributeName := nameToken.Value
+	debug.Debug("Attribute name", "name", attributeName)
 
 	argsList := ArgumentsList{
 		Arguments:      []Argument{},
 		EmptyArguments: []EmptyArgument{},
 		TrailingComma:  nil,
+	}
+
+	// Handle dotted attribute names like @db.VarChar or @db.Timestamp(6)
+	// The database layer expects the full dotted name (e.g., "db.VarChar") as the attribute name
+	if p.check(lexer.TokenDot) {
+		p.advance() // consume the dot
+
+		// Parse the identifier after the dot and append it to the attribute name
+		if p.check(lexer.TokenIdentifier) {
+			typeNameToken := p.expect(lexer.TokenIdentifier)
+			attributeName = attributeName + "." + typeNameToken.Value
+			debug.Debug("Parsed dotted attribute name", "full_name", attributeName)
+		} else {
+			p.error("Expected identifier after '.' in attribute")
+			return nil
+		}
+	}
+
+	// Create the name identifier with the full name (potentially dotted)
+	name := Identifier{
+		Name: attributeName,
+		span: p.spanForToken(nameToken),
 	}
 
 	if p.check(lexer.TokenLParen) {
@@ -469,6 +492,10 @@ func (p *Parser) parseAttributeAfterAt() *Attribute {
 					if arg := p.parseArgument(); arg != nil {
 						argsList.Arguments = append(argsList.Arguments, *arg)
 						debug.Debug("Parsed unnamed argument")
+						// Check if we've reached the closing parenthesis after parsing
+						if p.check(lexer.TokenRParen) {
+							break
+						}
 					} else {
 						// If parsing failed, advance to avoid infinite loop
 						p.advance()
@@ -477,30 +504,37 @@ func (p *Parser) parseAttributeAfterAt() *Attribute {
 			} else if arg := p.parseArgument(); arg != nil {
 				argsList.Arguments = append(argsList.Arguments, *arg)
 				debug.Debug("Parsed argument")
+				// Check if we've reached the closing parenthesis after parsing
+				if p.check(lexer.TokenRParen) {
+					break
+				}
 			} else {
 				// If parsing failed, advance to avoid infinite loop
 				p.advance()
 			}
 
-			if !p.check(lexer.TokenRParen) {
-				// Skip comments before comma
-				for p.check(lexer.TokenComment) {
-					p.advance()
-				}
+			// Check if we've reached the closing parenthesis
+			if p.check(lexer.TokenRParen) {
+				break
+			}
 
-				if p.check(lexer.TokenComma) {
-					commaToken := p.current()
-					p.advance()
+			// Skip comments before comma
+			for p.check(lexer.TokenComment) {
+				p.advance()
+			}
 
-					// Check if this is a trailing comma (followed by closing paren)
-					if p.check(lexer.TokenRParen) {
-						span := p.spanForToken(commaToken)
-						argsList.TrailingComma = &span
-					}
-				} else if !p.check(lexer.TokenRParen) {
-					// Expected comma but didn't find one
-					p.error("Expected comma or closing parenthesis")
+			if p.check(lexer.TokenComma) {
+				commaToken := p.current()
+				p.advance()
+
+				// Check if this is a trailing comma (followed by closing paren)
+				if p.check(lexer.TokenRParen) {
+					span := p.spanForToken(commaToken)
+					argsList.TrailingComma = &span
 				}
+			} else if !p.check(lexer.TokenRParen) {
+				// Expected comma but didn't find one
+				p.error("Expected comma or closing parenthesis")
 			}
 		}
 
@@ -509,11 +543,11 @@ func (p *Parser) parseAttributeAfterAt() *Attribute {
 	}
 
 	attribute := &Attribute{
-		Name:      Identifier{Name: name.Value, span: p.spanForToken(name)},
+		Name:      name,
 		Arguments: argsList,
-		Span:      p.spanFrom(name),
+		Span:      p.spanForToken(nameToken),
 	}
-	debug.Debug("Completed parsing attribute", "name", name.Value, "argument_count", len(argsList.Arguments))
+	debug.Debug("Completed parsing attribute", "name", name.Name, "argument_count", len(argsList.Arguments))
 	return attribute
 }
 
