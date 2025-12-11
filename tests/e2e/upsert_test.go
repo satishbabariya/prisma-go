@@ -372,30 +372,53 @@ func (suite *TestSuite) testUpsertWithRelationships(ctx context.Context) {
 	profileBio := "Software developer and tech enthusiast"
 	profileWebsite := "https://example.com"
 
-	// Insert profile
+	// Insert profile using provider-specific upsert
 	var profileID int
-	err = suite.db.QueryRowContext(ctx, `
-		INSERT INTO profiles (user_id, bio, website) 
-		VALUES (?, ?, ?) 
-		ON CONFLICT (user_id) DO UPDATE SET 
-			bio = EXCLUDED.bio,
-			website = EXCLUDED.website,
-			updated_at = CURRENT_TIMESTAMP
-		RETURNING id`, userID, profileBio, profileWebsite).Scan(&profileID)
-
-	if err != nil {
-		_, err = suite.db.ExecContext(ctx, `
-			INSERT OR IGNORE INTO profiles (user_id, bio, website) VALUES (?, ?, ?)`,
-			userID, profileBio, profileWebsite)
+	if suite.config.Provider == "postgresql" || suite.config.Provider == "postgres" {
+		err = suite.db.QueryRowContext(ctx, suite.convertPlaceholders(`
+			INSERT INTO profiles (user_id, bio, website) 
+			VALUES (?, ?, ?) 
+			ON CONFLICT (user_id) DO UPDATE SET 
+				bio = EXCLUDED.bio,
+				website = EXCLUDED.website,
+				updated_at = CURRENT_TIMESTAMP
+			RETURNING id`), userID, profileBio, profileWebsite).Scan(&profileID)
 		require.NoError(suite.T(), err)
-		err = suite.db.QueryRowContext(ctx, "SELECT id FROM profiles WHERE user_id = ?", userID).Scan(&profileID)
+	} else if suite.config.Provider == "mysql" {
+		result, err := suite.db.ExecContext(ctx, suite.convertPlaceholders(`
+			INSERT INTO profiles (user_id, bio, website) 
+			VALUES (?, ?, ?)
+			ON DUPLICATE KEY UPDATE 
+				bio = VALUES(bio),
+				website = VALUES(website),
+				updated_at = CURRENT_TIMESTAMP`), userID, profileBio, profileWebsite)
+		require.NoError(suite.T(), err)
+		lastID, err := result.LastInsertId()
+		require.NoError(suite.T(), err)
+		if lastID == 0 {
+			err = suite.db.QueryRowContext(ctx, suite.convertPlaceholders("SELECT id FROM profiles WHERE user_id = ?"), userID).Scan(&profileID)
+			require.NoError(suite.T(), err)
+		} else {
+			profileID = int(lastID)
+		}
+	} else {
+		// SQLite
+		_, err = suite.db.ExecContext(ctx, suite.convertPlaceholders(`
+			INSERT INTO profiles (user_id, bio, website) 
+			VALUES (?, ?, ?) 
+			ON CONFLICT (user_id) DO UPDATE SET 
+				bio = excluded.bio,
+				website = excluded.website,
+				updated_at = CURRENT_TIMESTAMP`), userID, profileBio, profileWebsite)
+		require.NoError(suite.T(), err)
+		err = suite.db.QueryRowContext(ctx, suite.convertPlaceholders("SELECT id FROM profiles WHERE user_id = ?"), userID).Scan(&profileID)
 		require.NoError(suite.T(), err)
 	}
 
 	// Verify profile
 	var bio string
 	var website string
-	err = suite.db.QueryRowContext(ctx, "SELECT bio, website FROM profiles WHERE user_id = ?", userID).Scan(&bio, &website)
+	err = suite.db.QueryRowContext(ctx, suite.convertPlaceholders("SELECT bio, website FROM profiles WHERE user_id = ?"), userID).Scan(&bio, &website)
 	require.NoError(suite.T(), err)
 	require.Equal(suite.T(), profileBio, bio)
 	require.Equal(suite.T(), profileWebsite, website)
