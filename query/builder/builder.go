@@ -2,6 +2,7 @@
 package builder
 
 import (
+	"github.com/satishbabariya/prisma-go/query/columns"
 	"github.com/satishbabariya/prisma-go/query/sqlgen"
 )
 
@@ -183,6 +184,26 @@ func (w *WhereBuilder) SetOperator(op string) *WhereBuilder {
 	return w
 }
 
+// AddCondition adds a column-based condition
+func (w *WhereBuilder) AddCondition(cond columns.Condition) *WhereBuilder {
+	w.conditions = append(w.conditions, cond.ToSQLCondition())
+	return w
+}
+
+// AddConditions adds multiple column-based conditions
+func (w *WhereBuilder) AddConditions(conds []columns.Condition) *WhereBuilder {
+	for _, cond := range conds {
+		w.conditions = append(w.conditions, cond.ToSQLCondition())
+	}
+	return w
+}
+
+// AddSubqueryCondition adds a subquery-based condition (IN, NOT IN, EXISTS, NOT EXISTS)
+func (w *WhereBuilder) AddSubqueryCondition(cond sqlgen.Condition) *WhereBuilder {
+	w.conditions = append(w.conditions, cond)
+	return w
+}
+
 // Build builds the WHERE clause
 func (w *WhereBuilder) Build() *sqlgen.WhereClause {
 	// If we have a complex whereClause with groups, use it
@@ -209,12 +230,18 @@ func (w *WhereBuilder) Build() *sqlgen.WhereClause {
 
 // QueryBuilder builds complete queries
 type QueryBuilder struct {
-	table   string
-	columns []string
-	where   *sqlgen.WhereClause
-	orderBy []sqlgen.OrderBy
-	limit   *int
-	offset  *int
+	table          string
+	columns        []string
+	aggregates     []sqlgen.AggregateFunction
+	windowFuncs    []sqlgen.WindowFunction
+	ctes           []sqlgen.CTE
+	joins          []sqlgen.Join
+	where          *sqlgen.WhereClause
+	groupBy        *sqlgen.GroupBy
+	having         *sqlgen.Having
+	orderBy        []sqlgen.OrderBy
+	limit          *int
+	offset         *int
 }
 
 // OrderByBuilder builds ORDER BY clauses
@@ -257,6 +284,7 @@ func NewQueryBuilder(table string) *QueryBuilder {
 	return &QueryBuilder{
 		table:   table,
 		columns: nil, // nil means SELECT *
+		joins:   []sqlgen.Join{},
 	}
 }
 
@@ -439,4 +467,84 @@ func (q *QueryBuilder) GetLimit() *int {
 // GetOffset returns the OFFSET
 func (q *QueryBuilder) GetOffset() *int {
 	return q.offset
+}
+
+// AddJoin adds a JOIN to the query
+func (q *QueryBuilder) AddJoin(join sqlgen.Join) *QueryBuilder {
+	q.joins = append(q.joins, join)
+	return q
+}
+
+// GetJoins returns the JOIN clauses
+func (q *QueryBuilder) GetJoins() []sqlgen.Join {
+	return q.joins
+}
+
+// AddAggregate adds an aggregation function to the query
+func (q *QueryBuilder) AddAggregate(agg sqlgen.AggregateFunction) *QueryBuilder {
+	q.aggregates = append(q.aggregates, agg)
+	return q
+}
+
+// GetAggregates returns the aggregation functions
+func (q *QueryBuilder) GetAggregates() []sqlgen.AggregateFunction {
+	return q.aggregates
+}
+
+// SetGroupBy sets the GROUP BY clause
+func (q *QueryBuilder) SetGroupBy(fields ...string) *QueryBuilder {
+	q.groupBy = &sqlgen.GroupBy{
+		Fields: fields,
+	}
+	return q
+}
+
+// GetGroupBy returns the GROUP BY clause
+func (q *QueryBuilder) GetGroupBy() *sqlgen.GroupBy {
+	return q.groupBy
+}
+
+// SetHaving sets the HAVING clause
+func (q *QueryBuilder) SetHaving(having *sqlgen.Having) *QueryBuilder {
+	q.having = having
+	return q
+}
+
+// GetHaving returns the HAVING clause
+func (q *QueryBuilder) GetHaving() *sqlgen.Having {
+	return q.having
+}
+
+// AddCTE adds a CTE to the query
+func (q *QueryBuilder) AddCTE(cte sqlgen.CTE) *QueryBuilder {
+	q.ctes = append(q.ctes, cte)
+	return q
+}
+
+// SetCTEs sets the CTEs for the query
+func (q *QueryBuilder) SetCTEs(ctes []sqlgen.CTE) *QueryBuilder {
+	q.ctes = ctes
+	return q
+}
+
+// GetCTEs returns the CTEs
+func (q *QueryBuilder) GetCTEs() []sqlgen.CTE {
+	return q.ctes
+}
+
+// AddWindowFunction adds a window function to the query
+func (q *QueryBuilder) AddWindowFunction(wf sqlgen.WindowFunction) *QueryBuilder {
+	q.windowFuncs = append(q.windowFuncs, wf)
+	return q
+}
+
+// SetWindowFunctions sets the window functions for the query
+func (q *QueryBuilder) SetWindowFunctions(wfs []sqlgen.WindowFunction) *QueryBuilder {
+	q.windowFuncs = wfs
+	return q
+}
+
+// GetWindowFunctions returns the window functions
+func (q *QueryBuilder) GetWindowFunctions() []sqlgen.WindowFunction {
+	return q.windowFuncs
 }

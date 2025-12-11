@@ -71,7 +71,20 @@ func buildCondition(cond Condition, argIndex *int, placeholder func(int) string,
 		(*argIndex)++
 
 	case "IN":
-		if values, ok := cond.Value.([]interface{}); ok && len(values) > 0 {
+		// Check if it's a subquery
+		if cond.IsSubquery {
+			// Import the Subquery type from builder package
+			// For now, we'll use type assertion with interface{}
+			if subquery, ok := cond.Value.(interface {
+				GetSQL() string
+				GetArgs() []interface{}
+			}); ok {
+				sql = fmt.Sprintf("%s IN (%s)", quoter(cond.Field), subquery.GetSQL())
+				args = append(args, subquery.GetArgs()...)
+				// Update argIndex based on number of args in subquery
+				*argIndex += len(subquery.GetArgs())
+			}
+		} else if values, ok := cond.Value.([]interface{}); ok && len(values) > 0 {
 			placeholders := make([]string, len(values))
 			for i := range values {
 				placeholders[i] = placeholder(*argIndex)
@@ -82,7 +95,17 @@ func buildCondition(cond Condition, argIndex *int, placeholder func(int) string,
 		}
 
 	case "NOT IN":
-		if values, ok := cond.Value.([]interface{}); ok && len(values) > 0 {
+		// Check if it's a subquery
+		if cond.IsSubquery {
+			if subquery, ok := cond.Value.(interface {
+				GetSQL() string
+				GetArgs() []interface{}
+			}); ok {
+				sql = fmt.Sprintf("%s NOT IN (%s)", quoter(cond.Field), subquery.GetSQL())
+				args = append(args, subquery.GetArgs()...)
+				*argIndex += len(subquery.GetArgs())
+			}
+		} else if values, ok := cond.Value.([]interface{}); ok && len(values) > 0 {
 			placeholders := make([]string, len(values))
 			for i := range values {
 				placeholders[i] = placeholder(*argIndex)
@@ -90,6 +113,30 @@ func buildCondition(cond Condition, argIndex *int, placeholder func(int) string,
 				(*argIndex)++
 			}
 			sql = fmt.Sprintf("%s NOT IN (%s)", quoter(cond.Field), strings.Join(placeholders, ", "))
+		}
+
+	case "EXISTS":
+		if cond.IsSubquery {
+			if subquery, ok := cond.Value.(interface {
+				GetSQL() string
+				GetArgs() []interface{}
+			}); ok {
+				sql = fmt.Sprintf("EXISTS (%s)", subquery.GetSQL())
+				args = append(args, subquery.GetArgs()...)
+				*argIndex += len(subquery.GetArgs())
+			}
+		}
+
+	case "NOT EXISTS":
+		if cond.IsSubquery {
+			if subquery, ok := cond.Value.(interface {
+				GetSQL() string
+				GetArgs() []interface{}
+			}); ok {
+				sql = fmt.Sprintf("NOT EXISTS (%s)", subquery.GetSQL())
+				args = append(args, subquery.GetArgs()...)
+				*argIndex += len(subquery.GetArgs())
+			}
 		}
 
 	case "LIKE":

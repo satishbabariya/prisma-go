@@ -36,6 +36,53 @@ func (g *MongoDBGenerator) GenerateSelectWithJoins(table string, columns []strin
 	return g.GenerateSelect(table, columns, where, orderBy, limit, offset)
 }
 
+// GenerateSelectWithAggregates for MongoDB (stub - MongoDB uses aggregation pipeline)
+func (g *MongoDBGenerator) GenerateSelectWithAggregates(
+	table string,
+	columns []string,
+	aggregates []AggregateFunction,
+	joins []Join,
+	where *WhereClause,
+	groupBy *GroupBy,
+	having *Having,
+	orderBy []OrderBy,
+	limit, offset *int,
+) *Query {
+	// MongoDB uses aggregation pipeline ($group, $match, etc.)
+	// Foundation implementation - would need MongoDB aggregation pipeline builder
+	return g.GenerateSelect(table, columns, where, orderBy, limit, offset)
+}
+
+// GenerateSelectWithCTE for MongoDB (stub - MongoDB doesn't support CTEs in the same way)
+func (g *MongoDBGenerator) GenerateSelectWithCTE(
+	table string,
+	columns []string,
+	ctes []CTE,
+	joins []Join,
+	where *WhereClause,
+	orderBy []OrderBy,
+	limit, offset *int,
+) *Query {
+	// MongoDB doesn't support CTEs in the traditional SQL sense
+	// Would need to use $lookup or aggregation pipeline
+	return g.GenerateSelect(table, columns, where, orderBy, limit, offset)
+}
+
+// GenerateSelectWithWindows for MongoDB (stub - MongoDB doesn't support window functions)
+func (g *MongoDBGenerator) GenerateSelectWithWindows(
+	table string,
+	columns []string,
+	windowFuncs []WindowFunction,
+	joins []Join,
+	where *WhereClause,
+	orderBy []OrderBy,
+	limit, offset *int,
+) *Query {
+	// MongoDB doesn't support window functions in the traditional SQL sense
+	// Would need to use aggregation pipeline with $setWindowFields (MongoDB 5.0+)
+	return g.GenerateSelect(table, columns, where, orderBy, limit, offset)
+}
+
 func (g *MongoDBGenerator) GenerateInsert(table string, columns []string, values []interface{}) *Query {
 	// MongoDB uses insertOne() or insertMany()
 	// Build document from columns and values

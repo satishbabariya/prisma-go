@@ -12,11 +12,17 @@ type WhereClause struct {
 // Condition represents a single filter condition
 type Condition struct {
 	Field    string
-	Operator string // "=", "!=", ">", "<", ">=", "<=", "IN", "NOT IN", "LIKE", "IS NULL", "IS NOT NULL", "JSON_PATH", "JSON_CONTAINS", "JSON_ARRAY_CONTAINS"
+	Operator string // "=", "!=", ">", "<", ">=", "<=", "IN", "NOT IN", "LIKE", "IS NULL", "IS NOT NULL", "JSON_PATH", "JSON_CONTAINS", "JSON_ARRAY_CONTAINS", "EXISTS", "NOT EXISTS"
 	Value    interface{}
 	// JSON-specific fields
 	JsonPath string // JSON path (e.g., "$.name", "$[0]", "$.items[*].id")
 	JsonType string // JSON filter type: "path", "contains", "array_contains", "has_key"
+	// Join condition fields
+	IsJoinCondition bool   // true if this is a join condition
+	LeftTable       string // left table name for join
+	RightTable      string // right table name for join
+	// Subquery fields
+	IsSubquery bool // true if Value contains a subquery
 }
 
 // NewWhereClause creates a new WHERE clause
