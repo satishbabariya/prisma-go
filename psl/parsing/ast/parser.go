@@ -503,9 +503,11 @@ func (p *Parser) parseAttributeAfterAt() *Attribute {
 				}
 			} else if arg := p.parseArgument(); arg != nil {
 				argsList.Arguments = append(argsList.Arguments, *arg)
-				debug.Debug("Parsed argument")
+				currentToken := p.current()
+				debug.Debug("Parsed argument", "next_token_type", currentToken.Type, "next_token_value", currentToken.Value, "is_rparen", p.check(lexer.TokenRParen))
 				// Check if we've reached the closing parenthesis after parsing
 				if p.check(lexer.TokenRParen) {
+					debug.Debug("Breaking argument loop - found closing parenthesis")
 					break
 				}
 			} else {
@@ -515,6 +517,7 @@ func (p *Parser) parseAttributeAfterAt() *Attribute {
 
 			// Check if we've reached the closing parenthesis
 			if p.check(lexer.TokenRParen) {
+				debug.Debug("Breaking argument loop - found closing parenthesis (second check)")
 				break
 			}
 
