@@ -12,8 +12,11 @@ type WhereClause struct {
 // Condition represents a single filter condition
 type Condition struct {
 	Field    string
-	Operator string // "=", "!=", ">", "<", ">=", "<=", "IN", "NOT IN", "LIKE", "IS NULL", "IS NOT NULL"
+	Operator string // "=", "!=", ">", "<", ">=", "<=", "IN", "NOT IN", "LIKE", "IS NULL", "IS NOT NULL", "JSON_PATH", "JSON_CONTAINS", "JSON_ARRAY_CONTAINS"
 	Value    interface{}
+	// JSON-specific fields
+	JsonPath string // JSON path (e.g., "$.name", "$[0]", "$.items[*].id")
+	JsonType string // JSON filter type: "path", "contains", "array_contains", "has_key"
 }
 
 // NewWhereClause creates a new WHERE clause

@@ -131,6 +131,52 @@ func (w *WhereBuilder) IsNotNull(field string) *WhereBuilder {
 	return w
 }
 
+// JsonPath adds a JSON path filter condition (e.g., field->>'$.name' = 'value')
+func (w *WhereBuilder) JsonPath(field string, path string, value interface{}) *WhereBuilder {
+	w.conditions = append(w.conditions, sqlgen.Condition{
+		Field:    field,
+		Operator: "JSON_PATH",
+		Value:    value,
+		JsonPath: path,
+		JsonType: "path",
+	})
+	return w
+}
+
+// JsonContains adds a JSON contains filter condition (checks if JSON contains a value)
+func (w *WhereBuilder) JsonContains(field string, value interface{}) *WhereBuilder {
+	w.conditions = append(w.conditions, sqlgen.Condition{
+		Field:    field,
+		Operator: "JSON_CONTAINS",
+		Value:    value,
+		JsonType: "contains",
+	})
+	return w
+}
+
+// JsonArrayContains adds a JSON array contains filter condition (checks if array contains a value)
+func (w *WhereBuilder) JsonArrayContains(field string, path string, value interface{}) *WhereBuilder {
+	w.conditions = append(w.conditions, sqlgen.Condition{
+		Field:    field,
+		Operator: "JSON_ARRAY_CONTAINS",
+		Value:    value,
+		JsonPath: path,
+		JsonType: "array_contains",
+	})
+	return w
+}
+
+// JsonHasKey adds a JSON has key filter condition (checks if JSON object has a key)
+func (w *WhereBuilder) JsonHasKey(field string, key string) *WhereBuilder {
+	w.conditions = append(w.conditions, sqlgen.Condition{
+		Field:    field,
+		Operator: "JSON_HAS_KEY",
+		Value:    key,
+		JsonType: "has_key",
+	})
+	return w
+}
+
 // SetOperator sets the logical operator (AND or OR)
 func (w *WhereBuilder) SetOperator(op string) *WhereBuilder {
 	w.operator = op

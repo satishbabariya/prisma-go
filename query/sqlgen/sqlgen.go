@@ -38,6 +38,12 @@ func NewGenerator(provider string) Generator {
 		return &MySQLGenerator{}
 	case "sqlite":
 		return &SQLiteGenerator{}
+	case "sqlserver", "mssql":
+		return &SQLServerGenerator{}
+	case "cockroachdb":
+		return &PostgresGenerator{} // CockroachDB is PostgreSQL-compatible
+	case "mongodb":
+		return &MongoDBGenerator{}
 	default:
 		return &PostgresGenerator{} // default to postgres
 	}
@@ -65,7 +71,7 @@ func (g *PostgresGenerator) GenerateSelect(table string, columns []string, where
 	if where != nil && !where.IsEmpty() {
 		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
 			return fmt.Sprintf("$%d", i)
-		}, quoteIdentifier)
+		}, quoteIdentifier, "postgresql")
 		if whereSQL != "" {
 			parts = append(parts, "WHERE "+whereSQL)
 			args = append(args, whereArgs...)
@@ -232,7 +238,7 @@ func (g *PostgresGenerator) GenerateUpdate(table string, set map[string]interfac
 	if where != nil && !where.IsEmpty() {
 		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
 			return fmt.Sprintf("$%d", i)
-		}, quoteIdentifier)
+		}, quoteIdentifier, "postgresql")
 		if whereSQL != "" {
 			parts = append(parts, "WHERE "+whereSQL)
 			args = append(args, whereArgs...)
@@ -259,7 +265,7 @@ func (g *PostgresGenerator) GenerateDelete(table string, where *WhereClause) *Qu
 	if where != nil && !where.IsEmpty() {
 		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
 			return fmt.Sprintf("$%d", i)
-		}, quoteIdentifier)
+		}, quoteIdentifier, "postgresql")
 		if whereSQL != "" {
 			parts = append(parts, "WHERE "+whereSQL)
 			args = append(args, whereArgs...)
@@ -283,7 +289,7 @@ func (g *PostgresGenerator) GenerateDelete(table string, where *WhereClause) *Qu
 func (g *PostgresGenerator) buildWhere(where *WhereClause, argIndex *int) (string, []interface{}) {
 	return buildWhereRecursive(where, argIndex, func(i int) string {
 		return fmt.Sprintf("$%d", i)
-	}, quoteIdentifier)
+	}, quoteIdentifier, "postgresql")
 }
 
 // quoteIdentifier quotes an identifier for PostgreSQL
@@ -313,7 +319,7 @@ func (g *MySQLGenerator) GenerateSelect(table string, columns []string, where *W
 	if where != nil && !where.IsEmpty() {
 		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
 			return fmt.Sprintf("$%d", i)
-		}, quoteIdentifier)
+		}, quoteIdentifier, "postgresql")
 		if whereSQL != "" {
 			parts = append(parts, "WHERE "+whereSQL)
 			args = append(args, whereArgs...)
@@ -465,7 +471,7 @@ func (g *MySQLGenerator) GenerateUpdate(table string, set map[string]interface{}
 	if where != nil && !where.IsEmpty() {
 		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
 			return fmt.Sprintf("$%d", i)
-		}, quoteIdentifier)
+		}, quoteIdentifier, "postgresql")
 		if whereSQL != "" {
 			parts = append(parts, "WHERE "+whereSQL)
 			args = append(args, whereArgs...)
@@ -489,7 +495,7 @@ func (g *MySQLGenerator) GenerateDelete(table string, where *WhereClause) *Query
 	if where != nil && !where.IsEmpty() {
 		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
 			return fmt.Sprintf("$%d", i)
-		}, quoteIdentifier)
+		}, quoteIdentifier, "postgresql")
 		if whereSQL != "" {
 			parts = append(parts, "WHERE "+whereSQL)
 			args = append(args, whereArgs...)
@@ -510,7 +516,7 @@ func (g *MySQLGenerator) GenerateDelete(table string, where *WhereClause) *Query
 func (g *MySQLGenerator) buildWhere(where *WhereClause, argIndex *int) (string, []interface{}) {
 	return buildWhereRecursive(where, argIndex, func(i int) string {
 		return "?"
-	}, quoteIdentifierMySQL)
+	}, quoteIdentifierMySQL, "mysql")
 }
 
 func quoteIdentifierMySQL(name string) string {
@@ -539,7 +545,7 @@ func (g *SQLiteGenerator) GenerateSelect(table string, columns []string, where *
 	if where != nil && !where.IsEmpty() {
 		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
 			return fmt.Sprintf("$%d", i)
-		}, quoteIdentifier)
+		}, quoteIdentifier, "postgresql")
 		if whereSQL != "" {
 			parts = append(parts, "WHERE "+whereSQL)
 			args = append(args, whereArgs...)
@@ -695,7 +701,7 @@ func (g *SQLiteGenerator) GenerateUpdate(table string, set map[string]interface{
 	if where != nil && !where.IsEmpty() {
 		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
 			return fmt.Sprintf("$%d", i)
-		}, quoteIdentifier)
+		}, quoteIdentifier, "postgresql")
 		if whereSQL != "" {
 			parts = append(parts, "WHERE "+whereSQL)
 			args = append(args, whereArgs...)
@@ -719,7 +725,7 @@ func (g *SQLiteGenerator) GenerateDelete(table string, where *WhereClause) *Quer
 	if where != nil && !where.IsEmpty() {
 		whereSQL, whereArgs := buildWhereRecursive(where, &argIndex, func(i int) string {
 			return fmt.Sprintf("$%d", i)
-		}, quoteIdentifier)
+		}, quoteIdentifier, "postgresql")
 		if whereSQL != "" {
 			parts = append(parts, "WHERE "+whereSQL)
 			args = append(args, whereArgs...)
@@ -740,7 +746,7 @@ func (g *SQLiteGenerator) GenerateDelete(table string, where *WhereClause) *Quer
 func (g *SQLiteGenerator) buildWhere(where *WhereClause, argIndex *int) (string, []interface{}) {
 	return buildWhereRecursive(where, argIndex, func(i int) string {
 		return "?"
-	}, quoteIdentifierSQLite)
+	}, quoteIdentifierSQLite, "sqlite")
 }
 
 func quoteIdentifierSQLite(name string) string {

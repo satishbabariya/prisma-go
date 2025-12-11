@@ -19,6 +19,7 @@ import (
 	"github.com/satishbabariya/prisma-go/migrate/diff"
 	"github.com/satishbabariya/prisma-go/migrate/executor"
 	"github.com/satishbabariya/prisma-go/migrate/introspect"
+	"github.com/satishbabariya/prisma-go/migrate/shadow"
 	"github.com/satishbabariya/prisma-go/migrate/sqlgen"
 	psl "github.com/satishbabariya/prisma-go/psl"
 )
@@ -43,6 +44,7 @@ var (
 	migrateStatusCmd  *cobra.Command
 	migrateResetCmd   *cobra.Command
 	migrateResolveCmd *cobra.Command
+	migrateRollbackCmd *cobra.Command
 )
 
 func init() {
@@ -57,6 +59,7 @@ func init() {
 	migrateCmd.AddCommand(migrateStatusCmd)
 	migrateCmd.AddCommand(migrateResetCmd)
 	migrateCmd.AddCommand(migrateResolveCmd)
+	migrateCmd.AddCommand(migrateRollbackCmd)
 
 	rootCmd.AddCommand(migrateCmd)
 }
@@ -164,6 +167,21 @@ func initMigrateCommands() {
 			return migrateResolveCommand(argsList)
 		},
 	}
+
+	migrateRollbackCmd = &cobra.Command{
+		Use:   "rollback [migration-name]",
+		Short: "Rollback migrations",
+		Long:  "Rollback one or more migrations by executing their rollback SQL",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			steps, _ := cmd.Flags().GetInt("steps")
+			argsList := args
+			if steps > 0 {
+				argsList = append(argsList, "--steps", fmt.Sprintf("%d", steps))
+			}
+			return migrateRollbackCommand(argsList)
+		},
+	}
 }
 
 func initMigrateFlags() {
@@ -171,11 +189,13 @@ func initMigrateFlags() {
 	migrateDevCmd.Flags().Bool("apply", false, "Automatically apply migration after creation")
 
 	migrateDiffCmd.Flags().Bool("create-only", false, "Only create migration file, don't apply")
+	migrateDiffCmd.Flags().Bool("skip-shadow-db", false, "Skip using shadow database for diffing")
 	migrateDiffCmd.Flags().StringP("name", "n", "", "Migration name")
 
 	migrateApplyCmd.Flags().StringP("name", "n", "", "Migration name")
 
 	migrateResolveCmd.Flags().StringP("action", "a", "applied", "Action: applied or rolled-back")
+	migrateRollbackCmd.Flags().IntP("steps", "s", 1, "Number of migrations to rollback")
 }
 
 func printMigrateHelp() {
@@ -189,6 +209,7 @@ SUBCOMMANDS:
     diff       Compare schema to database
     apply      Apply a migration SQL file
     status     Check migration status
+    rollback   Rollback one or more migrations
     resolve    Resolve migration conflicts
     reset      Reset the database
 
@@ -329,6 +350,14 @@ func migrateDevCommand(args []string) error {
 		return err
 	}
 
+	// Generate rollback SQL
+	rollbackSQL, err := sqlGenerator.GenerateRollbackSQL(diffResult, targetSchema)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "⚠️  Failed to generate rollback SQL: %v\n", err)
+		// Don't fail, just warn
+		rollbackSQL = "-- Rollback SQL generation failed\n"
+	}
+
 	// Step 3: Save migration file
 	fmt.Println("💾 Step 3: Saving migration file...")
 	if err := os.MkdirAll("migrations", 0755); err != nil {
@@ -348,8 +377,16 @@ func migrateDevCommand(args []string) error {
 		return err
 	}
 
+	rollbackPath := fmt.Sprintf("%s/rollback.sql", migrationDir)
+	if err := os.WriteFile(rollbackPath, []byte(rollbackSQL), 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "⚠️  Failed to write rollback file: %v\n", err)
+		// Don't fail, just warn
+	}
+
 	absPath, _ := filepath.Abs(sqlPath)
 	fmt.Printf("✅ Migration SQL saved: %s\n", absPath)
+	rollbackAbsPath, _ := filepath.Abs(rollbackPath)
+	fmt.Printf("✅ Rollback SQL saved: %s\n", rollbackAbsPath)
 
 	// Step 4: Apply migration (if --apply flag)
 	if autoApply {
@@ -548,6 +585,7 @@ func migrateDiffCommand(args []string) error {
 	schemaPath := "schema.prisma"
 	createOnly := false
 	migrationName := ""
+	skipShadow := false
 
 	// Parse arguments - first non-flag arg is schema path, rest are flags
 	for i := 0; i < len(args); i++ {
@@ -556,6 +594,8 @@ func migrateDiffCommand(args []string) error {
 			// It's a flag
 			if arg == "--create-only" || arg == "--create" {
 				createOnly = true
+			} else if arg == "--skip-shadow-db" {
+				skipShadow = true
 			} else if arg == "--name" && i+1 < len(args) {
 				migrationName = args[i+1]
 				i++ // Skip next arg as it's the flag value
@@ -585,39 +625,100 @@ func migrateDiffCommand(args []string) error {
 		return fmt.Errorf("schema parsing failed")
 	}
 
-	// Get connection info
-	provider, connStr := extractConnectionInfo(parsed)
+	// Get connection info (including shadow database URL)
+	provider, connStr, shadowConnStr := extractConnectionInfoWithShadow(parsed)
 	if connStr == "" {
 		fmt.Fprintf(os.Stderr, "❌ No connection string found in schema\n")
 		return fmt.Errorf("no connection string")
 	}
 
-	driverProvider := normalizeProviderForDriver(provider)
-
-	// Connect to database
-	db, err := sql.Open(driverProvider, connStr)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Failed to connect: %v\n", err)
-		return err
-	}
-	defer db.Close()
-
 	ctx := context.Background()
+	var currentSchema *introspect.DatabaseSchema
 
-	// Introspect current database
-	introspector, err := introspect.NewIntrospector(db, provider)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Failed to create introspector: %v\n", err)
-		return err
+	// Use shadow database if not skipped
+	if !skipShadow {
+		fmt.Println("🌑 Setting up shadow database...")
+		shadowDB := shadow.NewShadowDB(provider, connStr, shadowConnStr, skipShadow)
+
+		// Create shadow database
+		if err := shadowDB.Create(ctx); err != nil {
+			fmt.Fprintf(os.Stderr, "⚠️  Failed to create shadow database: %v\n", err)
+			fmt.Fprintf(os.Stderr, "💡 Falling back to main database. Use --skip-shadow-db to skip shadow database.\n")
+			skipShadow = true
+		} else {
+			defer func() {
+				if err := shadowDB.Close(); err != nil {
+					fmt.Fprintf(os.Stderr, "⚠️  Failed to close shadow database: %v\n", err)
+				}
+			}()
+
+			// Apply existing migrations to shadow database
+			fmt.Println("📦 Applying migrations to shadow database...")
+			migrationsDir := "migrations"
+			if entries, err := os.ReadDir(migrationsDir); err == nil {
+				var migrationSQLs []string
+				for _, entry := range entries {
+					if !entry.IsDir() {
+						continue
+					}
+					migrationName := entry.Name()
+					sqlPath := filepath.Join(migrationsDir, migrationName, "migration.sql")
+					if sqlContent, err := os.ReadFile(sqlPath); err == nil {
+						migrationSQLs = append(migrationSQLs, string(sqlContent))
+					}
+				}
+
+				if err := shadowDB.ApplyMigrations(ctx, migrationSQLs); err != nil {
+					fmt.Fprintf(os.Stderr, "⚠️  Failed to apply migrations to shadow database: %v\n", err)
+					fmt.Fprintf(os.Stderr, "💡 Falling back to main database. Use --skip-shadow-db to skip shadow database.\n")
+					skipShadow = true
+				} else {
+					fmt.Printf("✅ Applied %d migrations to shadow database\n", len(migrationSQLs))
+				}
+			}
+
+			// Introspect shadow database
+			if !skipShadow {
+				currentSchema, err = shadowDB.Introspect(ctx)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "⚠️  Failed to introspect shadow database: %v\n", err)
+					fmt.Fprintf(os.Stderr, "💡 Falling back to main database. Use --skip-shadow-db to skip shadow database.\n")
+					skipShadow = true
+				} else {
+					fmt.Printf("📊 Shadow database has %d tables\n", len(currentSchema.Tables))
+				}
+			}
+		}
 	}
 
-	currentSchema, err := introspector.Introspect(ctx)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ Failed to introspect database: %v\n", err)
-		return err
-	}
+	// Fallback to main database if shadow database failed or was skipped
+	if skipShadow || currentSchema == nil {
+		fmt.Println("📊 Using main database for comparison...")
+		driverProvider := normalizeProviderForDriver(provider)
 
-	fmt.Printf("\n📊 Current database has %d tables\n", len(currentSchema.Tables))
+		// Connect to database
+		db, err := sql.Open(driverProvider, connStr)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Failed to connect: %v\n", err)
+			return err
+		}
+		defer db.Close()
+
+		// Introspect current database
+		introspector, err := introspect.NewIntrospector(db, provider)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Failed to create introspector: %v\n", err)
+			return err
+		}
+
+		currentSchema, err = introspector.Introspect(ctx)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "❌ Failed to introspect database: %v\n", err)
+			return err
+		}
+
+		fmt.Printf("\n📊 Current database has %d tables\n", len(currentSchema.Tables))
+	}
 
 	// Convert schema AST to database schema
 	targetSchema, err := converter.ConvertASTToDBSchema(parsed, provider)
@@ -977,6 +1078,169 @@ func migrateResolveCommand(args []string) error {
 		fmt.Printf("✅ Migration '%s' marked as applied (without executing SQL)\n", migrationName)
 	} else {
 		fmt.Printf("✅ Migration '%s' marked as %s\n", migrationName, action)
+	}
+
+	return nil
+}
+
+func migrateRollbackCommand(args []string) error {
+	steps := 1
+	migrationName := ""
+
+	// Parse arguments
+	for i, arg := range args {
+		if arg == "--steps" && i+1 < len(args) {
+			fmt.Sscanf(args[i+1], "%d", &steps)
+			i++ // Skip next arg
+		} else if migrationName == "" && !strings.HasPrefix(arg, "--") {
+			migrationName = arg
+		}
+	}
+
+	fmt.Println("⏪ Rolling back migrations...")
+
+	// Get connection string from environment or .env files
+	connStr := getDatabaseURLFromEnv()
+	if connStr == "" {
+		fmt.Fprintf(os.Stderr, "❌ DATABASE_URL not found in environment or .env files\n")
+		fmt.Fprintf(os.Stderr, "💡 Set DATABASE_URL environment variable or add it to .env file\n")
+		return fmt.Errorf("no connection string")
+	}
+
+	provider := detectProvider(connStr)
+	driverProvider := normalizeProviderForDriver(provider)
+
+	// Connect to database
+	db, err := sql.Open(driverProvider, connStr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to connect: %v\n", err)
+		return err
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// Setup migration executor
+	migrationExecutor := executor.NewMigrationExecutor(db, provider)
+
+	// Ensure migration table exists
+	err = migrationExecutor.EnsureMigrationTable(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to setup migration table: %v\n", err)
+		return err
+	}
+
+	// Get applied migrations
+	applied, err := migrationExecutor.GetAppliedMigrations(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Failed to get migration history: %v\n", err)
+		return err
+	}
+
+	if len(applied) == 0 {
+		fmt.Println("✅ No migrations to rollback")
+		return nil
+	}
+
+	// Filter out already rolled back migrations
+	// Note: We'll check rollback status when attempting rollback
+	var migrationsToRollback []executor.Migration
+	for _, m := range applied {
+		migrationsToRollback = append(migrationsToRollback, m)
+	}
+
+	// If specific migration name provided, rollback only that one
+	if migrationName != "" {
+		found := false
+		for _, m := range applied {
+			if m.Name == migrationName {
+				migrationsToRollback = []executor.Migration{m}
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("migration '%s' not found in applied migrations", migrationName)
+		}
+	} else {
+		// Rollback last N migrations
+		if steps > len(applied) {
+			steps = len(applied)
+		}
+		// Get last N migrations (most recent first)
+		migrationsToRollback = applied[len(applied)-steps:]
+	}
+
+	if len(migrationsToRollback) == 0 {
+		fmt.Println("✅ No migrations to rollback")
+		return nil
+	}
+
+	// Show what will be rolled back
+	fmt.Printf("\n📋 Migrations to rollback (%d):\n", len(migrationsToRollback))
+	for i := len(migrationsToRollback) - 1; i >= 0; i-- {
+		m := migrationsToRollback[i]
+		fmt.Printf("  • %s (applied at %s)\n", m.Name, m.AppliedAt.Format("2006-01-02 15:04:05"))
+	}
+
+	// Safety check: warn about production
+	fmt.Print("\n⚠️  WARNING: Rolling back migrations can cause data loss!\n")
+	fmt.Print("❓ Continue? (y/N): ")
+	var confirmation string
+	fmt.Scanln(&confirmation)
+	confirmation = strings.TrimSpace(strings.ToLower(confirmation))
+	if confirmation != "y" && confirmation != "yes" {
+		fmt.Println("✋ Aborted. No migrations rolled back.")
+		return nil
+	}
+
+	// Rollback migrations in reverse order (most recent first)
+	fmt.Println("\n⏪ Rolling back migrations...")
+	successCount := 0
+	failCount := 0
+
+	for i := len(migrationsToRollback) - 1; i >= 0; i-- {
+		m := migrationsToRollback[i]
+		fmt.Printf("\n📝 Rolling back: %s\n", m.Name)
+
+		// Read rollback SQL file
+		rollbackPath := filepath.Join("migrations", m.Name, "rollback.sql")
+		rollbackSQL, err := os.ReadFile(rollbackPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				fmt.Fprintf(os.Stderr, "  ⚠️  Rollback SQL file not found: %s\n", rollbackPath)
+				fmt.Fprintf(os.Stderr, "  💡 Skipping rollback for this migration\n")
+				failCount++
+				continue
+			}
+			fmt.Fprintf(os.Stderr, "  ❌ Failed to read rollback file: %v\n", err)
+			failCount++
+			continue
+		}
+
+		// Execute rollback
+		err = migrationExecutor.RollbackMigration(ctx, string(rollbackSQL), m.Name)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  ❌ Failed to rollback migration: %v\n", err)
+			failCount++
+			continue
+		}
+
+		fmt.Printf("  ✅ Rolled back successfully\n")
+		successCount++
+	}
+
+	fmt.Printf("\n📊 Rollback Summary:\n")
+	fmt.Printf("  ✅ Rolled back: %d\n", successCount)
+	if failCount > 0 {
+		fmt.Printf("  ❌ Failed: %d\n", failCount)
+	}
+
+	if failCount == 0 {
+		fmt.Println("\n🎉 All migrations rolled back successfully!")
+	} else {
+		fmt.Printf("\n⚠️  Some rollbacks failed. Please review errors above.\n")
+		return fmt.Errorf("%d rollback(s) failed", failCount)
 	}
 
 	return nil

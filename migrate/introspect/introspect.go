@@ -87,6 +87,10 @@ func NewIntrospector(db *sql.DB, provider string) (Introspector, error) {
 		return &MySQLIntrospector{db: db}, nil
 	case "sqlite":
 		return &SQLiteIntrospector{db: db}, nil
+	case "sqlserver", "mssql":
+		return &SQLServerIntrospector{db: db}, nil
+	case "cockroachdb":
+		return NewCockroachDBIntrospector(db), nil
 	default:
 		return nil, ErrUnsupportedProvider
 	}

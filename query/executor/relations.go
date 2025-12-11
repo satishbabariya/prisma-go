@@ -1,199 +1,222 @@
-// Package executor provides relation loading functionality.
+// Package executor provides relation metadata extraction from schema AST.
 package executor
 
 import (
-	"context"
 	"fmt"
-	"reflect"
 	"strings"
 
-	"github.com/satishbabariya/prisma-go/query/sqlgen"
+	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
 )
 
-// loadRelations loads related data for included relations
-func (e *Executor) loadRelations(ctx context.Context, table string, include map[string]bool, relations map[string]RelationMetadata, dest interface{}) error {
-	destValue := reflect.ValueOf(dest)
-	if destValue.Kind() != reflect.Ptr {
-		return fmt.Errorf("dest must be a pointer")
+// ExtractRelationMetadata extracts relation metadata from PSL schema AST
+func ExtractRelationMetadata(schemaAST *ast.SchemaAst, modelName string) (map[string]RelationMetadata, error) {
+	relations := make(map[string]RelationMetadata)
+
+	// Find the model
+	var model *ast.Model
+	for _, top := range schemaAST.Tops {
+		if m := top.AsModel(); m != nil && m.Name.Name == modelName {
+			model = m
+			break
+		}
 	}
 
-	// Handle slice of structs
-	if destValue.Elem().Kind() == reflect.Slice {
-		sliceValue := destValue.Elem()
-		for i := 0; i < sliceValue.Len(); i++ {
-			elem := sliceValue.Index(i)
-			if elem.Kind() == reflect.Ptr {
-				if elem.IsNil() {
-					// Nothing to load for this element
-					continue
+	if model == nil {
+		return relations, nil
+	}
+
+	// Get table name (default to model name in snake_case)
+	_ = toSnakeCase(modelName)
+
+	// Find all relation fields
+	for i := range model.Fields {
+		fieldPtr := &model.Fields[i]
+		if !isRelationField(fieldPtr) {
+			continue
+		}
+
+		relationName := fieldPtr.Name.Name
+		relatedModelName := getRelatedModelName(fieldPtr)
+
+		if relatedModelName == "" {
+			continue
+		}
+
+		// Find the related model
+		var relatedModel *ast.Model
+		for _, top := range schemaAST.Tops {
+			if m := top.AsModel(); m != nil && m.Name.Name == relatedModelName {
+				relatedModel = m
+				break
+			}
+		}
+
+		if relatedModel == nil {
+			continue
+		}
+
+		relatedTableName := toSnakeCase(relatedModelName)
+
+		// Parse @relation attribute
+		fields, _, _ := parseRelationAttribute(fieldPtr)
+
+		// Determine relation type
+		isList := fieldPtr.Arity.IsList()
+		isManyToMany := false
+		junctionTable := ""
+		junctionFKToSelf := ""
+		junctionFKToOther := ""
+
+		// Check if this is a many-to-many relation
+		if isList {
+			// Check if opposite field is also a list
+			for j := range relatedModel.Fields {
+				oppFieldPtr := &relatedModel.Fields[j]
+				if isRelationField(oppFieldPtr) && getRelatedModelName(oppFieldPtr) == modelName {
+					if oppFieldPtr.Arity.IsList() {
+						isManyToMany = true
+						// Generate junction table name
+						modelNames := []string{modelName, relatedModelName}
+						if strings.Compare(modelNames[0], modelNames[1]) > 0 {
+							modelNames[0], modelNames[1] = modelNames[1], modelNames[0]
+						}
+						junctionTable = fmt.Sprintf("_%s_%s", toSnakeCase(modelNames[0]), toSnakeCase(modelNames[1]))
+						junctionFKToSelf = fmt.Sprintf("%s_id", toSnakeCase(modelName))
+						junctionFKToOther = fmt.Sprintf("%s_id", toSnakeCase(relatedModelName))
+						break
+					}
 				}
-				elem = elem.Elem()
-			}
-			if err := e.loadRelationsForStruct(ctx, table, include, relations, elem); err != nil {
-				return err
 			}
 		}
-		return nil
-	}
 
-	// Handle single struct
-	structValue := destValue.Elem()
-	return e.loadRelationsForStruct(ctx, table, include, relations, structValue)
-}
+		// Determine foreign key and local key
+		var foreignKey, localKey string
 
-// loadRelationsForStruct loads relations for a single struct
-func (e *Executor) loadRelationsForStruct(ctx context.Context, table string, include map[string]bool, relations map[string]RelationMetadata, structValue reflect.Value) error {
-	if structValue.Kind() != reflect.Struct {
-		return nil
-	}
-
-	for relationName := range include {
-		relMeta, ok := relations[relationName]
-		if !ok || relMeta.ForeignKey == "" {
-			continue
-		}
-
-		// Find the relation field in the struct
-		fieldValue := structValue.FieldByName(toPascalCase(relationName))
-		if !fieldValue.IsValid() {
-			continue
-		}
-
-		// Get the ID of the current record
-		idField := structValue.FieldByName("Id")
-		if !idField.IsValid() {
-			idField = structValue.FieldByName("ID")
-		}
-		if !idField.IsValid() {
-			continue
-		}
-
-		idValue := idField.Interface()
-
-		// Load relation based on type
-		if relMeta.IsList {
-			// One-to-many: query related table where foreign_key = id
-			if err := e.loadOneToMany(ctx, relMeta, idValue, fieldValue); err != nil {
-				return fmt.Errorf("failed to load %s: %w", relationName, err)
+		if isManyToMany {
+			// Many-to-many: handled via junction table
+			foreignKey = ""
+			localKey = "id"
+		} else if isList {
+			// One-to-many: FK is on the related table
+			if len(fields) > 0 {
+				foreignKey = fields[0]
+			} else {
+				// Infer FK name: modelName + "Id"
+				foreignKey = fmt.Sprintf("%s_id", toSnakeCase(modelName))
 			}
+			localKey = "id"
 		} else {
-			// Many-to-one: query related table where id = foreign_key
-			if err := e.loadManyToOne(ctx, relMeta, structValue, fieldValue); err != nil {
-				return fmt.Errorf("failed to load %s: %w", relationName, err)
+			// Many-to-one or one-to-one: FK is on this table
+			if len(fields) > 0 {
+				foreignKey = fields[0]
+			} else {
+				// Infer FK name: relatedModelName + "Id"
+				foreignKey = fmt.Sprintf("%s_id", toSnakeCase(relatedModelName))
+			}
+			localKey = "id"
+		}
+
+		relations[relationName] = RelationMetadata{
+			RelatedTable:      relatedTableName,
+			ForeignKey:        foreignKey,
+			LocalKey:          localKey,
+			IsList:            isList,
+			IsManyToMany:       isManyToMany,
+			JunctionTable:     junctionTable,
+			JunctionFKToSelf:   junctionFKToSelf,
+			JunctionFKToOther:  junctionFKToOther,
+		}
+	}
+
+	return relations, nil
+}
+
+// isRelationField checks if a field is a relation field
+func isRelationField(field *ast.Field) bool {
+	// Check if field type is a model (not a scalar)
+	typeName := field.FieldType.TypeName()
+	scalarTypes := map[string]bool{
+		"int": true, "bigint": true, "string": true, "boolean": true, "bool": true,
+		"datetime": true, "float": true, "decimal": true, "json": true, "bytes": true,
+		"date": true, "time": true, "timestamp": true,
+	}
+	return !scalarTypes[strings.ToLower(typeName)]
+}
+
+// getRelatedModelName extracts the related model name from a relation field
+func getRelatedModelName(field *ast.Field) string {
+	typeName := field.FieldType.TypeName()
+	// Remove array brackets if present
+	typeName = strings.TrimPrefix(typeName, "[")
+	typeName = strings.TrimSuffix(typeName, "]")
+	return typeName
+}
+
+// parseRelationAttribute parses @relation attribute
+func parseRelationAttribute(field *ast.Field) (fields []string, references []string, relationName string) {
+	for _, attr := range field.Attributes {
+		if attr.Name.Name != "relation" {
+			continue
+		}
+
+		// Parse arguments
+		for _, arg := range attr.Arguments.Arguments {
+			if arg.Name == nil {
+				continue
+			}
+
+			argName := arg.Name.Name
+			if argName == "fields" {
+				// Parse array of field names
+				if arrayExpr := arg.Value.AsArray(); arrayExpr != nil {
+					for _, elem := range arrayExpr.Elements {
+						if ident, ok := elem.(ast.Identifier); ok {
+							fields = append(fields, ident.Name)
+						}
+					}
+				}
+			} else if argName == "references" {
+				// Parse array of field names
+				if arrayExpr := arg.Value.AsArray(); arrayExpr != nil {
+					for _, elem := range arrayExpr.Elements {
+						if ident, ok := elem.(ast.Identifier); ok {
+							references = append(references, ident.Name)
+						}
+					}
+				}
 			}
 		}
 	}
 
-	return nil
+	return fields, references, relationName
 }
 
-// loadOneToMany loads a one-to-many relation
-func (e *Executor) loadOneToMany(ctx context.Context, relMeta RelationMetadata, parentID interface{}, fieldValue reflect.Value) error {
-	// Build WHERE clause: foreign_key = parent_id
-	where := &sqlgen.WhereClause{
-		Conditions: []sqlgen.Condition{
-			{
-				Field:    relMeta.ForeignKey,
-				Operator: "=",
-				Value:    parentID,
-			},
-		},
-		Operator: "AND",
+// toSnakeCase converts a string to snake_case
+func toSnakeCase(s string) string {
+	var result strings.Builder
+	for i, r := range s {
+		if i > 0 && r >= 'A' && r <= 'Z' {
+			result.WriteByte('_')
+		}
+		result.WriteRune(r)
 	}
-
-	// Validate field is a slice
-	if fieldValue.Kind() != reflect.Slice {
-		return fmt.Errorf("expected slice field for one-to-many relation on %s", relMeta.RelatedTable)
-	}
-
-	// Create a slice of the same type as the field and query into it
-	resultsPtr := reflect.New(fieldValue.Type())
-	if err := e.FindMany(ctx, relMeta.RelatedTable, nil, where, nil, nil, nil, nil, resultsPtr.Interface()); err != nil {
-		return err
-	}
-
-	fieldValue.Set(resultsPtr.Elem())
-
-	return nil
+	return strings.ToLower(result.String())
 }
 
-// loadManyToOne loads a many-to-one relation
-func (e *Executor) loadManyToOne(ctx context.Context, relMeta RelationMetadata, structValue reflect.Value, fieldValue reflect.Value) error {
-	// Get foreign key value from struct
-	fkFieldName := toPascalCase(relMeta.ForeignKey)
-	fkField := structValue.FieldByName(fkFieldName)
-	if !fkField.IsValid() {
-		// Try snake_case version
-		fkField = structValue.FieldByName(toPascalCase(fromSnakeCase(relMeta.ForeignKey)))
-	}
-	if !fkField.IsValid() {
-		return fmt.Errorf("foreign key field %s not found", relMeta.ForeignKey)
-	}
-
-	fkValue := fkField.Interface()
-	if fkValue == nil {
-		return nil // Foreign key is NULL
-	}
-
-	// Build WHERE clause: id = foreign_key_value
-	where := &sqlgen.WhereClause{
-		Conditions: []sqlgen.Condition{
-			{
-				Field:    relMeta.LocalKey,
-				Operator: "=",
-				Value:    fkValue,
-			},
-		},
-		Operator: "AND",
-	}
-
-	// Query related record
-	elementType := fieldValue.Type()
-	if elementType.Kind() == reflect.Ptr {
-		elementType = elementType.Elem()
-	}
-
-	result := reflect.New(elementType).Interface()
-
-	if err := e.FindFirst(ctx, relMeta.RelatedTable, nil, where, nil, nil, result); err != nil {
-		return err
-	}
-
-	// Set the field value
-	resultValue := reflect.ValueOf(result).Elem()
-	if fieldValue.Type().Kind() == reflect.Ptr {
-		fieldValue.Set(resultValue.Addr())
-	} else {
-		fieldValue.Set(resultValue)
-	}
-
-	return nil
-}
-
-// Helper functions
+// toPascalCase converts a string to PascalCase
 func toPascalCase(s string) string {
 	if s == "" {
-		return ""
+		return s
 	}
-	words := strings.Split(s, "_")
+	parts := strings.Split(s, "_")
 	var result strings.Builder
-	for _, word := range words {
-		if len(word) > 0 {
-			result.WriteString(strings.ToUpper(word[:1]))
-			if len(word) > 1 {
-				result.WriteString(strings.ToLower(word[1:]))
-			}
+	for _, part := range parts {
+		if part == "" {
+			continue
 		}
+		first := strings.ToUpper(string(part[0]))
+		rest := strings.ToLower(part[1:])
+		result.WriteString(first + rest)
 	}
 	return result.String()
-}
-
-func fromSnakeCase(s string) string {
-	parts := strings.Split(s, "_")
-	for i, part := range parts {
-		if i > 0 {
-			parts[i] = strings.ToUpper(part[:1]) + part[1:]
-		}
-	}
-	return strings.Join(parts, "")
 }

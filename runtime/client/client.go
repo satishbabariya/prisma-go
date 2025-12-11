@@ -10,6 +10,8 @@ import (
 	_ "github.com/go-sql-driver/mysql" // MySQL driver
 	_ "github.com/lib/pq"              // PostgreSQL driver
 	_ "github.com/mattn/go-sqlite3"    // SQLite driver
+
+	"github.com/satishbabariya/prisma-go/query/cache"
 )
 
 // PrismaClient is the main database client
@@ -17,6 +19,16 @@ type PrismaClient struct {
 	db          *sql.DB
 	provider    string
 	middlewares []Middleware
+	queryCache  cache.Cache
+	cacheConfig CacheConfig
+	extensions  *ExtensionChain
+}
+
+// CacheConfig holds cache configuration
+type CacheConfig struct {
+	Enabled    bool
+	MaxSize    int
+	DefaultTTL time.Duration
 }
 
 // NewPrismaClient creates a new Prisma client
@@ -35,6 +47,13 @@ func NewPrismaClient(provider string, connectionString string) (*PrismaClient, e
 		db:          db,
 		provider:    provider,
 		middlewares: []Middleware{},
+		queryCache:  nil,
+		cacheConfig: CacheConfig{
+			Enabled:    false,
+			MaxSize:    1000,
+			DefaultTTL: 5 * time.Minute,
+		},
+		extensions: NewExtensionChain(),
 	}, nil
 }
 
@@ -44,6 +63,13 @@ func NewPrismaClientFromDB(provider string, db *sql.DB) (*PrismaClient, error) {
 		db:          db,
 		provider:    provider,
 		middlewares: []Middleware{},
+		queryCache:  nil,
+		cacheConfig: CacheConfig{
+			Enabled:    false,
+			MaxSize:    1000,
+			DefaultTTL: 5 * time.Minute,
+		},
+		extensions: NewExtensionChain(),
 	}, nil
 }
 
@@ -127,6 +153,55 @@ func (c *PrismaClient) RawExec(ctx context.Context, query string, args ...interf
 // Use adds a middleware to the client
 func (c *PrismaClient) Use(middleware Middleware) {
 	c.middlewares = append(c.middlewares, middleware)
+}
+
+// EnableCache enables query caching with the specified configuration
+func (c *PrismaClient) EnableCache(maxSize int, defaultTTL time.Duration) {
+	c.cacheConfig.Enabled = true
+	c.cacheConfig.MaxSize = maxSize
+	c.cacheConfig.DefaultTTL = defaultTTL
+	c.queryCache = cache.NewLRUCache(maxSize, defaultTTL)
+}
+
+// DisableCache disables query caching
+func (c *PrismaClient) DisableCache() {
+	c.cacheConfig.Enabled = false
+	c.queryCache = nil
+}
+
+// SetCache sets a custom cache implementation
+func (c *PrismaClient) SetCache(cacheInstance cache.Cache) {
+	c.queryCache = cacheInstance
+	if cacheInstance != nil {
+		c.cacheConfig.Enabled = true
+	} else {
+		c.cacheConfig.Enabled = false
+	}
+}
+
+// GetCacheStats returns cache statistics
+func (c *PrismaClient) GetCacheStats() cache.Stats {
+	if c.queryCache != nil {
+		return c.queryCache.GetStats()
+	}
+	return cache.Stats{}
+}
+
+// ClearCache clears all cached query results
+func (c *PrismaClient) ClearCache() {
+	if c.queryCache != nil {
+		c.queryCache.Clear()
+	}
+}
+
+// UseExtension adds an extension to the client
+func (c *PrismaClient) UseExtension(ext Extension) {
+	c.extensions.Add(ext)
+}
+
+// Extensions returns the extension chain
+func (c *PrismaClient) Extensions() *ExtensionChain {
+	return c.extensions
 }
 
 // executeWithMiddleware executes a query with middleware chain
