@@ -3,7 +3,10 @@ package lexer
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
+	"sync"
+	"time"
 	"unicode"
 
 	"github.com/satishbabariya/prisma-go/internal/debug"
@@ -56,104 +59,283 @@ type Token struct {
 	Column int
 }
 
+// Chunk represents a portion of input for parallel processing
+type Chunk struct {
+	Start     int
+	End       int
+	LineStart int
+	ColStart  int
+	ID        int
+}
+
+// ChunkResult represents the result of processing a chunk
+type ChunkResult struct {
+	Tokens  []Token
+	Error   error
+	ChunkID int
+	Metrics ChunkMetrics
+}
+
+// ChunkMetrics provides performance metrics for chunk processing
+type ChunkMetrics struct {
+	Duration    time.Duration
+	TokenCount  int
+	CharsPerSec float64
+}
+
 // Lexer tokenizes Prisma schema input.
 type Lexer struct {
-	input  string
-	pos    int
-	line   int
-	column int
-	tokens []Token
+	input           string
+	pos             int
+	line            int
+	column          int
+	tokens          []Token
+	parallelEnabled bool
+	workerCount     int
 }
 
 // NewLexer creates a new lexer for the given input.
 func NewLexer(input string) *Lexer {
 	debug.Debug("Creating new lexer", "input_length", len(input))
-	return &Lexer{
-		input:  input,
-		pos:    0,
-		line:   1,
-		column: 1,
-		tokens: make([]Token, 0),
+	parallelEnabled := len(input) > 10000 // Auto-enable for large files
+	workerCount := runtime.NumCPU()
+	if workerCount > 8 {
+		workerCount = 8 // Cap workers for efficiency
 	}
+
+	return &Lexer{
+		input:           input,
+		pos:             0,
+		line:            1,
+		column:          1,
+		tokens:          make([]Token, 0),
+		parallelEnabled: parallelEnabled,
+		workerCount:     workerCount,
+	}
+}
+
+// splitIntoChunks divides input into optimal chunks for parallel processing
+func (l *Lexer) splitIntoChunks() []Chunk {
+	inputSize := len(l.input)
+	if inputSize <= 10000 {
+		return nil // Small files don't need chunking
+	}
+
+	// Calculate optimal chunk size based on worker count
+	optimalSize := inputSize / l.workerCount
+	if optimalSize > 50000 {
+		optimalSize = 50000 // Cap chunk size for efficiency
+	}
+	if optimalSize < 5000 {
+		optimalSize = 5000 // Minimum viable chunk size
+	}
+
+	var chunks []Chunk
+	for i := 0; i < inputSize; i += optimalSize {
+		end := i + optimalSize
+		if end > inputSize {
+			end = inputSize
+		}
+
+		// Prefer line boundaries for better error reporting
+		lineBreak := strings.LastIndexByte(l.input[i:end], '\n')
+		if lineBreak != -1 && (lineBreak-i) < optimalSize/2 {
+			end = i + lineBreak + 1
+		}
+
+		chunks = append(chunks, Chunk{
+			Start:     i,
+			End:       end,
+			LineStart: l.lineNumberAt(i),
+			ColStart:  l.columnNumberAt(i),
+			ID:        len(chunks),
+		})
+	}
+
+	return chunks
+}
+
+// lineNumberAt calculates line number for a given position
+func (l *Lexer) lineNumberAt(pos int) int {
+	line := 1
+	for i := 0; i < pos; i++ {
+		if l.input[i] == '\n' {
+			line++
+		}
+	}
+	return line
+}
+
+// columnNumberAt calculates column number for a given position
+func (l *Lexer) columnNumberAt(pos int) int {
+	col := 1
+	lastNewline := -1
+	for i := 0; i < pos; i++ {
+		if l.input[i] == '\n' {
+			lastNewline = i
+			col = 1
+		} else if lastNewline != -1 {
+			col++
+		}
+	}
+	return col
 }
 
 // Tokenize converts the input string into a slice of tokens.
 func (l *Lexer) Tokenize() ([]Token, error) {
 	debug.Debug("Starting tokenization", "input_length", len(l.input))
 
+	if l.parallelEnabled {
+		return l.tokenizeParallel()
+	}
+
+	return l.tokenizeSequential()
+}
+
+// tokenizeSequential processes input sequentially (original implementation)
+func (l *Lexer) tokenizeSequential() ([]Token, error) {
 	for l.pos < len(l.input) {
 		char := rune(l.input[l.pos])
 
 		switch {
 		case unicode.IsSpace(char):
-			debug.Debug("Tokenizing whitespace", "char", string(char), "line", l.line, "column", l.column)
 			l.advance()
 		case char == '/' && l.peek() == '/':
-			debug.Debug("Tokenizing line comment", "line", l.line, "column", l.column)
 			l.tokenizeComment()
 		case char == '/' && l.peek() == '*':
-			debug.Debug("Tokenizing block comment", "line", l.line, "column", l.column)
 			l.tokenizeBlockComment()
 		case char == '"':
-			debug.Debug("Tokenizing string", "line", l.line, "column", l.column)
 			l.tokenizeString()
 		case unicode.IsLetter(char) || char == '_':
-			debug.Debug("Tokenizing identifier", "char", string(char), "line", l.line, "column", l.column)
 			l.tokenizeIdentifier()
 		case unicode.IsDigit(char):
-			debug.Debug("Tokenizing number", "char", string(char), "line", l.line, "column", l.column)
 			l.tokenizeNumber()
 		case char == '{':
-			debug.Debug("Tokenizing left brace", "line", l.line, "column", l.column)
 			l.addToken(TokenLBrace, "{")
 		case char == '}':
-			debug.Debug("Tokenizing right brace", "line", l.line, "column", l.column)
 			l.addToken(TokenRBrace, "}")
 		case char == '[':
-			debug.Debug("Tokenizing left bracket", "line", l.line, "column", l.column)
 			l.addToken(TokenLBracket, "[")
 		case char == ']':
-			debug.Debug("Tokenizing right bracket", "line", l.line, "column", l.column)
 			l.addToken(TokenRBracket, "]")
 		case char == '(':
-			debug.Debug("Tokenizing left paren", "line", l.line, "column", l.column)
 			l.addToken(TokenLParen, "(")
 		case char == ')':
-			debug.Debug("Tokenizing right paren", "line", l.line, "column", l.column)
 			l.addToken(TokenRParen, ")")
 		case char == '=':
-			debug.Debug("Tokenizing equals", "line", l.line, "column", l.column)
 			l.addToken(TokenEquals, "=")
 		case char == ',':
-			debug.Debug("Tokenizing comma", "line", l.line, "column", l.column)
 			l.addToken(TokenComma, ",")
 		case char == '?':
-			debug.Debug("Tokenizing question mark", "line", l.line, "column", l.column)
 			l.addToken(TokenQuestion, "?")
 		case char == '@':
-			debug.Debug("Tokenizing at symbol", "line", l.line, "column", l.column)
 			l.addToken(TokenAt, "@")
 		case char == ':':
-			debug.Debug("Tokenizing colon", "line", l.line, "column", l.column)
 			l.addToken(TokenColon, ":")
 		case char == '.':
-			debug.Debug("Tokenizing dot", "line", l.line, "column", l.column)
 			l.addToken(TokenDot, ".")
 		case char == '|':
-			debug.Debug("Tokenizing pipe", "line", l.line, "column", l.column)
 			l.addToken(TokenPipe, "|")
 		case char == '!':
-			debug.Debug("Tokenizing exclamation", "line", l.line, "column", l.column)
 			l.addToken(TokenExclamation, "!")
 		default:
-			debug.Error("Unexpected character during tokenization", "char", string(char), "line", l.line, "column", l.column)
 			return nil, fmt.Errorf("unexpected character '%c' at line %d, column %d", char, l.line, l.column)
 		}
 	}
 
-	debug.Debug("Tokenization completed", "token_count", len(l.tokens))
 	l.addToken(TokenEOF, "")
 	return l.tokens, nil
+}
+
+// tokenizeParallel processes input using multiple workers
+func (l *Lexer) tokenizeParallel() ([]Token, error) {
+	chunks := l.splitIntoChunks()
+	if chunks == nil {
+		return l.tokenizeSequential()
+	}
+
+	debug.Debug("Processing chunks in parallel", "chunk_count", len(chunks), "workers", l.workerCount)
+
+	// Create channels for work distribution
+	jobChan := make(chan Chunk, len(chunks))
+	resultChan := make(chan ChunkResult, len(chunks))
+	var wg sync.WaitGroup
+
+	// Start workers
+	for i := 0; i < l.workerCount; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for chunk := range jobChan {
+				result := l.processChunk(chunk)
+				result.ChunkID = chunk.ID
+				resultChan <- result
+			}
+		}(i)
+	}
+
+	// Distribute chunks
+	go func() {
+		defer close(jobChan)
+		for _, chunk := range chunks {
+			jobChan <- chunk
+		}
+	}()
+
+	// Collect results
+	results := make([]ChunkResult, len(chunks))
+	completed := 0
+	for result := range resultChan {
+		results[result.ChunkID] = result
+		completed++
+		if completed == len(chunks) {
+			break
+		}
+	}
+
+	wg.Wait()
+
+	// Merge tokens in order
+	var allTokens []Token
+	for _, result := range results {
+		if result.Error != nil {
+			return nil, result.Error
+		}
+		allTokens = append(allTokens, result.Tokens...)
+	}
+
+	debug.Debug("Parallel tokenization completed", "total_tokens", len(allTokens))
+	l.addToken(TokenEOF, "")
+	return allTokens, nil
+}
+
+// processChunk processes a single chunk of input
+func (l *Lexer) processChunk(chunk Chunk) ChunkResult {
+	startTime := time.Now()
+
+	// Create chunk-specific lexer
+	chunkLexer := &Lexer{
+		input:  l.input[chunk.Start:chunk.End],
+		pos:    0,
+		line:   chunk.LineStart,
+		column: chunk.ColStart,
+		tokens: make([]Token, 0),
+	}
+
+	tokens, err := chunkLexer.tokenizeSequential()
+
+	duration := time.Since(startTime)
+	charsPerSec := float64(chunk.End-chunk.Start) / duration.Seconds()
+
+	return ChunkResult{
+		Tokens: tokens,
+		Error:  err,
+		Metrics: ChunkMetrics{
+			Duration:    duration,
+			TokenCount:  len(tokens),
+			CharsPerSec: charsPerSec,
+		},
+	}
 }
 
 func (l *Lexer) advance() {
@@ -283,30 +465,23 @@ func (l *Lexer) tokenizeIdentifier() {
 	switch strings.ToLower(value) {
 	case "generator":
 		tokenType = TokenGenerator
-		debug.Debug("Tokenized keyword", "type", "generator", "value", value, "line", l.line, "column", l.column)
 	case "datasource":
 		tokenType = TokenDatasource
-		debug.Debug("Tokenized keyword", "type", "datasource", "value", value, "line", l.line, "column", l.column)
 	case "model":
 		tokenType = TokenModel
-		debug.Debug("Tokenized keyword", "type", "model", "value", value, "line", l.line, "column", l.column)
 	case "enum":
 		tokenType = TokenEnum
-		debug.Debug("Tokenized keyword", "type", "enum", "value", value, "line", l.line, "column", l.column)
 	case "type":
 		tokenType = TokenTypeKeyword
-		debug.Debug("Tokenized keyword", "type", "type", "value", value, "line", l.line, "column", l.column)
 	case "view":
 		tokenType = TokenView
-		debug.Debug("Tokenized keyword", "type", "view", "value", value, "line", l.line, "column", l.column)
 	case "true", "false":
 		tokenType = TokenBoolean
-		debug.Debug("Tokenized boolean literal", "value", value, "line", l.line, "column", l.column)
 	default:
 		tokenType = TokenIdentifier
-		debug.Debug("Tokenized identifier", "value", value, "line", l.line, "column", l.column)
 	}
 
+	// Add token without advancing position (already advanced)
 	l.tokens = append(l.tokens, Token{Type: tokenType, Value: value, Line: l.line, Column: l.column - len(value)})
 }
 
@@ -336,5 +511,7 @@ func (l *Lexer) tokenizeNumber() {
 
 	value := l.input[start:l.pos]
 	debug.Debug("Tokenized number", "value", value, "line", l.line, "column", l.column, "has_decimal", hasDecimal)
+
+	// Add token without advancing position (already advanced)
 	l.tokens = append(l.tokens, Token{Type: TokenNumber, Value: value, Line: l.line, Column: l.column - len(value)})
 }
