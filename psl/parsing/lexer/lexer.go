@@ -307,7 +307,7 @@ func (l *Lexer) tokenizeIdentifier() {
 		debug.Debug("Tokenized identifier", "value", value, "line", l.line, "column", l.column)
 	}
 
-	l.tokens = append(l.tokens, Token{Type: tokenType, Value: value, Line: l.line, Column: l.column})
+	l.tokens = append(l.tokens, Token{Type: tokenType, Value: value, Line: l.line, Column: l.column - len(value)})
 }
 
 func (l *Lexer) tokenizeNumber() {
@@ -336,5 +336,5 @@ func (l *Lexer) tokenizeNumber() {
 
 	value := l.input[start:l.pos]
 	debug.Debug("Tokenized number", "value", value, "line", l.line, "column", l.column, "has_decimal", hasDecimal)
-	l.tokens = append(l.tokens, Token{Type: TokenNumber, Value: value, Line: l.line, Column: l.column})
+	l.tokens = append(l.tokens, Token{Type: TokenNumber, Value: value, Line: l.line, Column: l.column - len(value)})
 }

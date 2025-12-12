@@ -364,10 +364,13 @@ func writeASTFile(file *ast.File, filePath string) error {
 	defer f.Close()
 
 	// Format and write the file
+	debug.Debug("Formatting AST", "decl_count", len(file.Decls))
+	formatStart := time.Now()
 	fset := token.NewFileSet()
 	if err := format.Node(f, fset, file); err != nil {
 		return fmt.Errorf("failed to format file: %w", err)
 	}
+	debug.Debug("AST formatted successfully", "elapsed", time.Since(formatStart))
 
 	return nil
 }
@@ -3093,9 +3096,16 @@ func GenerateClientFile(models []ModelInfo, provider string, outputDir string) e
 		file.Decls = append(file.Decls, modelDecls...)
 	}
 
-	debug.Debug("Client code generation completed", "total_elapsed", time.Since(startTime), "models", len(models))
+	debug.Debug("Client code generation completed", "total_elapsed", time.Since(startTime), "models", len(models), "total_decls", len(file.Decls))
 
 	// Write AST file to disk
 	filePath := filepath.Join(outputDir, "client.go")
-	return writeASTFile(file, filePath)
+	debug.Debug("Writing AST file to disk", "path", filePath, "decl_count", len(file.Decls))
+	writeStart := time.Now()
+	err := writeASTFile(file, filePath)
+	if err != nil {
+		return err
+	}
+	debug.Debug("AST file written successfully", "elapsed", time.Since(writeStart))
+	return nil
 }
