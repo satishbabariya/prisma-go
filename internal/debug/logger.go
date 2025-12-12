@@ -95,4 +95,3 @@ func Logger() *slog.Logger {
 	defer mu.RUnlock()
 	return logger
 }
-

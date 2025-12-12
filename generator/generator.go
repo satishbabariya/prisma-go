@@ -4,8 +4,8 @@ package generator
 import (
 	"fmt"
 
-	"github.com/satishbabariya/prisma-go/internal/debug"
 	"github.com/satishbabariya/prisma-go/generator/codegen"
+	"github.com/satishbabariya/prisma-go/internal/debug"
 	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
 )
 

@@ -7,9 +7,9 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/satishbabariya/prisma-go/internal/debug"
 	"github.com/satishbabariya/prisma-go/cli/internal/ui"
 	"github.com/satishbabariya/prisma-go/cli/internal/version"
+	"github.com/satishbabariya/prisma-go/internal/debug"
 )
 
 var (

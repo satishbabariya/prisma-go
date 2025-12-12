@@ -130,7 +130,7 @@ func (p *Parser) parseTopLevelWithComment(docComment *Comment) Top {
 				}
 			}
 		}
-		
+
 		// Check if this might be an arbitrary block (identifier { ... })
 		if token.Type == lexer.TokenIdentifier {
 			peekPos := p.pos + 1
@@ -158,7 +158,7 @@ func (p *Parser) parseTopLevelWithComment(docComment *Comment) Top {
 				return nil
 			}
 		}
-		
+
 		// Generic catch-all for invalid lines
 		p.error("This line is invalid. It does not start with any known Prisma schema keyword.")
 		// Advance past the invalid token to continue parsing
@@ -670,13 +670,13 @@ func (p *Parser) parseField() *Field {
 func (p *Parser) parseFieldWithComment(docComment *Comment) *Field {
 	name := p.expect(lexer.TokenIdentifier)
 	debug.Debug("Parsing field", "name", name.Value)
-	
+
 	// Check for legacy colon (:)
 	if p.check(lexer.TokenColon) {
 		p.error("Field declarations don't require a `:`.")
 		p.advance() // consume the colon
 	}
-	
+
 	// Field type is optional (for autocompletion), but we'll try to parse it
 	var fieldType FieldType
 	var arity FieldArity
@@ -740,7 +740,7 @@ func (p *Parser) parseFieldWithComment(docComment *Comment) *Field {
 func (p *Parser) parseFieldType() (FieldType, FieldArity) {
 	// Parse field type following Rust order:
 	// unsupported_optional_list_type | list_type | optional_type | legacy_required_type | legacy_list_type | base_type
-	
+
 	// Check for unsupported_optional_list_type (Type[]?)
 	// This must be checked first before checking list_type
 	if p.check(lexer.TokenIdentifier) {
@@ -775,7 +775,7 @@ func (p *Parser) parseFieldType() (FieldType, FieldArity) {
 			}
 		}
 	}
-	
+
 	// Check for list_type (Type[])
 	if p.check(lexer.TokenIdentifier) {
 		peekPos := p.pos + 1
@@ -799,7 +799,7 @@ func (p *Parser) parseFieldType() (FieldType, FieldArity) {
 			}
 		}
 	}
-	
+
 	// Check for optional_type (Type?)
 	if p.check(lexer.TokenIdentifier) {
 		peekPos := p.pos + 1
@@ -816,7 +816,7 @@ func (p *Parser) parseFieldType() (FieldType, FieldArity) {
 			}, Optional
 		}
 	}
-	
+
 	// Check for legacy_required_type (Type!)
 	if p.check(lexer.TokenIdentifier) {
 		peekPos := p.pos + 1
@@ -834,7 +834,7 @@ func (p *Parser) parseFieldType() (FieldType, FieldArity) {
 			}, Required
 		}
 	}
-	
+
 	// Check for legacy_list_type ([Type])
 	if p.check(lexer.TokenLBracket) {
 		peekPos := p.pos + 1
@@ -1280,7 +1280,7 @@ func (p *Parser) parseFunctionCall() Expression {
 	// Parse path (can be dotted identifier like "db.VarChar")
 	nameToken := p.expect(lexer.TokenIdentifier)
 	functionName := nameToken.Value
-	
+
 	// Handle dotted paths (e.g., db.VarChar)
 	for p.check(lexer.TokenDot) {
 		p.advance() // consume dot
@@ -1292,7 +1292,7 @@ func (p *Parser) parseFunctionCall() Expression {
 			break
 		}
 	}
-	
+
 	debug.Debug("Parsing function call", "name", functionName)
 	p.expect(lexer.TokenLParen)
 
