@@ -39,6 +39,17 @@ func (a FieldArity) IsOptional() bool { return a == FieldArityOptional }
 // IsList returns true if the field is a list.
 func (a FieldArity) IsList() bool { return a == FieldArityList }
 
+// UnsupportedType represents an Unsupported("type") field type.
+type UnsupportedType struct {
+	Pos  lexer.Position
+	Type string `@String`
+}
+
+// String returns the string representation of the unsupported type.
+func (u *UnsupportedType) String() string {
+	return fmt.Sprintf("Unsupported(%q)", u.Type)
+}
+
 // FieldType represents the type of a field.
 type FieldType struct {
 	Pos         lexer.Position
