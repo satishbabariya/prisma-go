@@ -71,7 +71,7 @@ func (n *NumericValue) String() string { return n.Value }
 // ConstantValue represents a constant/identifier value (true, false, enum values, field references).
 type ConstantValue struct {
 	Pos   lexer.Position
-	Value string `@Ident`
+	Value string `(@Ident | @Keyword)`
 }
 
 func (c *ConstantValue) isExpression() {}
@@ -85,7 +85,7 @@ func (c *ConstantValue) String() string { return c.Value }
 // PathValue represents a dotted path like "db.User" or just "User".
 type PathValue struct {
 	Pos   lexer.Position
-	Parts []string `@Ident ("." @Ident)*`
+	Parts []string `(@Ident | @Keyword) ("." (@Ident | @Keyword))*`
 }
 
 func (p *PathValue) isExpression() {}

@@ -97,7 +97,7 @@ func convertFields(fields []*v2.Field) []ast.Field {
 	res := make([]ast.Field, len(fields))
 	for i, f := range fields {
 		res[i] = ast.Field{
-			Name:          convertIdentifier(f.Name),
+			Name:          convertFieldName(f.Name),
 			FieldType:     convertFieldType(f.Type),
 			Arity:         convertArity(f.Arity),
 			Attributes:    convertAttributes(f.Attributes),
@@ -280,6 +280,16 @@ func convertIdentifier(id *v2.Identifier) ast.Identifier {
 	return ast.Identifier{
 		Name:    id.Name,
 		ASTSpan: convertPosToSpan(id.Pos, len(id.Name)),
+	}
+}
+
+func convertFieldName(fn *v2.FieldName) ast.Identifier {
+	if fn == nil {
+		return ast.Identifier{}
+	}
+	return ast.Identifier{
+		Name:    fn.Name,
+		ASTSpan: convertPosToSpan(fn.Pos, len(fn.Name)),
 	}
 }
 

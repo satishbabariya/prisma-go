@@ -63,7 +63,7 @@ func (f *FieldType) IsUnsupported() bool {
 type Field struct {
 	Pos           lexer.Position
 	Documentation *CommentBlock `@@?`
-	Name          *Identifier   `@@`
+	Name          *FieldName    `@@`
 	Colon         *string       `@":"?` // Legacy colon syntax
 	Type          *FieldType    `@@?`
 	Arity         FieldArity    // Determined during parsing
@@ -77,7 +77,7 @@ func (f *Field) GetName() string {
 	if f.Name == nil {
 		return ""
 	}
-	return f.Name.Name
+	return f.Name.String()
 }
 
 // GetTypeName returns the type name.
