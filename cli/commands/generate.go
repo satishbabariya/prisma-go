@@ -106,7 +106,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 			for _, prop := range datasource.Properties {
 				if prop.Name.Name == "provider" {
 					if prop.Value != nil {
-						if value, _ := (*prop.Value).AsStringValue(); value != nil {
+						if value, _ := prop.Value.AsStringValue(); value != nil {
 							provider = value.Value
 							debug.Debug("Extracted provider", "provider", provider)
 						}
@@ -119,7 +119,7 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 			for _, prop := range gen.Properties {
 				if prop.Name.Name == "output" {
 					if prop.Value != nil {
-						if value, _ := (*prop.Value).AsStringValue(); value != nil {
+						if value, _ := prop.Value.AsStringValue(); value != nil {
 							outputDir = value.Value
 							// Resolve relative paths relative to schema file directory
 							if !filepath.IsAbs(outputDir) {
@@ -235,7 +235,7 @@ func runGenerateWatch(schemaPath string, generateInitially bool) error {
 				for _, prop := range datasource.Properties {
 					if prop.Name.Name == "provider" {
 						if prop.Value != nil {
-							if value, _ := (*prop.Value).AsStringValue(); value != nil {
+							if value, _ := prop.Value.AsStringValue(); value != nil {
 								provider = value.Value
 							}
 						}
@@ -246,7 +246,7 @@ func runGenerateWatch(schemaPath string, generateInitially bool) error {
 				for _, prop := range gen.Properties {
 					if prop.Name.Name == "output" {
 						if prop.Value != nil {
-							if value, _ := (*prop.Value).AsStringValue(); value != nil {
+							if value, _ := prop.Value.AsStringValue(); value != nil {
 								outputDir = value.Value
 								// Resolve relative paths relative to schema file directory
 								if !filepath.IsAbs(outputDir) {

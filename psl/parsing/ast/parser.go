@@ -213,10 +213,10 @@ func (p *Parser) parseGeneratorWithComment(docComment *Comment) Top {
 	p.expect(lexer.TokenRBrace)
 
 	generator := &GeneratorConfig{
-		Name:          Identifier{Name: name.Value, span: p.spanForToken(name)},
+		Name:          Identifier{Name: name.Value, ASTSpan: p.spanForToken(name)},
 		Properties:    properties,
 		Documentation: docComment,
-		span:          p.spanFrom(name),
+		ASTSpan:       p.spanFrom(name),
 	}
 	debug.Debug("Completed parsing generator", "property_count", len(properties))
 	return generator
@@ -269,11 +269,11 @@ func (p *Parser) parseDatasourceWithComment(docComment *Comment) Top {
 	)
 
 	datasource := &SourceConfig{
-		Name:          Identifier{Name: name.Value, span: p.spanForToken(name)},
+		Name:          Identifier{Name: name.Value, ASTSpan: p.spanForToken(name)},
 		Properties:    properties,
 		Documentation: docComment,
 		InnerSpan:     innerSpan,
-		span:          p.spanFrom(name),
+		ASTSpan:       p.spanFrom(name),
 	}
 	debug.Debug("Completed parsing datasource", "property_count", len(properties))
 	return datasource
@@ -367,11 +367,11 @@ func (p *Parser) parseModelWithComment(docComment *Comment) Top {
 	p.expect(lexer.TokenRBrace)
 
 	model := &Model{
-		Name:          Identifier{Name: name.Value, span: p.spanForToken(name)},
+		Name:          Identifier{Name: name.Value, ASTSpan: p.spanForToken(name)},
 		Fields:        fields,
 		Attributes:    attributes,
 		Documentation: docComment,
-		span:          p.spanFrom(name),
+		ASTSpan:       p.spanFrom(name),
 	}
 	debug.Debug("Completed parsing model", "field_count", len(fields), "attribute_count", len(attributes))
 	return model
@@ -454,12 +454,12 @@ func (p *Parser) parseViewWithComment(docComment *Comment) Top {
 	p.expect(lexer.TokenRBrace)
 
 	view := &Model{
-		Name:          Identifier{Name: name.Value, span: p.spanForToken(name)},
+		Name:          Identifier{Name: name.Value, ASTSpan: p.spanForToken(name)},
 		Fields:        fields,
 		Attributes:    attributes,
 		IsView:        true,
 		Documentation: docComment,
-		span:          p.spanFrom(name),
+		ASTSpan:       p.spanFrom(name),
 	}
 	debug.Debug("Completed parsing view", "field_count", len(fields), "attribute_count", len(attributes))
 	return view
@@ -540,12 +540,12 @@ func (p *Parser) parseEnumWithComment(docComment *Comment) Top {
 	)
 
 	return &Enum{
-		Name:          Identifier{Name: name.Value, span: p.spanForToken(name)},
+		Name:          Identifier{Name: name.Value, ASTSpan: p.spanForToken(name)},
 		Values:        values,
 		Attributes:    attributes,
 		Documentation: docComment,
 		InnerSpan:     innerSpan,
-		span:          p.spanFrom(name),
+		ASTSpan:       p.spanFrom(name),
 	}
 }
 
@@ -654,12 +654,12 @@ func (p *Parser) parseCompositeTypeWithComment(docComment *Comment) Top {
 	)
 
 	return &CompositeType{
-		Name:          Identifier{Name: name.Value, span: p.spanForToken(name)},
+		Name:          Identifier{Name: name.Value, ASTSpan: p.spanForToken(name)},
 		Fields:        fields,
 		Attributes:    attributes,
 		Documentation: docComment,
 		InnerSpan:     innerSpan,
-		span:          p.spanFrom(name),
+		ASTSpan:       p.spanFrom(name),
 	}
 }
 
@@ -686,8 +686,8 @@ func (p *Parser) parseFieldWithComment(docComment *Comment) *Field {
 		// Missing field type - this is invalid but we parse it for better error messages
 		p.error("This field declaration is invalid. It is either missing a name or a type.")
 		fieldType = FieldType{
-			Type: UnsupportedFieldType{TypeName: ""},
-			span: diagnostics.NewSpan(0, 0, diagnostics.FileIDZero),
+			Type:    UnsupportedFieldType{TypeName: ""},
+			ASTSpan: diagnostics.NewSpan(0, 0, diagnostics.FileIDZero),
 		}
 		arity = Required
 	}
@@ -726,12 +726,12 @@ func (p *Parser) parseFieldWithComment(docComment *Comment) *Field {
 	}
 
 	field := &Field{
-		Name:          Identifier{Name: name.Value, span: p.spanForToken(name)},
+		Name:          Identifier{Name: name.Value, ASTSpan: p.spanForToken(name)},
 		FieldType:     fieldType,
 		Arity:         arity,
 		Attributes:    attributes,
 		Documentation: finalComment,
-		span:          p.spanFrom(name),
+		ASTSpan:       p.spanFrom(name),
 	}
 	debug.Debug("Completed parsing field", "arity", arity, "attribute_count", len(attributes))
 	return field
@@ -768,8 +768,8 @@ func (p *Parser) parseFieldType() (FieldType, FieldArity) {
 					p.expect(lexer.TokenRBracket)
 					p.expect(lexer.TokenQuestion)
 					return FieldType{
-						Type: SupportedFieldType{Identifier: Identifier{Name: typeNameToken.Value, span: p.spanForToken(typeNameToken)}},
-						span: p.spanForToken(typeNameToken),
+						Type:    SupportedFieldType{Identifier: Identifier{Name: typeNameToken.Value, ASTSpan: p.spanForToken(typeNameToken)}},
+						ASTSpan: p.spanForToken(typeNameToken),
 					}, List
 				}
 			}
@@ -793,8 +793,8 @@ func (p *Parser) parseFieldType() (FieldType, FieldArity) {
 				p.expect(lexer.TokenLBracket)
 				p.expect(lexer.TokenRBracket)
 				return FieldType{
-					Type: SupportedFieldType{Identifier: Identifier{Name: typeNameToken.Value, span: p.spanForToken(typeNameToken)}},
-					span: p.spanForToken(typeNameToken),
+					Type:    SupportedFieldType{Identifier: Identifier{Name: typeNameToken.Value, ASTSpan: p.spanForToken(typeNameToken)}},
+					ASTSpan: p.spanForToken(typeNameToken),
 				}, List
 			}
 		}
@@ -811,8 +811,8 @@ func (p *Parser) parseFieldType() (FieldType, FieldArity) {
 			typeNameToken := p.expect(lexer.TokenIdentifier)
 			p.expect(lexer.TokenQuestion)
 			return FieldType{
-				Type: SupportedFieldType{Identifier: Identifier{Name: typeNameToken.Value, span: p.spanForToken(typeNameToken)}},
-				span: p.spanForToken(typeNameToken),
+				Type:    SupportedFieldType{Identifier: Identifier{Name: typeNameToken.Value, ASTSpan: p.spanForToken(typeNameToken)}},
+				ASTSpan: p.spanForToken(typeNameToken),
 			}, Optional
 		}
 	}
@@ -829,8 +829,8 @@ func (p *Parser) parseFieldType() (FieldType, FieldArity) {
 			typeNameToken := p.expect(lexer.TokenIdentifier)
 			p.expect(lexer.TokenExclamation)
 			return FieldType{
-				Type: SupportedFieldType{Identifier: Identifier{Name: typeNameToken.Value, span: p.spanForToken(typeNameToken)}},
-				span: p.spanForToken(typeNameToken),
+				Type:    SupportedFieldType{Identifier: Identifier{Name: typeNameToken.Value, ASTSpan: p.spanForToken(typeNameToken)}},
+				ASTSpan: p.spanForToken(typeNameToken),
 			}, Required
 		}
 	}
@@ -859,8 +859,8 @@ func (p *Parser) parseFieldType() (FieldType, FieldArity) {
 					typeNameToken := p.expect(lexer.TokenIdentifier)
 					p.expect(lexer.TokenRBracket)
 					return FieldType{
-						Type: SupportedFieldType{Identifier: Identifier{Name: typeNameToken.Value, span: p.spanForToken(typeNameToken)}},
-						span: p.spanForToken(typeNameToken),
+						Type:    SupportedFieldType{Identifier: Identifier{Name: typeNameToken.Value, ASTSpan: p.spanForToken(typeNameToken)}},
+						ASTSpan: p.spanForToken(typeNameToken),
 					}, List
 				}
 			}
@@ -885,15 +885,15 @@ func (p *Parser) parseFieldType() (FieldType, FieldArity) {
 				// Parse the string literal
 				parsedValue := p.parseStringLiteral(stringToken.Value)
 				return FieldType{
-					Type: UnsupportedFieldType{TypeName: parsedValue},
-					span: p.spanForToken(unsupportedToken),
+					Type:    UnsupportedFieldType{TypeName: parsedValue},
+					ASTSpan: p.spanForToken(unsupportedToken),
 				}, Required
 			} else {
 				p.error("Expected string literal in Unsupported() type")
 				p.expect(lexer.TokenRParen)
 				return FieldType{
-					Type: UnsupportedFieldType{TypeName: ""},
-					span: p.spanForToken(unsupportedToken),
+					Type:    UnsupportedFieldType{TypeName: ""},
+					ASTSpan: p.spanForToken(unsupportedToken),
 				}, Required
 			}
 		}
@@ -901,11 +901,11 @@ func (p *Parser) parseFieldType() (FieldType, FieldArity) {
 
 	// Parse regular identifier (base type)
 	typeNameToken := p.expect(lexer.TokenIdentifier)
-	typeName := Identifier{Name: typeNameToken.Value, span: p.spanForToken(typeNameToken)}
+	typeName := Identifier{Name: typeNameToken.Value, ASTSpan: p.spanForToken(typeNameToken)}
 
 	fieldType := FieldType{
-		Type: SupportedFieldType{Identifier: typeName},
-		span: p.spanForToken(typeNameToken),
+		Type:    SupportedFieldType{Identifier: typeName},
+		ASTSpan: p.spanForToken(typeNameToken),
 	}
 	debug.Debug("Parsed field type", "type_name", typeName.Name, "arity", Required)
 	return fieldType, Required
@@ -950,10 +950,10 @@ func (p *Parser) parseEnumValueWithComment(docComment *Comment) *EnumValue {
 	}
 
 	return &EnumValue{
-		Name:          Identifier{Name: name.Value, span: p.spanForToken(name)},
+		Name:          Identifier{Name: name.Value, ASTSpan: p.spanForToken(name)},
 		Attributes:    attributes,
 		Documentation: finalComment,
-		span:          p.spanForToken(name),
+		ASTSpan:       p.spanForToken(name),
 	}
 }
 
@@ -1005,8 +1005,8 @@ func (p *Parser) parseAttributeAfterAt() *Attribute {
 
 	// Create the name identifier with the full name (potentially dotted)
 	name := Identifier{
-		Name: attributeName,
-		span: p.spanForToken(nameToken),
+		Name:    attributeName,
+		ASTSpan: p.spanForToken(nameToken),
 	}
 
 	if p.check(lexer.TokenLParen) {
@@ -1043,7 +1043,7 @@ func (p *Parser) parseAttributeAfterAt() *Attribute {
 					if p.check(lexer.TokenRParen) || p.check(lexer.TokenComma) {
 						// This is an empty argument (name: without value)
 						argsList.EmptyArguments = append(argsList.EmptyArguments, EmptyArgument{
-							Name: Identifier{Name: nameToken.Value, span: p.spanForToken(nameToken)},
+							Name: Identifier{Name: nameToken.Value, ASTSpan: p.spanForToken(nameToken)},
 						})
 						debug.Debug("Parsed empty argument", "name", nameToken.Value)
 
@@ -1064,7 +1064,7 @@ func (p *Parser) parseAttributeAfterAt() *Attribute {
 					// There's a value after the colon, parse as normal named argument
 					value := p.parseExpression()
 					arg := Argument{
-						Name:  &Identifier{Name: nameToken.Value, span: p.spanForToken(nameToken)},
+						Name:  &Identifier{Name: nameToken.Value, ASTSpan: p.spanForToken(nameToken)},
 						Value: value,
 						Span:  p.spanFrom(nameToken),
 					}
@@ -1144,7 +1144,7 @@ func (p *Parser) parseArgument() *Argument {
 	// Check for named argument (name: value)
 	if p.check(lexer.TokenIdentifier) && p.peek().Type == lexer.TokenColon {
 		nameToken := p.expect(lexer.TokenIdentifier)
-		name = &Identifier{Name: nameToken.Value, span: p.spanForToken(nameToken)}
+		name = &Identifier{Name: nameToken.Value, ASTSpan: p.spanForToken(nameToken)}
 		p.expect(lexer.TokenColon)
 	}
 
@@ -1186,7 +1186,7 @@ func (p *Parser) parseExpression() Expression {
 			}
 		}
 		// Identifiers that aren't function calls are ConstantValue (for enums, etc.), matching Rust
-		expr := ConstantValue{Value: token.Value, span: p.spanForToken(token)}
+		expr := ConstantValue{Value: token.Value, ASTSpan: p.spanForToken(token)}
 		debug.Debug("Parsed constant value expression", "value", token.Value)
 		return expr
 	}
@@ -1200,7 +1200,7 @@ func (p *Parser) parseExpression() Expression {
 	if token.Type == lexer.TokenNumber {
 		p.advance()
 		// Store numeric value as string to preserve precision, matching Rust implementation
-		expr := NumericValue{Value: token.Value, span: p.spanForToken(token)}
+		expr := NumericValue{Value: token.Value, ASTSpan: p.spanForToken(token)}
 		debug.Debug("Parsed numeric literal expression", "value", token.Value)
 		return expr
 	}
@@ -1210,7 +1210,7 @@ func (p *Parser) parseExpression() Expression {
 		p.advance()
 		// Parse string literal with proper escape sequence handling
 		parsedValue := p.parseStringLiteral(token.Value)
-		expr := StringLiteral{Value: parsedValue, span: p.spanForToken(token)}
+		expr := StringLiteral{Value: parsedValue, ASTSpan: p.spanForToken(token)}
 		debug.Debug("Parsed string literal expression", "value", parsedValue)
 		return expr
 	}
@@ -1219,7 +1219,7 @@ func (p *Parser) parseExpression() Expression {
 	if token.Type == lexer.TokenBoolean {
 		p.advance()
 		// Boolean values are stored as ConstantValue, matching Rust implementation
-		expr := ConstantValue{Value: token.Value, span: p.spanForToken(token)}
+		expr := ConstantValue{Value: token.Value, ASTSpan: p.spanForToken(token)}
 		debug.Debug("Parsed boolean literal expression", "value", token.Value)
 		return expr
 	}
@@ -1229,20 +1229,20 @@ func (p *Parser) parseExpression() Expression {
 		// End of expression - return error and don't advance
 		// Note: TokenRParen is a valid end marker for expressions in argument lists
 		p.error("Expected expression (value, function call, or array) but found end of construct")
-		return Identifier{Name: "error", span: p.spanForToken(token)}
+		return Identifier{Name: "error", ASTSpan: p.spanForToken(token)}
 	}
 
 	if token.Type == lexer.TokenRBrace {
 		// TokenRBrace should not appear in the middle of an expression
 		// This usually means we've gone too far (e.g., past a closing paren)
 		p.error("Unexpected '}' - did you forget a closing ')'?")
-		return Identifier{Name: "error", span: p.spanForToken(token)}
+		return Identifier{Name: "error", ASTSpan: p.spanForToken(token)}
 	}
 
 	// For unexpected tokens, create an error expression and advance to avoid infinite loop
 	p.error(fmt.Sprintf("Unexpected token '%s' in expression. Expected: string, number, boolean, identifier, function call, or array", token.Value))
 	p.advance()
-	return Identifier{Name: "error", span: p.spanForToken(token)}
+	return Identifier{Name: "error", ASTSpan: p.spanForToken(token)}
 }
 
 func (p *Parser) parseArrayLiteral() Expression {
@@ -1270,7 +1270,7 @@ func (p *Parser) parseArrayLiteral() Expression {
 
 	array := ArrayLiteral{
 		Elements: elements,
-		span:     p.spanFrom(p.previous()),
+		ASTSpan:  p.spanFrom(p.previous()),
 	}
 	debug.Debug("Completed parsing array literal", "element_count", len(elements))
 	return array
@@ -1316,9 +1316,9 @@ func (p *Parser) parseFunctionCall() Expression {
 	}
 
 	functionCall := FunctionCall{
-		Name:      Identifier{Name: functionName, span: p.spanForToken(nameToken)},
+		Name:      Identifier{Name: functionName, ASTSpan: p.spanForToken(nameToken)},
 		Arguments: args,
-		span:      p.spanFrom(nameToken),
+		ASTSpan:   p.spanFrom(nameToken),
 	}
 	debug.Debug("Completed parsing function call", "name", functionName, "argument_count", len(args))
 	return functionCall
@@ -1337,7 +1337,7 @@ func (p *Parser) parseConfigProperty() *ConfigBlockProperty {
 	p.expect(lexer.TokenEquals)
 
 	// Expression is optional in config blocks (for autocompletion)
-	var value *Expression
+	var value Expression
 	if !p.check(lexer.TokenRBrace) && !p.isAtEnd() {
 		// Skip comments before expression
 		for p.check(lexer.TokenComment) {
@@ -1345,14 +1345,14 @@ func (p *Parser) parseConfigProperty() *ConfigBlockProperty {
 		}
 		if !p.check(lexer.TokenRBrace) && !p.isAtEnd() {
 			expr := p.parseExpression()
-			value = &expr
+			value = expr
 		}
 	}
 
 	return &ConfigBlockProperty{
-		Name:  Identifier{Name: name.Value, span: p.spanForToken(name)},
-		Value: value,
-		Span:  p.spanFrom(name),
+		Name:    Identifier{Name: name.Value, ASTSpan: p.spanForToken(name)},
+		Value:   value,
+		ASTSpan: p.spanFrom(name),
 	}
 }
 

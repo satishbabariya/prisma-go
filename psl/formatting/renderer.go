@@ -227,7 +227,7 @@ func (r *Renderer) renderConfigProperty(prop *ast.ConfigBlockProperty, indent st
 	r.renderIdentifier(&prop.Name)
 	if prop.Value != nil {
 		r.builder.WriteString(" = ")
-		r.renderExpression(*prop.Value)
+		r.renderExpression(prop.Value)
 	}
 	r.builder.WriteString("\n")
 }
@@ -249,15 +249,15 @@ func (r *Renderer) renderIdentifier(ident *ast.Identifier) {
 // renderExpression renders an expression.
 func (r *Renderer) renderExpression(expr ast.Expression) {
 	switch e := expr.(type) {
-	case *ast.StringLiteral:
+	case ast.StringLiteral:
 		r.builder.WriteString(fmt.Sprintf(`"%s"`, e.Value))
-	case *ast.IntLiteral:
+	case ast.IntLiteral:
 		r.builder.WriteString(fmt.Sprintf("%d", e.Value))
-	case *ast.FloatLiteral:
+	case ast.FloatLiteral:
 		r.builder.WriteString(fmt.Sprintf("%f", e.Value))
-	case *ast.BooleanLiteral:
+	case ast.BooleanLiteral:
 		r.builder.WriteString(fmt.Sprintf("%t", e.Value))
-	case *ast.ArrayLiteral:
+	case ast.ArrayLiteral:
 		r.builder.WriteString("[")
 		for i, elem := range e.Elements {
 			if i > 0 {
@@ -266,7 +266,7 @@ func (r *Renderer) renderExpression(expr ast.Expression) {
 			r.renderExpression(elem)
 		}
 		r.builder.WriteString("]")
-	case *ast.FunctionCall:
+	case ast.FunctionCall:
 		r.renderIdentifier(&e.Name)
 		r.builder.WriteString("(")
 		for i, arg := range e.Arguments {

@@ -265,7 +265,7 @@ func renderConfigProperty(prop *ast.ConfigBlockProperty) string {
 	if prop.Value == nil {
 		return prop.Name.Name
 	}
-	return fmt.Sprintf("%s = %s", prop.Name.Name, renderExpression(*prop.Value))
+	return fmt.Sprintf("%s = %s", prop.Name.Name, renderExpression(prop.Value))
 }
 
 // renderExpression renders an expression to string.

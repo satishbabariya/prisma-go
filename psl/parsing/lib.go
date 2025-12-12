@@ -8,7 +8,7 @@ import (
 	"github.com/satishbabariya/prisma-go/psl/core"
 	"github.com/satishbabariya/prisma-go/psl/diagnostics"
 	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
-	"github.com/satishbabariya/prisma-go/psl/parsing/lexer"
+	v2 "github.com/satishbabariya/prisma-go/psl/parsing/v2"
 )
 
 // StringLiteralValue transforms the input string into a valid PSL string literal.
@@ -56,28 +56,23 @@ func ParseSchema(input string) (*ast.SchemaAst, diagnostics.Diagnostics) {
 	debug.Debug("Starting schema parsing", "inputLength", len(input))
 	diags := diagnostics.NewDiagnostics()
 
-	debug.Debug("Creating lexer")
-	lex := lexer.NewLexer(input)
-	debug.Debug("Tokenizing input")
-	tokens, err := lex.Tokenize()
+	debug.Debug("Parsing with v2 parser")
+	v2Schema, err := v2.ParseSchemaString("schema.prisma", input)
 	if err != nil {
-		debug.Error("Lexer error", "error", err)
-		// Report lexer error with proper span information
-		// Create a span at the beginning of the file for lexer errors
+		debug.Error("Parser v2 error", "error", err)
+		// Report parser error
+		// For now simple wrapper, can be improved to extract line/col from error if available in v2
 		span := diagnostics.NewSpan(0, len(input), diagnostics.FileIDZero)
 		diags.PushError(diagnostics.NewDatamodelError(
-			fmt.Sprintf("Lexer error: %v", err),
+			fmt.Sprintf("Parser error: %v", err),
 			span,
 		))
 		return &ast.SchemaAst{Tops: []ast.Top{}}, diags
 	}
-	debug.Debug("Tokenization completed", "tokenCount", len(tokens))
 
-	debug.Debug("Creating parser")
-	parser := ast.NewParser(tokens, &diags)
-	debug.Debug("Parsing AST")
-	astResult := parser.Parse()
-	debug.Debug("AST parsing completed", "topLevelCount", len(astResult.Tops), "errorCount", len(diags.Errors()), "warningCount", len(diags.Warnings()))
+	debug.Debug("Converting v2 AST to legacy AST")
+	astResult := convertSchema(v2Schema)
+	debug.Debug("AST parsing and conversion completed", "topLevelCount", len(astResult.Tops))
 
 	return astResult, diags
 }

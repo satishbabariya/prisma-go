@@ -63,13 +63,13 @@ func extractDatasource(source *ast.SourceConfig, diags *diagnostics.Diagnostics)
 			if strLit, ok := prop.Value.(ast.StringLiteral); ok {
 				ds.Provider = strLit.Value
 				ds.ActiveProvider = strLit.Value
-				ds.ProviderSpan = prop.Span
+				ds.ProviderSpan = prop.Span()
 			} else {
 				diags.PushError(diagnostics.NewValidationError(
 					"Provider must be a string literal.",
 					prop.Name.Span(),
 				))
-				ds.ProviderSpan = prop.Span
+				ds.ProviderSpan = prop.Span()
 			}
 		case "url":
 			if strLit, ok := prop.Value.(ast.StringLiteral); ok {
@@ -109,7 +109,7 @@ func extractDatasource(source *ast.SourceConfig, diags *diagnostics.Diagnostics)
 				}
 			}
 		case "schemas":
-			schemasSpan := prop.Span
+			schemasSpan := prop.Span()
 			ds.SchemasSpan = &schemasSpan
 			if arr, ok := prop.Value.(ast.ArrayLiteral); ok {
 				for _, elem := range arr.Elements {

@@ -105,7 +105,7 @@ func liftDatasource(
 		diags.PushError(diagnostics.NewSourceValidationError(
 			"The provider argument in a datasource must not be empty",
 			sourceName,
-			providerProp.Span,
+			providerProp.Span(),
 		))
 		return nil
 	}
@@ -115,7 +115,7 @@ func liftDatasource(
 	if connector == nil {
 		diags.PushError(diagnostics.NewDatasourceProviderNotKnownError(
 			provider,
-			providerProp.Span,
+			providerProp.Span(),
 		))
 		return nil
 	}
@@ -135,26 +135,26 @@ func liftDatasource(
 
 		// Check for deprecated/removed properties
 		if key == urlKey {
-			diags.PushError(diagnostics.NewDatasourceURLRemovedError(prop.Span))
+			diags.PushError(diagnostics.NewDatasourceURLRemovedError(prop.Span()))
 			continue
 		}
 		if key == shadowDatabaseURLKey {
-			diags.PushError(diagnostics.NewDatasourceShadowDatabaseURLRemovedError(prop.Span))
+			diags.PushError(diagnostics.NewDatasourceShadowDatabaseURLRemovedError(prop.Span()))
 			continue
 		}
 		if key == directURLKey {
-			diags.PushError(diagnostics.NewDatasourceDirectURLRemovedError(prop.Span))
+			diags.PushError(diagnostics.NewDatasourceDirectURLRemovedError(prop.Span()))
 			continue
 		}
 		if key == previewFeaturesKey {
 			diags.PushError(diagnostics.NewDatamodelError(
 				"Preview features are only supported in the generator block. Please move this field to the generator block.",
-				prop.Span,
+				prop.Span(),
 			))
 			continue
 		}
 
-		diags.PushError(diagnostics.NewPropertyNotKnownError(key, prop.Span))
+		diags.PushError(diagnostics.NewPropertyNotKnownError(key, prop.Span()))
 	}
 
 	// Extract documentation
@@ -187,7 +187,7 @@ func getRelationMode(
 	// Check for deprecated referentialIntegrity
 	if _, hasReferentialIntegrity := args[referentialIntegrityKey]; hasReferentialIntegrity {
 		prop := args[referentialIntegrityKey]
-		diags.PushWarning(diagnostics.NewReferentialIntegrityAttrDeprecationWarning(prop.Span))
+		diags.PushWarning(diagnostics.NewReferentialIntegrityAttrDeprecationWarning(prop.Span()))
 	}
 
 	// Check for relationMode or referentialIntegrity
@@ -205,7 +205,7 @@ func getRelationMode(
 	if hasRelationMode && hasReferentialIntegrity {
 		// Both are present - error
 		diags.PushError(diagnostics.NewReferentialIntegrityAndRelationModeCooccurError(
-			referentialIntegrityProp.Span,
+			referentialIntegrityProp.Span(),
 		))
 		return RelationModePrisma
 	}
@@ -219,7 +219,7 @@ func getRelationMode(
 			diags.PushError(diagnostics.NewSourceValidationError(
 				"The relationMode argument must be a string literal",
 				source.Name.Name,
-				relationModeProp.Span,
+				relationModeProp.Span(),
 			))
 			return RelationModePrisma
 		}
@@ -230,7 +230,7 @@ func getRelationMode(
 			diags.PushError(diagnostics.NewSourceValidationError(
 				"The referentialIntegrity argument must be a string literal",
 				source.Name.Name,
-				referentialIntegrityProp.Span,
+				referentialIntegrityProp.Span(),
 			))
 			return RelationModePrisma
 		}
@@ -272,7 +272,7 @@ func getRelationMode(
 		diags.PushError(diagnostics.NewSourceValidationError(
 			fmt.Sprintf("Invalid relation mode setting: \"%s\". Supported values: %s", modeStr, supportedStr),
 			"relationMode",
-			relationModeProp.Span,
+			relationModeProp.Span(),
 		))
 		return RelationModePrisma
 	}
@@ -296,7 +296,7 @@ func extractSchemas(
 	if !connector.HasCapability(ConnectorCapabilityMultiSchema) {
 		diags.PushError(diagnostics.NewDatamodelError(
 			"The `schemas` property is not supported on the current connector.",
-			schemasProp.Span,
+			schemasProp.Span(),
 		))
 		return nil, nil
 	}
@@ -311,10 +311,11 @@ func extractSchemas(
 		}
 	}
 
-	schemasSpan := &schemasProp.Span
+	s := schemasProp.Span()
+	schemasSpan := &s
 
 	if len(schemas) == 0 {
-		diags.PushError(diagnostics.NewSchemasArrayEmptyError(schemasProp.Span))
+		diags.PushError(diagnostics.NewSchemasArrayEmptyError(schemasProp.Span()))
 		return nil, nil
 	}
 
@@ -324,7 +325,7 @@ func extractSchemas(
 		if seen[schema] {
 			diags.PushError(diagnostics.NewDatamodelError(
 				"Duplicated schema names are not allowed",
-				schemasProp.Span,
+				schemasProp.Span(),
 			))
 			return nil, nil
 		}

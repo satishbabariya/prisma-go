@@ -28,7 +28,7 @@ func extractConnectionInfoWithShadow(schema *psl.SchemaAst) (string, string, str
 			for _, prop := range source.Properties {
 				if prop.Name.Name == "provider" {
 					if prop.Value != nil {
-						if strLit, _ := (*prop.Value).AsStringValue(); strLit != nil {
+						if strLit, _ := prop.Value.AsStringValue(); strLit != nil {
 							provider = strLit.Value
 						}
 					}
@@ -36,7 +36,7 @@ func extractConnectionInfoWithShadow(schema *psl.SchemaAst) (string, string, str
 				if prop.Name.Name == "url" {
 					if prop.Value != nil {
 						// Handle env("DATABASE_URL") function call
-						if fnCall := (*prop.Value).AsFunction(); fnCall != nil && fnCall.Name.Name == "env" {
+						if fnCall := prop.Value.AsFunction(); fnCall != nil && fnCall.Name.Name == "env" {
 							if len(fnCall.Arguments) > 0 {
 								if strLit, _ := fnCall.Arguments[0].AsStringValue(); strLit != nil {
 									envVar := strLit.Value
@@ -48,7 +48,7 @@ func extractConnectionInfoWithShadow(schema *psl.SchemaAst) (string, string, str
 									}
 								}
 							}
-						} else if strLit, _ := (*prop.Value).AsStringValue(); strLit != nil {
+						} else if strLit, _ := prop.Value.AsStringValue(); strLit != nil {
 							// Direct string literal
 							connStr = strLit.Value
 						}
@@ -57,14 +57,14 @@ func extractConnectionInfoWithShadow(schema *psl.SchemaAst) (string, string, str
 				if prop.Name.Name == "shadowDatabaseUrl" {
 					if prop.Value != nil {
 						// Handle shadow database URL
-						if fnCall := (*prop.Value).AsFunction(); fnCall != nil && fnCall.Name.Name == "env" {
+						if fnCall := prop.Value.AsFunction(); fnCall != nil && fnCall.Name.Name == "env" {
 							if len(fnCall.Arguments) > 0 {
 								if strLit, _ := fnCall.Arguments[0].AsStringValue(); strLit != nil {
 									envVar := strLit.Value
 									shadowConnStr = os.Getenv(envVar)
 								}
 							}
-						} else if strLit, _ := (*prop.Value).AsStringValue(); strLit != nil {
+						} else if strLit, _ := prop.Value.AsStringValue(); strLit != nil {
 							// Direct string literal
 							shadowConnStr = strLit.Value
 						}

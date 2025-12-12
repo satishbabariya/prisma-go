@@ -83,7 +83,7 @@ type Model struct {
 	Attributes    []Attribute
 	Documentation *Comment
 	IsView        bool
-	span          diagnostics.Span
+	ASTSpan       diagnostics.Span
 }
 
 // Enum represents an enum declaration in the schema.
@@ -92,7 +92,7 @@ type Enum struct {
 	Values        []EnumValue
 	Attributes    []Attribute
 	Documentation *Comment
-	span          diagnostics.Span
+	ASTSpan       diagnostics.Span
 	InnerSpan     diagnostics.Span
 }
 
@@ -102,7 +102,7 @@ type CompositeType struct {
 	Fields        []Field
 	Attributes    []Attribute
 	Documentation *Comment
-	span          diagnostics.Span
+	ASTSpan       diagnostics.Span
 	InnerSpan     diagnostics.Span
 }
 
@@ -111,7 +111,7 @@ type SourceConfig struct {
 	Name          Identifier
 	Properties    []ConfigBlockProperty
 	Documentation *Comment
-	span          diagnostics.Span
+	ASTSpan       diagnostics.Span
 	InnerSpan     diagnostics.Span
 }
 
@@ -120,7 +120,7 @@ type GeneratorConfig struct {
 	Name          Identifier
 	Properties    []ConfigBlockProperty
 	Documentation *Comment
-	span          diagnostics.Span
+	ASTSpan       diagnostics.Span
 }
 
 // Field represents a field in a model or composite type.
@@ -130,12 +130,12 @@ type Field struct {
 	Arity         FieldArity
 	Attributes    []Attribute
 	Documentation *Comment
-	span          diagnostics.Span
+	ASTSpan       diagnostics.Span
 }
 
 // Span returns the span of this field.
 func (f *Field) Span() diagnostics.Span {
-	return f.span
+	return f.ASTSpan
 }
 
 // FieldName returns the name of the field.
@@ -172,23 +172,23 @@ type EnumValue struct {
 	Name          Identifier
 	Attributes    []Attribute
 	Documentation *Comment
-	span          diagnostics.Span
+	ASTSpan       diagnostics.Span
 }
 
 // Span returns the span of this enum value.
 func (ev *EnumValue) Span() diagnostics.Span {
-	return ev.span
+	return ev.ASTSpan
 }
 
 // Identifier represents an identifier in the schema.
 type Identifier struct {
-	Name string
-	span diagnostics.Span
+	Name    string
+	ASTSpan diagnostics.Span
 }
 
 // Span implements the Expression interface.
 func (i Identifier) Span() diagnostics.Span {
-	return i.span
+	return i.ASTSpan
 }
 
 // AsFunction implements the Expression interface.
@@ -213,7 +213,7 @@ func (i Identifier) AsStringValue() (*StringLiteral, diagnostics.Span) {
 
 // AsConstantValue implements the Expression interface.
 func (i Identifier) AsConstantValue() (*ConstantValue, diagnostics.Span) {
-	return &ConstantValue{Value: i.Name, span: i.span}, i.span
+	return &ConstantValue{Value: i.Name, ASTSpan: i.ASTSpan}, i.ASTSpan
 }
 
 // AsNumericValue implements the Expression interface.
@@ -317,8 +317,6 @@ type Expression interface {
 	AsFunction() *FunctionCall
 	// AsArray returns this as an ArrayLiteral if it is one, nil otherwise.
 	AsArray() *ArrayLiteral
-	// String returns a string representation of the expression.
-	String() string
 	// AsStringValue returns this as a StringLiteral if it is one, nil otherwise.
 	AsStringValue() (*StringLiteral, diagnostics.Span)
 	// AsConstantValue returns this as a ConstantValue if it is one, nil otherwise.
@@ -329,26 +327,8 @@ type Expression interface {
 	IsEnvExpression() bool
 	// DescribeValueType returns a friendly readable representation for a value's type.
 	DescribeValueType() string
-	// IsFunction returns true if this is a function call.
-	IsFunction() bool
-	// IsArray returns true if this is an array literal.
-	IsArray() bool
 	// IsString returns true if this is a string literal.
 	IsString() bool
-}
-
-// ConfigBlockProperty represents a property in a config block.
-type ConfigBlockProperty struct {
-	Name  Identifier
-	Value *Expression // Optional - can be nil if expression is missing
-	Span  diagnostics.Span
-}
-
-// FieldType represents the type of a field.
-type FieldType struct {
-	// Type represents the field type - either supported or unsupported
-	Type FieldTypeKind
-	span diagnostics.Span
 }
 
 // FieldTypeKind represents the kind of field type.
@@ -390,13 +370,13 @@ func (ft FieldType) Name() string {
 
 // FieldTypeSpan returns the span of the field type.
 func (ft FieldType) FieldTypeSpan() diagnostics.Span {
-	return ft.span
+	return ft.ASTSpan
 }
 
 // AsUnsupported returns the unsupported type information if this is unsupported, nil otherwise.
 func (ft FieldType) AsUnsupported() (*UnsupportedFieldType, *diagnostics.Span) {
 	if unsupported, ok := ft.Type.(UnsupportedFieldType); ok {
-		return &unsupported, &ft.span
+		return &unsupported, &ft.ASTSpan
 	}
 	return nil, nil
 }
@@ -408,7 +388,7 @@ func (ft FieldType) TypeName() string {
 
 // Span returns the span of the field type.
 func (ft FieldType) Span() diagnostics.Span {
-	return ft.span
+	return ft.ASTSpan
 }
 
 // IsOptional returns whether the field type is optional (needs to be checked with field arity).
@@ -453,11 +433,11 @@ func (fa FieldArity) IsRequired() bool {
 
 // NumericValue represents a numeric literal expression (int or float).
 type NumericValue struct {
-	Value string
-	span  diagnostics.Span
+	Value   string
+	ASTSpan diagnostics.Span
 }
 
-func (n NumericValue) Span() diagnostics.Span    { return n.span }
+func (n NumericValue) Span() diagnostics.Span    { return n.ASTSpan }
 func (n NumericValue) AsFunction() *FunctionCall { return nil }
 func (n NumericValue) AsArray() *ArrayLiteral    { return nil }
 func (n NumericValue) String() string            { return n.Value }
@@ -468,7 +448,7 @@ func (n NumericValue) AsConstantValue() (*ConstantValue, diagnostics.Span) {
 	return nil, diagnostics.Span{}
 }
 func (n NumericValue) AsNumericValue() (*NumericValue, diagnostics.Span) {
-	return &n, n.span
+	return &n, n.ASTSpan
 }
 func (n NumericValue) IsEnvExpression() bool     { return false }
 func (n NumericValue) DescribeValueType() string { return "numeric" }
@@ -478,11 +458,11 @@ func (n NumericValue) IsString() bool            { return false }
 
 // ConstantValue represents a constant value expression (like boolean or enum).
 type ConstantValue struct {
-	Value string
-	span  diagnostics.Span
+	Value   string
+	ASTSpan diagnostics.Span
 }
 
-func (c ConstantValue) Span() diagnostics.Span    { return c.span }
+func (c ConstantValue) Span() diagnostics.Span    { return c.ASTSpan }
 func (c ConstantValue) AsFunction() *FunctionCall { return nil }
 func (c ConstantValue) AsArray() *ArrayLiteral    { return nil }
 func (c ConstantValue) String() string            { return c.Value }
@@ -490,7 +470,7 @@ func (c ConstantValue) AsStringValue() (*StringLiteral, diagnostics.Span) {
 	return nil, diagnostics.Span{}
 }
 func (c ConstantValue) AsConstantValue() (*ConstantValue, diagnostics.Span) {
-	return &c, c.span
+	return &c, c.ASTSpan
 }
 func (c ConstantValue) AsNumericValue() (*NumericValue, diagnostics.Span) {
 	return nil, diagnostics.Span{}
@@ -501,18 +481,36 @@ func (c ConstantValue) IsFunction() bool          { return false }
 func (c ConstantValue) IsArray() bool             { return false }
 func (c ConstantValue) IsString() bool            { return false }
 
-// StringLiteral represents a string literal expression.
-type StringLiteral struct {
-	Value string
-	span  diagnostics.Span
+// ConfigBlockProperty represents a property in a config block.
+type ConfigBlockProperty struct {
+	Name    Identifier
+	Value   Expression // Optional - can be nil if expression is missing
+	ASTSpan diagnostics.Span
 }
 
-func (s StringLiteral) Span() diagnostics.Span    { return s.span }
+func (c ConfigBlockProperty) Span() diagnostics.Span {
+	return c.ASTSpan
+}
+
+// FieldType represents the type of a field.
+type FieldType struct {
+	// Type represents the field type - either supported or unsupported
+	Type    FieldTypeKind
+	ASTSpan diagnostics.Span
+}
+
+// StringLiteral represents a string literal expression.
+type StringLiteral struct {
+	Value   string
+	ASTSpan diagnostics.Span
+}
+
+func (s StringLiteral) Span() diagnostics.Span    { return s.ASTSpan }
 func (s StringLiteral) AsFunction() *FunctionCall { return nil }
 func (s StringLiteral) AsArray() *ArrayLiteral    { return nil }
 func (s StringLiteral) String() string            { return s.Value }
 func (s StringLiteral) AsStringValue() (*StringLiteral, diagnostics.Span) {
-	return &s, s.span
+	return &s, s.ASTSpan
 }
 func (s StringLiteral) AsConstantValue() (*ConstantValue, diagnostics.Span) {
 	return nil, diagnostics.Span{}
@@ -528,11 +526,11 @@ func (s StringLiteral) IsString() bool            { return true }
 
 // IntLiteral represents an integer literal expression.
 type IntLiteral struct {
-	Value int
-	span  diagnostics.Span
+	Value   int
+	ASTSpan diagnostics.Span
 }
 
-func (i IntLiteral) Span() diagnostics.Span    { return i.span }
+func (i IntLiteral) Span() diagnostics.Span    { return i.ASTSpan }
 func (i IntLiteral) AsFunction() *FunctionCall { return nil }
 func (i IntLiteral) AsArray() *ArrayLiteral    { return nil }
 func (i IntLiteral) String() string            { return fmt.Sprintf("%d", i.Value) }
@@ -543,7 +541,7 @@ func (i IntLiteral) AsConstantValue() (*ConstantValue, diagnostics.Span) {
 	return nil, diagnostics.Span{}
 }
 func (i IntLiteral) AsNumericValue() (*NumericValue, diagnostics.Span) {
-	return &NumericValue{Value: fmt.Sprintf("%d", i.Value), span: i.span}, i.span
+	return &NumericValue{Value: fmt.Sprintf("%d", i.Value), ASTSpan: i.ASTSpan}, i.ASTSpan
 }
 func (i IntLiteral) IsEnvExpression() bool     { return false }
 func (i IntLiteral) DescribeValueType() string { return "numeric" }
@@ -553,11 +551,11 @@ func (i IntLiteral) IsString() bool            { return false }
 
 // FloatLiteral represents a float literal expression.
 type FloatLiteral struct {
-	Value float64
-	span  diagnostics.Span
+	Value   float64
+	ASTSpan diagnostics.Span
 }
 
-func (f FloatLiteral) Span() diagnostics.Span    { return f.span }
+func (f FloatLiteral) Span() diagnostics.Span    { return f.ASTSpan }
 func (f FloatLiteral) AsFunction() *FunctionCall { return nil }
 func (f FloatLiteral) AsArray() *ArrayLiteral    { return nil }
 func (f FloatLiteral) String() string            { return fmt.Sprintf("%f", f.Value) }
@@ -568,7 +566,7 @@ func (f FloatLiteral) AsConstantValue() (*ConstantValue, diagnostics.Span) {
 	return nil, diagnostics.Span{}
 }
 func (f FloatLiteral) AsNumericValue() (*NumericValue, diagnostics.Span) {
-	return &NumericValue{Value: fmt.Sprintf("%f", f.Value), span: f.span}, f.span
+	return &NumericValue{Value: fmt.Sprintf("%f", f.Value), ASTSpan: f.ASTSpan}, f.ASTSpan
 }
 func (f FloatLiteral) IsEnvExpression() bool     { return false }
 func (f FloatLiteral) DescribeValueType() string { return "numeric" }
@@ -578,11 +576,11 @@ func (f FloatLiteral) IsString() bool            { return false }
 
 // BooleanLiteral represents a boolean literal expression.
 type BooleanLiteral struct {
-	Value bool
-	span  diagnostics.Span
+	Value   bool
+	ASTSpan diagnostics.Span
 }
 
-func (b BooleanLiteral) Span() diagnostics.Span    { return b.span }
+func (b BooleanLiteral) Span() diagnostics.Span    { return b.ASTSpan }
 func (b BooleanLiteral) AsFunction() *FunctionCall { return nil }
 func (b BooleanLiteral) AsArray() *ArrayLiteral    { return nil }
 func (b BooleanLiteral) String() string            { return fmt.Sprintf("%t", b.Value) }
@@ -590,7 +588,7 @@ func (b BooleanLiteral) AsStringValue() (*StringLiteral, diagnostics.Span) {
 	return nil, diagnostics.Span{}
 }
 func (b BooleanLiteral) AsConstantValue() (*ConstantValue, diagnostics.Span) {
-	return &ConstantValue{Value: fmt.Sprintf("%t", b.Value), span: b.span}, b.span
+	return &ConstantValue{Value: fmt.Sprintf("%t", b.Value), ASTSpan: b.ASTSpan}, b.ASTSpan
 }
 func (b BooleanLiteral) AsNumericValue() (*NumericValue, diagnostics.Span) {
 	return nil, diagnostics.Span{}
@@ -604,7 +602,7 @@ func (b BooleanLiteral) IsString() bool            { return false }
 // ArrayLiteral represents an array literal expression.
 type ArrayLiteral struct {
 	Elements []Expression
-	span     diagnostics.Span
+	ASTSpan  diagnostics.Span
 }
 
 // Expressions returns the elements of the array.
@@ -612,7 +610,7 @@ func (a ArrayLiteral) Expressions() []Expression {
 	return a.Elements
 }
 
-func (a ArrayLiteral) Span() diagnostics.Span    { return a.span }
+func (a ArrayLiteral) Span() diagnostics.Span    { return a.ASTSpan }
 func (a ArrayLiteral) AsFunction() *FunctionCall { return nil }
 func (a ArrayLiteral) AsArray() *ArrayLiteral    { return &a }
 func (a ArrayLiteral) String() string {
@@ -638,10 +636,10 @@ func (a ArrayLiteral) IsString() bool            { return false }
 type FunctionCall struct {
 	Name      Identifier
 	Arguments []Expression
-	span      diagnostics.Span
+	ASTSpan   diagnostics.Span
 }
 
-func (f FunctionCall) Span() diagnostics.Span    { return f.span }
+func (f FunctionCall) Span() diagnostics.Span    { return f.ASTSpan }
 func (f FunctionCall) AsFunction() *FunctionCall { return &f }
 func (f FunctionCall) AsArray() *ArrayLiteral    { return nil }
 func (f FunctionCall) String() string {
@@ -672,7 +670,7 @@ func (f FunctionCall) FunctionName() string {
 
 // Implement Top interface methods
 
-func (m *Model) Span() diagnostics.Span          { return m.span }
+func (m *Model) Span() diagnostics.Span          { return m.ASTSpan }
 func (m *Model) AsModel() *Model                 { return m }
 func (m *Model) AsEnum() *Enum                   { return nil }
 func (m *Model) AsSource() *SourceConfig         { return nil }
@@ -716,7 +714,7 @@ type FieldWithId struct {
 	Field *Field
 }
 
-func (e *Enum) Span() diagnostics.Span          { return e.span }
+func (e *Enum) Span() diagnostics.Span          { return e.ASTSpan }
 func (e *Enum) AsModel() *Model                 { return nil }
 func (e *Enum) AsEnum() *Enum                   { return e }
 func (e *Enum) AsSource() *SourceConfig         { return nil }
@@ -746,7 +744,7 @@ type EnumValueWithId struct {
 	Value *EnumValue
 }
 
-func (s *SourceConfig) Span() diagnostics.Span          { return s.span }
+func (s *SourceConfig) Span() diagnostics.Span          { return s.ASTSpan }
 func (s *SourceConfig) AsModel() *Model                 { return nil }
 func (s *SourceConfig) AsEnum() *Enum                   { return nil }
 func (s *SourceConfig) AsSource() *SourceConfig         { return s }
@@ -756,7 +754,7 @@ func (s *SourceConfig) GetType() string                 { return "source" }
 func (s *SourceConfig) Identifier() *Identifier         { return &s.Name }
 func (s *SourceConfig) TopName() string                 { return s.Name.Name }
 
-func (g *GeneratorConfig) Span() diagnostics.Span          { return g.span }
+func (g *GeneratorConfig) Span() diagnostics.Span          { return g.ASTSpan }
 func (g *GeneratorConfig) AsModel() *Model                 { return nil }
 func (g *GeneratorConfig) AsEnum() *Enum                   { return nil }
 func (g *GeneratorConfig) AsSource() *SourceConfig         { return nil }
@@ -766,7 +764,7 @@ func (g *GeneratorConfig) GetType() string                 { return "generator" 
 func (g *GeneratorConfig) Identifier() *Identifier         { return &g.Name }
 func (g *GeneratorConfig) TopName() string                 { return g.Name.Name }
 
-func (c *CompositeType) Span() diagnostics.Span          { return c.span }
+func (c *CompositeType) Span() diagnostics.Span          { return c.ASTSpan }
 func (c *CompositeType) AsModel() *Model                 { return nil }
 func (c *CompositeType) AsEnum() *Enum                   { return nil }
 func (c *CompositeType) AsSource() *SourceConfig         { return nil }

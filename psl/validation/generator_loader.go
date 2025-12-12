@@ -78,7 +78,7 @@ func liftGenerator(
 				"String",
 				"unknown",
 				"",
-				engineTypeProp.Span,
+				engineTypeProp.Span(),
 			))
 		}
 	}
@@ -134,7 +134,7 @@ func liftGenerator(
 				previewFeatures = parseAndValidatePreviewFeatures(
 					features,
 					featureMapWithProvider,
-					previewFeaturesProp.Span,
+					previewFeaturesProp.Span(),
 					diags,
 				)
 			} else {

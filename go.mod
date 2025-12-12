@@ -4,6 +4,7 @@ go 1.24.1
 
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
+	github.com/alecthomas/participle/v2 v2.1.4
 	github.com/charmbracelet/glamour v0.10.0
 	github.com/charmbracelet/lipgloss v1.1.1-0.20250404203927-76690c660834
 	github.com/fatih/color v1.18.0
