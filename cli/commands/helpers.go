@@ -27,41 +27,47 @@ func extractConnectionInfoWithShadow(schema *psl.SchemaAst) (string, string, str
 		if source := top.AsSource(); source != nil {
 			for _, prop := range source.Properties {
 				if prop.Name.Name == "provider" {
-					if strLit, _ := prop.Value.AsStringValue(); strLit != nil {
-						provider = strLit.Value
+					if prop.Value != nil {
+						if strLit, _ := (*prop.Value).AsStringValue(); strLit != nil {
+							provider = strLit.Value
+						}
 					}
 				}
 				if prop.Name.Name == "url" {
-					// Handle env("DATABASE_URL") function call
-					if fnCall := prop.Value.AsFunction(); fnCall != nil && fnCall.Name.Name == "env" {
-						if len(fnCall.Arguments) > 0 {
-							if strLit, _ := fnCall.Arguments[0].AsStringValue(); strLit != nil {
-								envVar := strLit.Value
-								// Try to get from environment or .env files first
-								connStr = getDatabaseURLFromEnv()
-								// If still empty, try direct env lookup with the specified variable name
-								if connStr == "" {
-									connStr = os.Getenv(envVar)
+					if prop.Value != nil {
+						// Handle env("DATABASE_URL") function call
+						if fnCall := (*prop.Value).AsFunction(); fnCall != nil && fnCall.Name.Name == "env" {
+							if len(fnCall.Arguments) > 0 {
+								if strLit, _ := fnCall.Arguments[0].AsStringValue(); strLit != nil {
+									envVar := strLit.Value
+									// Try to get from environment or .env files first
+									connStr = getDatabaseURLFromEnv()
+									// If still empty, try direct env lookup with the specified variable name
+									if connStr == "" {
+										connStr = os.Getenv(envVar)
+									}
 								}
 							}
+						} else if strLit, _ := (*prop.Value).AsStringValue(); strLit != nil {
+							// Direct string literal
+							connStr = strLit.Value
 						}
-					} else if strLit, _ := prop.Value.AsStringValue(); strLit != nil {
-						// Direct string literal
-						connStr = strLit.Value
 					}
 				}
 				if prop.Name.Name == "shadowDatabaseUrl" {
-					// Handle shadow database URL
-					if fnCall := prop.Value.AsFunction(); fnCall != nil && fnCall.Name.Name == "env" {
-						if len(fnCall.Arguments) > 0 {
-							if strLit, _ := fnCall.Arguments[0].AsStringValue(); strLit != nil {
-								envVar := strLit.Value
-								shadowConnStr = os.Getenv(envVar)
+					if prop.Value != nil {
+						// Handle shadow database URL
+						if fnCall := (*prop.Value).AsFunction(); fnCall != nil && fnCall.Name.Name == "env" {
+							if len(fnCall.Arguments) > 0 {
+								if strLit, _ := fnCall.Arguments[0].AsStringValue(); strLit != nil {
+									envVar := strLit.Value
+									shadowConnStr = os.Getenv(envVar)
+								}
 							}
+						} else if strLit, _ := (*prop.Value).AsStringValue(); strLit != nil {
+							// Direct string literal
+							shadowConnStr = strLit.Value
 						}
-					} else if strLit, _ := prop.Value.AsStringValue(); strLit != nil {
-						// Direct string literal
-						shadowConnStr = strLit.Value
 					}
 				}
 			}

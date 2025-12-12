@@ -262,7 +262,10 @@ func renderArgument(arg *ast.Argument) string {
 
 // renderConfigProperty renders a config property to string.
 func renderConfigProperty(prop *ast.ConfigBlockProperty) string {
-	return fmt.Sprintf("%s = %s", prop.Name.Name, renderExpression(prop.Value))
+	if prop.Value == nil {
+		return prop.Name.Name
+	}
+	return fmt.Sprintf("%s = %s", prop.Name.Name, renderExpression(*prop.Value))
 }
 
 // renderExpression renders an expression to string.

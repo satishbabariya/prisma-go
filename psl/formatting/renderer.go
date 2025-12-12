@@ -225,8 +225,10 @@ func (r *Renderer) renderArgument(arg *ast.Argument) {
 func (r *Renderer) renderConfigProperty(prop *ast.ConfigBlockProperty, indent string) {
 	r.builder.WriteString(indent)
 	r.renderIdentifier(&prop.Name)
-	r.builder.WriteString(" = ")
-	r.renderExpression(prop.Value)
+	if prop.Value != nil {
+		r.builder.WriteString(" = ")
+		r.renderExpression(*prop.Value)
+	}
 	r.builder.WriteString("\n")
 }
 

@@ -108,16 +108,19 @@ type CompositeType struct {
 
 // SourceConfig represents a datasource configuration.
 type SourceConfig struct {
-	Name       Identifier
-	Properties []ConfigBlockProperty
-	span       diagnostics.Span
+	Name          Identifier
+	Properties    []ConfigBlockProperty
+	Documentation *Comment
+	span          diagnostics.Span
+	InnerSpan     diagnostics.Span
 }
 
 // GeneratorConfig represents a generator configuration.
 type GeneratorConfig struct {
-	Name       Identifier
-	Properties []ConfigBlockProperty
-	span       diagnostics.Span
+	Name          Identifier
+	Properties    []ConfigBlockProperty
+	Documentation *Comment
+	span          diagnostics.Span
 }
 
 // Field represents a field in a model or composite type.
@@ -166,9 +169,10 @@ func (f *Field) SpanForAttribute(attribute string) *diagnostics.Span {
 
 // EnumValue represents a value in an enum.
 type EnumValue struct {
-	Name       Identifier
-	Attributes []Attribute
-	span       diagnostics.Span
+	Name          Identifier
+	Attributes    []Attribute
+	Documentation *Comment
+	span          diagnostics.Span
 }
 
 // Span returns the span of this enum value.
@@ -336,7 +340,7 @@ type Expression interface {
 // ConfigBlockProperty represents a property in a config block.
 type ConfigBlockProperty struct {
 	Name  Identifier
-	Value Expression
+	Value *Expression // Optional - can be nil if expression is missing
 	Span  diagnostics.Span
 }
 

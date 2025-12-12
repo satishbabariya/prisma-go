@@ -50,7 +50,7 @@ func GenerateModelsFromAST(schemaAST *ast.SchemaAst) []ModelInfo {
 		if model := top.AsModel(); model != nil {
 			// Extract table name from @@map attribute if present
 			tableName := extractTableNameFromModel(model)
-			
+
 			modelInfo := ModelInfo{
 				Name:      model.Name.Name,
 				TableName: tableName,
@@ -80,13 +80,34 @@ func GenerateModelsFromAST(schemaAST *ast.SchemaAst) []ModelInfo {
 	}
 
 	// Second pass: detect relations and foreign keys from AST
+	// Build efficient indexes like Rust implementation
 	astModelMap := make(map[string]*ast.Model)
+	astFieldMap := make(map[string]map[string]*ast.Field) // modelName -> fieldName -> Field
+
 	for _, top := range schemaAST.Tops {
 		if astModel := top.AsModel(); astModel != nil {
 			astModelMap[astModel.Name.Name] = astModel
+			// Build field index for this model
+			fieldMap := make(map[string]*ast.Field)
+			for i := range astModel.Fields {
+				fieldMap[astModel.Fields[i].Name.Name] = &astModel.Fields[i]
+			}
+			astFieldMap[astModel.Name.Name] = fieldMap
 		}
 	}
 
+	// Build field name index for each model (for O(1) lookups)
+	modelFieldIndex := make(map[string]map[string]*FieldInfo) // modelName -> fieldName -> FieldInfo
+	for i := range models {
+		model := &models[i]
+		fieldMap := make(map[string]*FieldInfo)
+		for j := range model.Fields {
+			fieldMap[model.Fields[j].Name] = &model.Fields[j]
+		}
+		modelFieldIndex[model.Name] = fieldMap
+	}
+
+	// Process relations efficiently
 	for i := range models {
 		model := &models[i]
 		astModel := astModelMap[model.Name]
@@ -94,23 +115,19 @@ func GenerateModelsFromAST(schemaAST *ast.SchemaAst) []ModelInfo {
 			continue
 		}
 
+		modelFields := modelFieldIndex[model.Name]
+
 		for j := range model.Fields {
 			field := &model.Fields[j]
 
 			// If this is a relation field, find the foreign key
 			if field.IsRelation {
 				relatedModel := modelMap[field.RelationTo]
-				relatedASTModel := astModelMap[field.RelationTo]
+				relatedASTFields := astFieldMap[field.RelationTo]
 
 				if relatedModel != nil {
-					// Find the corresponding AST field
-					var astRelationField *ast.Field
-					for k := range astModel.Fields {
-						if astModel.Fields[k].Name.Name == field.Name {
-							astRelationField = &astModel.Fields[k]
-							break
-						}
-					}
+					// O(1) lookup instead of O(n) loop
+					astRelationField := astFieldMap[model.Name][field.Name]
 
 					// Create relation info
 					relation := RelationInfo{
@@ -126,15 +143,11 @@ func GenerateModelsFromAST(schemaAST *ast.SchemaAst) []ModelInfo {
 							// Found foreign key from @relation attribute
 							if field.IsList {
 								// One-to-many: foreign key is on the related model
-								// Need to find the foreign key field in the related model
-								if relatedASTModel != nil {
-									for k := range relatedASTModel.Fields {
-										if relatedASTModel.Fields[k].Name.Name == fkField {
-											relation.ForeignKey = fkField
-											relation.ForeignKeyTable = relatedModel.TableName
-											relation.LocalKey = refField
-											break
-										}
+								if relatedASTFields != nil {
+									if _, exists := relatedASTFields[fkField]; exists {
+										relation.ForeignKey = fkField
+										relation.ForeignKeyTable = relatedModel.TableName
+										relation.LocalKey = refField
 									}
 								}
 							} else {
@@ -143,13 +156,10 @@ func GenerateModelsFromAST(schemaAST *ast.SchemaAst) []ModelInfo {
 								relation.ForeignKeyTable = model.TableName
 								relation.LocalKey = refField
 
-								// Mark the foreign key field
-								for k := range model.Fields {
-									if model.Fields[k].Name == fkField {
-										model.Fields[k].IsForeignKey = true
-										model.Fields[k].ForeignKeyTo = field.RelationTo
-										break
-									}
+								// Mark the foreign key field (O(1) lookup)
+								if fkFieldInfo := modelFields[fkField]; fkFieldInfo != nil {
+									fkFieldInfo.IsForeignKey = true
+									fkFieldInfo.ForeignKeyTo = field.RelationTo
 								}
 							}
 						}
@@ -162,18 +172,15 @@ func GenerateModelsFromAST(schemaAST *ast.SchemaAst) []ModelInfo {
 
 						// Check current model for foreign keys pointing to related model (many-to-one)
 						if !field.IsList {
-							for k := range model.Fields {
-								checkField := &model.Fields[k]
-								if (strings.HasSuffix(strings.ToLower(checkField.Name), "id")) &&
+							expectedFK := toSnakeCase(field.RelationTo) + "_id"
+							// Try direct lookup first
+							for fieldName, checkField := range modelFields {
+								if toSnakeCase(fieldName) == expectedFK &&
 									!checkField.IsID && !checkField.IsRelation {
-									// Check if this matches the pattern for foreign key
-									expectedFK := toSnakeCase(field.RelationTo) + "_id"
-									if toSnakeCase(checkField.Name) == expectedFK {
-										foreignKeyField = checkField
-										foreignKeyField.IsForeignKey = true
-										foreignKeyField.ForeignKeyTo = field.RelationTo
-										break
-									}
+									foreignKeyField = checkField
+									foreignKeyField.IsForeignKey = true
+									foreignKeyField.ForeignKeyTo = field.RelationTo
+									break
 								}
 							}
 						}
@@ -190,20 +197,16 @@ func GenerateModelsFromAST(schemaAST *ast.SchemaAst) []ModelInfo {
 								relation.ForeignKeyTable = model.TableName
 								relation.LocalKey = localKeyField
 							}
-						} else if field.IsList && relatedASTModel != nil {
+						} else if field.IsList && relatedASTFields != nil {
 							// One-to-many: foreign key should be on related model
-							// Look for foreign key in related model
-							for k := range relatedASTModel.Fields {
-								checkASTField := &relatedASTModel.Fields[k]
-								if (strings.HasSuffix(strings.ToLower(checkASTField.Name.Name), "id")) &&
+							expectedFK := toSnakeCase(model.Name) + "_id"
+							for fieldName, checkASTField := range relatedASTFields {
+								if toSnakeCase(fieldName) == expectedFK &&
 									!hasAttribute(checkASTField, "id") {
-									expectedFK := toSnakeCase(model.Name) + "_id"
-									if toSnakeCase(checkASTField.Name.Name) == expectedFK {
-										relation.ForeignKey = checkASTField.Name.Name
-										relation.ForeignKeyTable = relatedModel.TableName
-										relation.LocalKey = localKeyField
-										break
-									}
+									relation.ForeignKey = checkASTField.Name.Name
+									relation.ForeignKeyTable = relatedModel.TableName
+									relation.LocalKey = localKeyField
+									break
 								}
 							}
 						}

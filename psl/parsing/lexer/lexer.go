@@ -19,6 +19,7 @@ const (
 	TokenModel
 	TokenEnum
 	TokenTypeKeyword
+	TokenView
 
 	// Literals
 	TokenIdentifier
@@ -40,6 +41,7 @@ const (
 	TokenColon
 	TokenDot
 	TokenPipe
+	TokenExclamation
 
 	// Special
 	TokenComment
@@ -140,6 +142,9 @@ func (l *Lexer) Tokenize() ([]Token, error) {
 		case char == '|':
 			debug.Debug("Tokenizing pipe", "line", l.line, "column", l.column)
 			l.addToken(TokenPipe, "|")
+		case char == '!':
+			debug.Debug("Tokenizing exclamation", "line", l.line, "column", l.column)
+			l.addToken(TokenExclamation, "!")
 		default:
 			debug.Error("Unexpected character during tokenization", "char", string(char), "line", l.line, "column", l.column)
 			return nil, fmt.Errorf("unexpected character '%c' at line %d, column %d", char, l.line, l.column)
@@ -258,7 +263,16 @@ func (l *Lexer) tokenizeString() {
 func (l *Lexer) tokenizeIdentifier() {
 	start := l.pos
 
-	for l.pos < len(l.input) && (unicode.IsLetter(rune(l.input[l.pos])) || unicode.IsDigit(rune(l.input[l.pos])) || l.input[l.pos] == '_') {
+	// First character must be a letter or underscore
+	if l.pos < len(l.input) && (unicode.IsLetter(rune(l.input[l.pos])) || l.input[l.pos] == '_') {
+		l.advance()
+	} else {
+		// Invalid identifier start
+		return
+	}
+
+	// Subsequent characters can be letters, digits, underscore, or hyphen
+	for l.pos < len(l.input) && (unicode.IsLetter(rune(l.input[l.pos])) || unicode.IsDigit(rune(l.input[l.pos])) || l.input[l.pos] == '_' || l.input[l.pos] == '-') {
 		l.advance()
 	}
 
@@ -282,6 +296,9 @@ func (l *Lexer) tokenizeIdentifier() {
 	case "type":
 		tokenType = TokenTypeKeyword
 		debug.Debug("Tokenized keyword", "type", "type", "value", value, "line", l.line, "column", l.column)
+	case "view":
+		tokenType = TokenView
+		debug.Debug("Tokenized keyword", "type", "view", "value", value, "line", l.line, "column", l.column)
 	case "true", "false":
 		tokenType = TokenBoolean
 		debug.Debug("Tokenized boolean literal", "value", value, "line", l.line, "column", l.column)
@@ -295,12 +312,29 @@ func (l *Lexer) tokenizeIdentifier() {
 
 func (l *Lexer) tokenizeNumber() {
 	start := l.pos
+	hasDecimal := false
 
+	// Check for negative sign
+	if l.pos < len(l.input) && l.input[l.pos] == '-' {
+		l.advance()
+	}
+
+	// Parse digits before decimal point
 	for l.pos < len(l.input) && unicode.IsDigit(rune(l.input[l.pos])) {
 		l.advance()
 	}
 
+	// Check for decimal point
+	if l.pos < len(l.input) && l.input[l.pos] == '.' {
+		hasDecimal = true
+		l.advance()
+		// Parse digits after decimal point
+		for l.pos < len(l.input) && unicode.IsDigit(rune(l.input[l.pos])) {
+			l.advance()
+		}
+	}
+
 	value := l.input[start:l.pos]
-	debug.Debug("Tokenized number", "value", value, "line", l.line, "column", l.column)
-	l.addToken(TokenNumber, value)
+	debug.Debug("Tokenized number", "value", value, "line", l.line, "column", l.column, "has_decimal", hasDecimal)
+	l.tokens = append(l.tokens, Token{Type: TokenNumber, Value: value, Line: l.line, Column: l.column})
 }
