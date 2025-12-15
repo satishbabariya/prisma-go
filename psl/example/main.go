@@ -3,7 +3,8 @@ package main
 import (
 	"fmt"
 
-	pls "github.com/satishbabariya/prisma-go/psl"
+	psl "github.com/satishbabariya/prisma-go/psl"
+	ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 func main() {
@@ -37,8 +38,8 @@ model Post {
 
 	// Parse the schema
 	fmt.Println("📝 Parsing schema...")
-	source := pls.NewSourceFile("schema.prisma", schema)
-	ast, diags := pls.ParseSchemaFromFile(source)
+	source := psl.NewSourceFile("schema.prisma", schema)
+	schemaAst, diags := psl.ParseSchemaFromFile(source)
 
 	if diags.HasErrors() {
 		fmt.Println("❌ Parse errors:")
@@ -46,16 +47,17 @@ model Post {
 		return
 	}
 
-	fmt.Printf("✅ Successfully parsed! Found %d top-level declarations:\n", len(ast.Tops))
-	for i, top := range ast.Tops {
-		if model := top.AsModel(); model != nil {
-			fmt.Printf("   %d. Model: %s\n", i+1, model.Name.Name)
-		} else if enum := top.AsEnum(); enum != nil {
-			fmt.Printf("   %d. Enum: %s\n", i+1, enum.Name.Name)
-		} else if source := top.AsSource(); source != nil {
-			fmt.Printf("   %d. Datasource: %s\n", i+1, source.Name.Name)
-		} else if gen := top.AsGenerator(); gen != nil {
-			fmt.Printf("   %d. Generator: %s\n", i+1, gen.Name.Name)
+	fmt.Printf("✅ Successfully parsed! Found %d top-level declarations:\n", len(schemaAst.Tops))
+	for i, top := range schemaAst.Tops {
+		switch t := top.(type) {
+		case *ast.Model:
+			fmt.Printf("   %d. Model: %s\n", i+1, t.Name.Name)
+		case *ast.Enum:
+			fmt.Printf("   %d. Enum: %s\n", i+1, t.Name.Name)
+		case *ast.SourceConfig:
+			fmt.Printf("   %d. Datasource: %s\n", i+1, t.Name.Name)
+		case *ast.GeneratorConfig:
+			fmt.Printf("   %d. Generator: %s\n", i+1, t.Name.Name)
 		}
 	}
 
@@ -63,7 +65,7 @@ model Post {
 
 	// Reformat the schema
 	fmt.Println("✨ Reformatting schema with 2-space indentation...")
-	formatted, err := pls.Reformat(schema, 2)
+	formatted, err := psl.Reformat(schema, 2)
 	if err != nil {
 		fmt.Printf("❌ Format error: %v\n", err)
 		return

@@ -20,10 +20,10 @@ func validateViewsSupport(ctx *ValidationContext) {
 			continue
 		}
 
-		if astModel.IsView {
+		if astModel.IsView() {
 			ctx.PushError(diagnostics.NewValidationError(
 				"View definitions are not supported with the current connector.",
-				astModel.Span(),
+				diagnostics.NewSpan(astModel.Pos.Offset, astModel.Pos.Offset+len(astModel.Name.Name), model.FileID()),
 			))
 		}
 	}
@@ -36,7 +36,7 @@ func validateViewDefinitionWithoutPreviewFlag(model *database.ModelWalker, ctx *
 		return
 	}
 
-	if !astModel.IsView {
+	if !astModel.IsView() {
 		return
 	}
 
@@ -47,7 +47,7 @@ func validateViewDefinitionWithoutPreviewFlag(model *database.ModelWalker, ctx *
 
 	ctx.PushError(diagnostics.NewValidationError(
 		"View definitions are only available with the `views` preview feature.",
-		astModel.Span(),
+		diagnostics.NewSpan(astModel.Pos.Offset, astModel.Pos.Offset+len(astModel.Name.Name), model.FileID()),
 	))
 }
 
@@ -63,7 +63,7 @@ func validateViewPrimaryKey(pk *database.PrimaryKeyWalker, ctx *ValidationContex
 		return
 	}
 
-	if !astModel.IsView {
+	if !astModel.IsView() {
 		return
 	}
 
@@ -71,7 +71,7 @@ func validateViewPrimaryKey(pk *database.PrimaryKeyWalker, ctx *ValidationContex
 	if astAttr != nil {
 		ctx.PushError(diagnostics.NewValidationError(
 			"Views cannot have primary keys.",
-			astAttr.Span,
+			diagnostics.NewSpan(astAttr.Pos.Offset, astAttr.Pos.Offset+len(astAttr.String()), model.FileID()),
 		))
 	}
 }
@@ -87,7 +87,7 @@ func validateViewIndex(index *database.IndexWalker, model *database.ModelWalker,
 		return
 	}
 
-	if !astModel.IsView {
+	if !astModel.IsView() {
 		return
 	}
 
@@ -100,7 +100,7 @@ func validateViewIndex(index *database.IndexWalker, model *database.ModelWalker,
 	if !index.IsUnique() {
 		ctx.PushError(diagnostics.NewValidationError(
 			"Views cannot have indexes.",
-			astAttr.Span,
+			diagnostics.NewSpan(astAttr.Pos.Offset, astAttr.Pos.Offset+len(astAttr.String()), model.FileID()),
 		))
 		return
 	}
@@ -109,7 +109,7 @@ func validateViewIndex(index *database.IndexWalker, model *database.ModelWalker,
 	if mappedName := index.MappedName(); mappedName != nil {
 		ctx.PushError(diagnostics.NewValidationError(
 			"@@unique annotations on views are not backed by unique indexes in the database and cannot specify a mapped database name.",
-			astAttr.Span,
+			diagnostics.NewSpan(astAttr.Pos.Offset, astAttr.Pos.Offset+len(astAttr.String()), model.FileID()),
 		))
 	}
 
@@ -117,7 +117,7 @@ func validateViewIndex(index *database.IndexWalker, model *database.ModelWalker,
 	if clustered := index.Clustered(); clustered != nil {
 		ctx.PushError(diagnostics.NewValidationError(
 			"@@unique annotations on views are not backed by unique indexes in the database and cannot be clustered.",
-			astAttr.Span,
+			diagnostics.NewSpan(astAttr.Pos.Offset, astAttr.Pos.Offset+len(astAttr.String()), model.FileID()),
 		))
 	}
 }
@@ -138,7 +138,7 @@ func validateViewIndexFieldAttribute(index *database.IndexWalker, field *databas
 		return
 	}
 
-	if !astModel.IsView {
+	if !astModel.IsView() {
 		return
 	}
 
@@ -153,7 +153,7 @@ func validateViewIndexFieldAttribute(index *database.IndexWalker, field *databas
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				"Scalar fields in @@unique attributes in views cannot have arguments.",
 				index.AttributeName(),
-				astAttr.Span,
+				diagnostics.NewSpan(astAttr.Pos.Offset, astAttr.Pos.Offset+len(astAttr.String()), model.FileID()),
 			))
 		}
 	}
@@ -166,7 +166,7 @@ func validateViewConnectorSpecific(model *database.ModelWalker, ctx *ValidationC
 		return
 	}
 
-	if !astModel.IsView {
+	if !astModel.IsView() {
 		return
 	}
 

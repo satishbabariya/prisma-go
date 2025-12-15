@@ -29,7 +29,7 @@ func validateOneToManyBothSidesAreDefined(relation *database.InlineRelationWalke
 	containerType := "model"
 	model := errorField.Model()
 	astModel := model.AstModel()
-	if astModel != nil && astModel.IsView {
+	if astModel != nil && astModel.IsView() {
 		containerType = "view"
 	}
 
@@ -59,7 +59,7 @@ func validateOneToManyBothSidesAreDefined(relation *database.InlineRelationWalke
 			containerType,
 			model.Name(),
 			errorField.Name(),
-			astField.Span(),
+			diagnostics.NewSpan(astField.Pos.Offset, astField.Pos.Offset+len(astField.Name.Name), model.FileID()),
 		))
 	}
 }
@@ -92,7 +92,7 @@ func validateOneToManyFieldsAndReferencesAreDefined(relation *database.InlineRel
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				message,
 				"@relation",
-				forwardAstField.Span(),
+				diagnostics.NewSpan(forwardAstField.Pos.Offset, forwardAstField.Pos.Offset+len(forwardAstField.Name.Name), forwardField.Model().FileID()),
 			))
 		}
 	}
@@ -111,7 +111,7 @@ func validateOneToManyFieldsAndReferencesAreDefined(relation *database.InlineRel
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				message,
 				"@relation",
-				forwardAstField.Span(),
+				diagnostics.NewSpan(forwardAstField.Pos.Offset, forwardAstField.Pos.Offset+len(forwardAstField.Name.Name), forwardField.Model().FileID()),
 			))
 		}
 	}
@@ -134,7 +134,7 @@ func validateOneToManyFieldsAndReferencesAreDefined(relation *database.InlineRel
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				message,
 				"@relation",
-				backAstField.Span(),
+				diagnostics.NewSpan(backAstField.Pos.Offset, backAstField.Pos.Offset+len(backAstField.Name.Name), backField.Model().FileID()),
 			))
 		}
 	}
@@ -167,7 +167,7 @@ func validateOneToManyReferentialActions(relation *database.InlineRelationWalker
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				message,
 				"@relation",
-				backAstField.Span(),
+				diagnostics.NewSpan(backAstField.Pos.Offset, backAstField.Pos.Offset+len(backAstField.Name.Name), backField.Model().FileID()),
 			))
 		}
 	}

@@ -2,7 +2,7 @@
 package database
 
 import (
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // RelationFieldWalker provides access to a relation field in a model.
@@ -30,7 +30,7 @@ func (w *RelationFieldWalker) FieldID() uint32 {
 }
 
 // AstField returns the AST node for the field.
-func (w *RelationFieldWalker) AstField() *ast.Field {
+func (w *RelationFieldWalker) AstField() *v2ast.Field {
 	rf := w.attributes()
 	if rf == nil {
 		return nil
@@ -40,7 +40,7 @@ func (w *RelationFieldWalker) AstField() *ast.Field {
 	if astModel == nil || int(rf.FieldID) >= len(astModel.Fields) {
 		return nil
 	}
-	return &astModel.Fields[rf.FieldID]
+	return astModel.Fields[rf.FieldID]
 }
 
 // Model returns the parent model walker.
@@ -76,7 +76,7 @@ func (w *RelationFieldWalker) IsRequired() bool {
 	if astField == nil {
 		return false
 	}
-	return !astField.FieldType.IsOptional()
+	return !astField.Arity.IsOptional()
 }
 
 // ReferencingFields returns the scalar fields that reference the related model (fields argument).

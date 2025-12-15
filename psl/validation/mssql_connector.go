@@ -2,8 +2,6 @@
 package validation
 
 import (
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
-
 	"fmt"
 	"strings"
 
@@ -273,11 +271,13 @@ func (c *MsSqlConnector) ValidateScalarFieldUnknownDefaultFunctions(db *database
 	for _, model := range db.WalkModels() {
 		for _, field := range model.ScalarFields() {
 			if defaultValue := field.DefaultValue(); defaultValue != nil {
-				if funcCall, ok := defaultValue.Value().(ast.FunctionCall); ok {
-					switch funcCall.Name.Name {
+				if funcCall, ok := defaultValue.Value().AsFunction(); ok {
+					switch funcCall.Name {
 					case "now", "uuid", "cuid", "cuid2", "autoincrement", "dbgenerated", "env":
 					default:
-						diags.PushError(diagnostics.NewDefaultUnknownFunctionError(funcCall.Name.Name, funcCall.Span()))
+						pos := funcCall.Span()
+						span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(funcCall.Name), diagnostics.FileIDZero)
+						diags.PushError(diagnostics.NewDefaultUnknownFunctionError(funcCall.Name, span))
 					}
 				}
 			}
@@ -316,16 +316,16 @@ func validateMsSqlIndexFieldTypes(connector *MsSqlConnector, index *database.Ind
 		for _, attr := range astField.Attributes {
 			if attr.Name.Name == "db" && len(attr.Arguments.Arguments) > 0 {
 				if firstArg := attr.Arguments.Arguments[0]; firstArg.Value != nil {
-					if strLit, ok := firstArg.Value.(ast.StringLiteral); ok {
+					if strLit, ok := firstArg.Value.AsStringValue(); ok {
 						typeName = strLit.Value
-					} else if ident, ok := firstArg.Value.(ast.Identifier); ok {
-						typeName = ident.Name
+					} else if constVal, ok := firstArg.Value.AsConstantValue(); ok {
+						typeName = constVal.Value
 					}
 					for i := 1; i < len(attr.Arguments.Arguments); i++ {
 						if arg := attr.Arguments.Arguments[i]; arg.Value != nil {
-							if strLit, ok := arg.Value.(ast.StringLiteral); ok {
+							if strLit, ok := arg.Value.AsStringValue(); ok {
 								typeArgs = append(typeArgs, strLit.Value)
-							} else if numVal, ok := arg.Value.(ast.NumericValue); ok {
+							} else if numVal, ok := arg.Value.AsNumericValue(); ok {
 								typeArgs = append(typeArgs, numVal.String())
 							}
 						}
@@ -365,7 +365,7 @@ func validateMsSqlIndexFieldTypes(connector *MsSqlConnector, index *database.Ind
 		errorFactory := connector.NativeInstanceError(nativeTypeInstance)
 		span := diagnostics.EmptySpan()
 		if astAttr := index.AstAttribute(); astAttr != nil {
-			span = astAttr.Span
+			span = diagnostics.NewSpan(astAttr.Pos.Offset, astAttr.Pos.Offset+len(astAttr.String()), diagnostics.FileIDZero)
 		}
 		var err diagnostics.DatamodelError
 		if index.IsUnique() {
@@ -382,7 +382,7 @@ func validateMsSqlIndexFieldTypes(connector *MsSqlConnector, index *database.Ind
 func validateMsSqlPrimaryKeyFieldTypes(connector *MsSqlConnector, pk *database.PrimaryKeyWalker, diags *diagnostics.Diagnostics) {
 	span := diagnostics.EmptySpan()
 	if astAttr := pk.AstAttribute(); astAttr != nil {
-		span = astAttr.Span
+		span = diagnostics.NewSpan(astAttr.Pos.Offset, astAttr.Pos.Offset+len(astAttr.String()), diagnostics.FileIDZero)
 	}
 
 	for _, field := range pk.ScalarFieldAttributes() {
@@ -416,16 +416,16 @@ func validateMsSqlPrimaryKeyFieldTypes(connector *MsSqlConnector, pk *database.P
 		for _, attr := range astField.Attributes {
 			if attr.Name.Name == "db" && len(attr.Arguments.Arguments) > 0 {
 				if firstArg := attr.Arguments.Arguments[0]; firstArg.Value != nil {
-					if strLit, ok := firstArg.Value.(ast.StringLiteral); ok {
+					if strLit, ok := firstArg.Value.AsStringValue(); ok {
 						typeName = strLit.Value
-					} else if ident, ok := firstArg.Value.(ast.Identifier); ok {
-						typeName = ident.Name
+					} else if constVal, ok := firstArg.Value.AsConstantValue(); ok {
+						typeName = constVal.Value
 					}
 					for i := 1; i < len(attr.Arguments.Arguments); i++ {
 						if arg := attr.Arguments.Arguments[i]; arg.Value != nil {
-							if strLit, ok := arg.Value.(ast.StringLiteral); ok {
+							if strLit, ok := arg.Value.AsStringValue(); ok {
 								typeArgs = append(typeArgs, strLit.Value)
-							} else if numVal, ok := arg.Value.(ast.NumericValue); ok {
+							} else if numVal, ok := arg.Value.AsNumericValue(); ok {
 								typeArgs = append(typeArgs, numVal.String())
 							}
 						}

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // ExtractRelationMetadata extracts relation metadata from PSL schema AST
@@ -14,8 +14,8 @@ func ExtractRelationMetadata(schemaAST *ast.SchemaAst, modelName string) (map[st
 
 	// Find the model
 	var model *ast.Model
-	for _, top := range schemaAST.Tops {
-		if m := top.AsModel(); m != nil && m.Name.Name == modelName {
+	for _, m := range schemaAST.Models() {
+		if m.Name.Name == modelName {
 			model = m
 			break
 		}
@@ -29,14 +29,15 @@ func ExtractRelationMetadata(schemaAST *ast.SchemaAst, modelName string) (map[st
 	_ = toSnakeCase(modelName)
 
 	// Find all relation fields
-	for i := range model.Fields {
-		fieldPtr := &model.Fields[i]
-		if !isRelationField(fieldPtr) {
+	for _, field := range model.Fields {
+		// field is *ast.Field
+
+		if !isRelationField(field) {
 			continue
 		}
 
-		relationName := fieldPtr.Name.Name
-		relatedModelName := getRelatedModelName(fieldPtr)
+		relationName := field.Name.Name
+		relatedModelName := getRelatedModelName(field)
 
 		if relatedModelName == "" {
 			continue
@@ -44,8 +45,8 @@ func ExtractRelationMetadata(schemaAST *ast.SchemaAst, modelName string) (map[st
 
 		// Find the related model
 		var relatedModel *ast.Model
-		for _, top := range schemaAST.Tops {
-			if m := top.AsModel(); m != nil && m.Name.Name == relatedModelName {
+		for _, m := range schemaAST.Models() {
+			if m.Name.Name == relatedModelName {
 				relatedModel = m
 				break
 			}
@@ -58,10 +59,10 @@ func ExtractRelationMetadata(schemaAST *ast.SchemaAst, modelName string) (map[st
 		relatedTableName := toSnakeCase(relatedModelName)
 
 		// Parse @relation attribute
-		fields, _, _ := parseRelationAttribute(fieldPtr)
+		fields, _, _ := parseRelationAttribute(field)
 
 		// Determine relation type
-		isList := fieldPtr.Arity.IsList()
+		isList := field.Arity.IsList()
 		isManyToMany := false
 		junctionTable := ""
 		junctionFKToSelf := ""
@@ -70,10 +71,9 @@ func ExtractRelationMetadata(schemaAST *ast.SchemaAst, modelName string) (map[st
 		// Check if this is a many-to-many relation
 		if isList {
 			// Check if opposite field is also a list
-			for j := range relatedModel.Fields {
-				oppFieldPtr := &relatedModel.Fields[j]
-				if isRelationField(oppFieldPtr) && getRelatedModelName(oppFieldPtr) == modelName {
-					if oppFieldPtr.Arity.IsList() {
+			for _, oppField := range relatedModel.Fields {
+				if isRelationField(oppField) && getRelatedModelName(oppField) == modelName {
+					if oppField.Arity.IsList() {
 						isManyToMany = true
 						// Generate junction table name
 						modelNames := []string{modelName, relatedModelName}
@@ -134,7 +134,10 @@ func ExtractRelationMetadata(schemaAST *ast.SchemaAst, modelName string) (map[st
 // isRelationField checks if a field is a relation field
 func isRelationField(field *ast.Field) bool {
 	// Check if field type is a model (not a scalar)
-	typeName := field.FieldType.TypeName()
+	typeName := ""
+	if field.Type != nil {
+		typeName = field.Type.Name
+	}
 	scalarTypes := map[string]bool{
 		"int": true, "bigint": true, "string": true, "boolean": true, "bool": true,
 		"datetime": true, "float": true, "decimal": true, "json": true, "bytes": true,
@@ -145,8 +148,11 @@ func isRelationField(field *ast.Field) bool {
 
 // getRelatedModelName extracts the related model name from a relation field
 func getRelatedModelName(field *ast.Field) string {
-	typeName := field.FieldType.TypeName()
-	// Remove array brackets if present
+	if field.Type == nil {
+		return ""
+	}
+	typeName := field.Type.Name
+	// Remove array brackets if present (though V2 AST usually separates type name from arity)
 	typeName = strings.TrimPrefix(typeName, "[")
 	typeName = strings.TrimSuffix(typeName, "]")
 	return typeName
@@ -159,6 +165,10 @@ func parseRelationAttribute(field *ast.Field) (fields []string, references []str
 			continue
 		}
 
+		if attr.Arguments == nil {
+			continue
+		}
+
 		// Parse arguments
 		for _, arg := range attr.Arguments.Arguments {
 			if arg.Name == nil {
@@ -168,21 +178,43 @@ func parseRelationAttribute(field *ast.Field) (fields []string, references []str
 			argName := arg.Name.Name
 			if argName == "fields" {
 				// Parse array of field names
-				if arrayExpr := arg.Value.AsArray(); arrayExpr != nil {
+				if arrayExpr, ok := arg.Value.(*ast.ArrayExpression); ok {
 					for _, elem := range arrayExpr.Elements {
-						if ident, ok := elem.(ast.Identifier); ok {
-							fields = append(fields, ident.Name)
+						if ident, ok := elem.(*ast.ConstantValue); ok {
+							fields = append(fields, ident.Value)
+						} else if str, ok := elem.(*ast.StringValue); ok {
+							fields = append(fields, str.GetValue())
+						} else if path, ok := elem.(*ast.PathValue); ok {
+							fields = append(fields, path.String())
 						}
 					}
 				}
 			} else if argName == "references" {
 				// Parse array of field names
-				if arrayExpr := arg.Value.AsArray(); arrayExpr != nil {
+				if arrayExpr, ok := arg.Value.(*ast.ArrayExpression); ok {
 					for _, elem := range arrayExpr.Elements {
-						if ident, ok := elem.(ast.Identifier); ok {
-							references = append(references, ident.Name)
+						if ident, ok := elem.(*ast.ConstantValue); ok {
+							references = append(references, ident.Value)
+						} else if str, ok := elem.(*ast.StringValue); ok {
+							references = append(references, str.GetValue())
+						} else if path, ok := elem.(*ast.PathValue); ok {
+							references = append(references, path.String())
 						}
 					}
+				}
+			} else if argName == "name" {
+				if str, ok := arg.Value.(*ast.StringValue); ok {
+					relationName = str.GetValue()
+				}
+			}
+		}
+
+		// Check for unnamed positional arguments
+		if relationName == "" && len(attr.Arguments.Arguments) > 0 {
+			firstArg := attr.Arguments.Arguments[0]
+			if firstArg.Name == nil {
+				if str, ok := firstArg.Value.(*ast.StringValue); ok {
+					relationName = str.GetValue()
 				}
 			}
 		}

@@ -2,7 +2,7 @@
 package validation
 
 import (
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 
 	"encoding/base64"
 	"encoding/json"
@@ -62,7 +62,7 @@ func validateDefaultValueType(field *database.ScalarFieldWalker, ctx *Validation
 }
 
 // validateEnumDefaultValue validates that enum default values are valid enum values.
-func validateEnumDefaultValue(field *database.ScalarFieldWalker, value ast.Expression, ctx *ValidationContext) {
+func validateEnumDefaultValue(field *database.ScalarFieldWalker, value v2ast.Expression, ctx *ValidationContext) {
 	fieldType := field.ScalarFieldType()
 	if fieldType.EnumID == nil {
 		return
@@ -75,16 +75,17 @@ func validateEnumDefaultValue(field *database.ScalarFieldWalker, value ast.Expre
 
 	// Get the enum value name from the default value
 	var enumValueName string
-	switch v := value.(type) {
-	case ast.StringLiteral:
-		enumValueName = v.Value
-	case ast.ConstantValue:
-		enumValueName = v.Value
-	default:
+	if strLit, ok := value.AsStringValue(); ok {
+		enumValueName = strLit.Value
+	} else if constVal, ok := value.AsConstantValue(); ok {
+		enumValueName = constVal.Value
+	} else {
+		pos := value.Span()
+		span := diagnostics.NewSpan(pos.Offset, pos.Offset+10, field.Model().FileID())
 		ctx.PushError(diagnostics.NewAttributeValidationError(
 			"Enum default value must be a valid enum value name.",
 			"@default",
-			value.Span(),
+			span,
 		))
 		return
 	}
@@ -100,121 +101,138 @@ func validateEnumDefaultValue(field *database.ScalarFieldWalker, value ast.Expre
 	}
 
 	if !found {
+		pos := value.Span()
+		span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(enumValueName), field.Model().FileID())
 		ctx.PushError(diagnostics.NewAttributeValidationError(
 			fmt.Sprintf("Enum value '%s' is not a valid value for enum '%s'.", enumValueName, enum.Name()),
 			"@default",
-			value.Span(),
+			span,
 		))
 	}
 }
 
 // validateIntDefaultValue validates integer default values.
-func validateIntDefaultValue(value ast.Expression, ctx *ValidationContext) {
-	switch v := value.(type) {
-	case ast.IntLiteral:
+func validateIntDefaultValue(value v2ast.Expression, ctx *ValidationContext) {
+	if _, ok := value.AsNumericValue(); ok {
 		// Valid integer literal - check if it can be parsed as int64
 		// The parser should have already validated this, but we can add extra validation if needed
 		return
-	case ast.FunctionCall:
-		if v.Name.Name == "autoincrement" || v.Name.Name == "cuid" || v.Name.Name == "uuid" {
+	} else if funcCall, ok := value.AsFunction(); ok {
+		if funcCall.Name == "autoincrement" || funcCall.Name == "cuid" || funcCall.Name == "uuid" {
 			// Valid function calls
 			return
 		}
+		pos := value.Span()
+		span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(funcCall.Name), diagnostics.FileIDZero)
 		ctx.PushError(diagnostics.NewAttributeValidationError(
 			"Default value must be an integer or a valid function call.",
 			"@default",
-			value.Span(),
+			span,
 		))
-	case ast.StringLiteral:
+	} else if strLit, ok := value.AsStringValue(); ok {
 		// Try to parse as integer
 		// This handles cases where a string is provided but should be an integer
+		pos := value.Span()
+		span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(strLit.Value), diagnostics.FileIDZero)
 		ctx.PushError(diagnostics.NewAttributeValidationError(
-			fmt.Sprintf("Parse error: \"%s\" is not a valid integer.", v.Value),
+			fmt.Sprintf("Parse error: \"%s\" is not a valid integer.", strLit.Value),
 			"@default",
-			value.Span(),
+			span,
 		))
-	default:
+	} else {
+		pos := value.Span()
+		span := diagnostics.NewSpan(pos.Offset, pos.Offset+10, diagnostics.FileIDZero)
 		ctx.PushError(diagnostics.NewAttributeValidationError(
 			"Default value must be an integer or a function call.",
 			"@default",
-			value.Span(),
+			span,
 		))
 	}
 }
 
 // validateFloatDefaultValue validates float default values.
-func validateFloatDefaultValue(value ast.Expression, ctx *ValidationContext) {
-	switch value.(type) {
-	case ast.FloatLiteral:
+func validateFloatDefaultValue(value v2ast.Expression, ctx *ValidationContext) {
+	if _, ok := value.AsNumericValue(); ok {
 		// Valid float literal
-		return
-	case ast.IntLiteral:
 		// Integers can be used as floats
 		return
-	default:
+	} else {
+		pos := value.Span()
+		span := diagnostics.NewSpan(pos.Offset, pos.Offset+10, diagnostics.FileIDZero)
 		ctx.PushError(diagnostics.NewValidationError(
 			"Default value must be a number.",
-			value.Span(),
+			span,
 		))
 	}
 }
 
 // validateBooleanDefaultValue validates boolean default values.
-func validateBooleanDefaultValue(value ast.Expression, ctx *ValidationContext) {
-	switch value.(type) {
-	case ast.BooleanLiteral:
-		// Valid boolean literal
-		return
-	default:
-		ctx.PushError(diagnostics.NewValidationError(
-			"Default value must be a boolean.",
-			value.Span(),
-		))
+func validateBooleanDefaultValue(value v2ast.Expression, ctx *ValidationContext) {
+	// Boolean values are often Constants in the parser if true/false are treated as keywords/constants
+	// But V2 AST might not have specific BooleanValue type from parser, likely ConstantValue "true"/"false"
+	// Check AsConstantValue
+	if cv, ok := value.AsConstantValue(); ok {
+		if cv.Value == "true" || cv.Value == "false" {
+			return
+		}
 	}
+
+	pos := value.Span()
+	span := diagnostics.NewSpan(pos.Offset, pos.Offset+10, diagnostics.FileIDZero)
+	ctx.PushError(diagnostics.NewValidationError(
+		"Default value must be a boolean.",
+		span,
+	))
 }
 
 // validateStringDefaultValue validates string default values.
-func validateStringDefaultValue(value ast.Expression, ctx *ValidationContext) {
-	switch value.(type) {
-	case ast.StringLiteral:
+func validateStringDefaultValue(value v2ast.Expression, ctx *ValidationContext) {
+	if _, ok := value.AsStringValue(); ok {
 		// Valid string literal
 		return
-	case ast.FunctionCall:
+	} else if _, ok := value.AsFunction(); ok {
 		// Function calls like cuid(), uuid(), now() are valid
 		return
-	default:
+	} else {
+		pos := value.Span()
+		span := diagnostics.NewSpan(pos.Offset, pos.Offset+10, diagnostics.FileIDZero)
 		ctx.PushError(diagnostics.NewValidationError(
 			"Default value must be a string or a function call.",
-			value.Span(),
+			span,
 		))
 	}
 }
 
 // validateDateTimeDefaultValue validates DateTime default values.
-func validateDateTimeDefaultValue(value ast.Expression, ctx *ValidationContext) {
-	switch v := value.(type) {
-	case ast.StringLiteral:
+func validateDateTimeDefaultValue(value v2ast.Expression, ctx *ValidationContext) {
+	if strLit, ok := value.AsStringValue(); ok {
 		// Validate RFC3339 format
-		if err := validateRFC3339DateTime(v.Value); err != nil {
+		if err := validateRFC3339DateTime(strLit.Value); err != nil {
+			pos := value.Span()
+			span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(strLit.Value), diagnostics.FileIDZero)
 			ctx.PushError(diagnostics.NewAttributeValidationError(
-				fmt.Sprintf("Parse error: \"%s\" is not a valid rfc3339 datetime string. (%s)", v.Value, err.Error()),
+				fmt.Sprintf("Parse error: \"%s\" is not a valid rfc3339 datetime string. (%s)", strLit.Value, err.Error()),
 				"@default",
-				v.Span(),
+				span,
 			))
 		}
 		return
-	case ast.FunctionCall:
-		if v.Name.Name == "now" {
+	} else if funcCall, ok := value.AsFunction(); ok {
+		if funcCall.Name == "now" {
 			return
 		}
+		pos := value.Span()
+		span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(funcCall.Name), diagnostics.FileIDZero)
 		ctx.PushError(diagnostics.NewValidationError(
 			fmt.Sprintf("DateTime default value must be a valid RFC3339 string or now()."),
-			value.Span(),
+			span,
 		))
-	default:
+	} else {
+		pos := value.Span()
+		span := diagnostics.NewSpan(pos.Offset, pos.Offset+10, diagnostics.FileIDZero)
 		ctx.PushError(diagnostics.NewValidationError(
 			"DateTime default value must be a string or now().",
-			value.Span(),
+			span,
 		))
 	}
 }
@@ -232,22 +250,25 @@ func validateRFC3339DateTime(value string) error {
 }
 
 // validateJsonDefaultValue validates JSON default values.
-func validateJsonDefaultValue(value ast.Expression, ctx *ValidationContext) {
-	switch v := value.(type) {
-	case ast.StringLiteral:
+func validateJsonDefaultValue(value v2ast.Expression, ctx *ValidationContext) {
+	if strLit, ok := value.AsStringValue(); ok {
 		// Validate JSON format
-		if err := validateJSONString(v.Value); err != nil {
+		if err := validateJSONString(strLit.Value); err != nil {
+			pos := value.Span()
+			span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(strLit.Value), diagnostics.FileIDZero)
 			ctx.PushError(diagnostics.NewAttributeValidationError(
-				fmt.Sprintf("Parse error: \"%s\" is not a valid JSON string. (%s)", v.Value, err.Error()),
+				fmt.Sprintf("Parse error: \"%s\" is not a valid JSON string. (%s)", strLit.Value, err.Error()),
 				"@default",
-				v.Span(),
+				span,
 			))
 		}
 		return
-	default:
+	} else {
+		pos := value.Span()
+		span := diagnostics.NewSpan(pos.Offset, pos.Offset+10, diagnostics.FileIDZero)
 		ctx.PushError(diagnostics.NewValidationError(
 			"JSON default value must be a valid JSON string.",
-			value.Span(),
+			span,
 		))
 	}
 }
@@ -259,22 +280,25 @@ func validateJSONString(value string) error {
 }
 
 // validateBytesDefaultValue validates Bytes default values.
-func validateBytesDefaultValue(value ast.Expression, ctx *ValidationContext) {
-	switch v := value.(type) {
-	case ast.StringLiteral:
+func validateBytesDefaultValue(value v2ast.Expression, ctx *ValidationContext) {
+	if strLit, ok := value.AsStringValue(); ok {
 		// Validate base64 format
-		if err := validateBase64String(v.Value); err != nil {
+		if err := validateBase64String(strLit.Value); err != nil {
+			pos := value.Span()
+			span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(strLit.Value), diagnostics.FileIDZero)
 			ctx.PushError(diagnostics.NewAttributeValidationError(
-				fmt.Sprintf("Parse error: \"%s\" is not a valid base64 string. (%s)", v.Value, err.Error()),
+				fmt.Sprintf("Parse error: \"%s\" is not a valid base64 string. (%s)", strLit.Value, err.Error()),
 				"@default",
-				v.Span(),
+				span,
 			))
 		}
 		return
-	default:
+	} else {
+		pos := value.Span()
+		span := diagnostics.NewSpan(pos.Offset, pos.Offset+10, diagnostics.FileIDZero)
 		ctx.PushError(diagnostics.NewValidationError(
 			"Bytes default value must be a valid base64 string.",
-			value.Span(),
+			span,
 		))
 	}
 }
@@ -300,10 +324,12 @@ func validateNamedDefaultValues(field *database.ScalarFieldWalker, ctx *Validati
 		if !ctx.HasCapability(ConnectorCapabilityNamedDefaultValues) {
 			value := defaultValue.Value()
 			if value != nil {
+				pos := value.Span()
+				span := diagnostics.NewSpan(pos.Offset, pos.Offset+10, diagnostics.FileIDZero)
 				ctx.PushError(diagnostics.NewAttributeValidationError(
 					"You defined a database name for the default value of a field on the model. This is not supported by the provider.",
 					"@default",
-					value.Span(),
+					span,
 				))
 			}
 		}
@@ -327,13 +353,15 @@ func validateAutoParam(field *database.ScalarFieldWalker, ctx *ValidationContext
 	}
 
 	// Check if it's a function call to auto()
-	if funcCall, ok := value.(ast.FunctionCall); ok {
-		if funcCall.Name.Name == "auto" {
+	if funcCall, ok := value.AsFunction(); ok {
+		if funcCall.Name == "auto" {
 			if !ctx.HasCapability(ConnectorCapabilityDefaultValueAuto) {
+				pos := funcCall.Span()
+				span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(funcCall.Name), diagnostics.FileIDZero)
 				ctx.PushError(diagnostics.NewAttributeValidationError(
 					"The current connector does not support the `auto()` function.",
 					"@default",
-					funcCall.Span(),
+					span,
 				))
 			}
 		}

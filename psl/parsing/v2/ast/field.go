@@ -54,7 +54,7 @@ func (u *UnsupportedType) String() string {
 type FieldType struct {
 	Pos         lexer.Position
 	Name        string  `@Ident`
-	Unsupported *string // For Unsupported("type") - parsed separately
+	Unsupported *string `| ("Unsupported" "(" @String ")")`
 }
 
 // String returns the string representation of the field type.

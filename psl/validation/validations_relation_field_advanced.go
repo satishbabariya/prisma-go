@@ -178,7 +178,7 @@ func validateRelationFieldReferentialActionsAdvanced(field *database.RelationFie
 	if onDelete != nil {
 		action := convertReferentialAction(onDelete.Action)
 		if !ctx.Connector.SupportsReferentialAction(relationMode, action) {
-			span := astField.Span()
+			span := diagnostics.NewSpan(astField.Pos.Offset, astField.Pos.Offset+len(astField.Name.Name), field.Model().FileID())
 			// TODO: Get span for "onDelete" argument when span_for_argument is available
 			ctx.PushError(diagnostics.NewValidationError(
 				createErrorMessage(action),
@@ -192,7 +192,7 @@ func validateRelationFieldReferentialActionsAdvanced(field *database.RelationFie
 	if onUpdate != nil {
 		action := convertReferentialAction(onUpdate.Action)
 		if !ctx.Connector.SupportsReferentialAction(relationMode, action) {
-			span := astField.Span()
+			span := diagnostics.NewSpan(astField.Pos.Offset, astField.Pos.Offset+len(astField.Name.Name), field.Model().FileID())
 			// TODO: Get span for "onUpdate" argument when span_for_argument is available
 			ctx.PushError(diagnostics.NewValidationError(
 				createErrorMessage(action),
@@ -287,7 +287,7 @@ func validateRelationFieldMissingIndexes(field *database.RelationFieldWalker, ct
 		}
 		ctx.PushWarning(diagnostics.NewDatamodelWarning(
 			fmt.Sprintf("The relation field '%s' on model '%s' references fields [%s] that are not covered by any index or primary key. This may cause performance issues.", field.Name(), model.Name(), fmt.Sprintf("%v", fieldNames)),
-			astField.Span(),
+			diagnostics.NewSpan(astField.Pos.Offset, astField.Pos.Offset+len(astField.Name.Name), field.Model().FileID()),
 		))
 	}
 }

@@ -3,23 +3,25 @@ package database
 
 import (
 	"github.com/satishbabariya/prisma-go/psl/diagnostics"
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // HandleFieldId handles @id on a scalar field.
 func HandleFieldId(
-	astModel *ast.Model,
+	astModel *v2ast.Model,
 	sfid ScalarFieldId,
 	fieldID uint32,
 	modelAttrs *ModelAttributes,
 	ctx *Context,
 ) {
 	if modelAttrs.PrimaryKey != nil {
+		pos := astModel.TopPos()
+		span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(astModel.GetName()), diagnostics.FileIDZero)
 		ctx.PushError(diagnostics.NewModelValidationError(
 			"At most one field must be marked as the id field with the `@id` attribute.",
 			"model",
-			astModel.Name.Name,
-			astModel.Span(),
+			astModel.GetName(),
+			span,
 		))
 		return
 	}
@@ -104,7 +106,9 @@ func HandleModelId(
 	}
 
 	// Use the common field resolution function (without composite type support for @@id)
-	resolvedFields, resolveErr := resolveFieldArrayWithArgs(fieldsExpr, attr.Span, modelID, false, false, ctx)
+	pos := attr.Pos
+	span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(attr.GetName()), diagnostics.FileIDZero)
+	resolvedFields, resolveErr := resolveFieldArrayWithArgs(fieldsExpr, span, modelID, false, false, ctx)
 	if resolveErr != nil {
 		// Errors already pushed
 		return
@@ -120,29 +124,36 @@ func HandleModelId(
 	for _, fieldWithArgs := range resolvedFields {
 		sf := &ctx.types.ScalarFields[fieldWithArgs.Field]
 		if astModel != nil && int(sf.FieldID) < len(astModel.Fields) {
-			astField := &astModel.Fields[sf.FieldID]
+			astField := astModel.Fields[sf.FieldID]
+			if astField == nil {
+				continue
+			}
 			// Check if field is required (not optional and not array)
-			if astField.FieldType.IsOptional() || astField.FieldType.IsArray() {
-				fieldsThatAreNotRequired = append(fieldsThatAreNotRequired, astField.Name.Name)
+			if astField.Arity.IsOptional() || astField.Arity.IsList() {
+				fieldsThatAreNotRequired = append(fieldsThatAreNotRequired, astField.GetName())
 			}
 		}
 	}
 
 	if len(fieldsThatAreNotRequired) > 0 && !modelAttrs.IsIgnored {
+		pos := attr.Pos
+		span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(attr.GetName()), diagnostics.FileIDZero)
 		ctx.PushError(diagnostics.NewModelValidationError(
 			"The id definition refers to the optional fields: "+formatFieldNames(fieldsThatAreNotRequired)+". ID definitions must reference only required fields.",
 			"model",
-			astModel.Name.Name,
-			attr.Span,
+			astModel.GetName(),
+			span,
 		))
 	}
 
 	if modelAttrs.PrimaryKey != nil {
+		pos := astModel.TopPos()
+		span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(astModel.GetName()), diagnostics.FileIDZero)
 		ctx.PushError(diagnostics.NewModelValidationError(
 			"Each model must have at most one id criteria. You can't have `@id` and `@@id` at the same time.",
 			"model",
-			astModel.Name.Name,
-			astModel.Span(),
+			astModel.GetName(),
+			span,
 		))
 		return
 	}
@@ -150,7 +161,9 @@ func HandleModelId(
 	mappedName := primaryKeyMappedName(ctx)
 	name := getNameArgument(ctx)
 	if name != nil {
-		validateClientName(attr.Span, astModel.Name.Name, *name, "@@id", ctx)
+		pos := attr.Pos
+		span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(attr.GetName()), diagnostics.FileIDZero)
+		validateClientName(span, astModel.GetName(), *name, "@@id", ctx)
 	}
 
 	clustered := validateClusteringSetting(ctx)
@@ -196,14 +209,19 @@ func ValidateIdFieldArities(
 		return
 	}
 
-	astField := &astModel.Fields[*pk.SourceField]
-	if astField.FieldType.IsOptional() || astField.FieldType.IsArray() {
+	astField := astModel.Fields[*pk.SourceField]
+	if astField == nil {
+		return
+	}
+	if astField.Arity.IsOptional() || astField.Arity.IsList() {
 		// TODO: Get proper attribute span from AttributeId
 		// For now, use the field span
+		pos := astField.Pos
+		span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(astField.GetName()), diagnostics.FileIDZero)
 		ctx.PushError(diagnostics.NewAttributeValidationError(
 			"Fields that are marked as id must be required.",
 			"@id",
-			astField.Name.Span(),
+			span,
 		))
 	}
 }

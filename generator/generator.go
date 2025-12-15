@@ -6,7 +6,7 @@ import (
 
 	"github.com/satishbabariya/prisma-go/generator/codegen"
 	"github.com/satishbabariya/prisma-go/internal/debug"
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // Generator generates Go client code from schema
@@ -77,17 +77,12 @@ func (g *Generator) GenerateClient(outputDir string) error {
 // validateSchema performs basic validation on the schema AST
 func (g *Generator) validateSchema() error {
 	// Check that we have at least one model
-	hasModel := false
-	modelCount := 0
-	for _, top := range g.ast.Tops {
-		if top.AsModel() != nil {
-			hasModel = true
-			modelCount++
-		}
-	}
+	models := g.ast.Models()
+	modelCount := len(models)
+
 	debug.Debug("Schema validation check", "totalTops", len(g.ast.Tops), "modelCount", modelCount)
 
-	if !hasModel {
+	if modelCount == 0 {
 		debug.Error("Schema validation failed: no models found")
 		return fmt.Errorf("schema must contain at least one model")
 	}

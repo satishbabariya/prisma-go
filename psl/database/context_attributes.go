@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/satishbabariya/prisma-go/psl/diagnostics"
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // VisitAttributes starts visiting an attribute container.
@@ -27,14 +27,16 @@ func (ctx *Context) VisitOptionalSingleAttr(name string) bool {
 
 	// Find first matching attribute
 	for _, entry := range attrs {
-		if entry.Attr.Name.Name == name {
+		if entry.Attr != nil && entry.Attr.GetName() == name {
 			if foundAttr == nil {
 				foundAttr = &entry
 			} else {
 				// Duplicate found - report error for all of them
+				pos := entry.Attr.Pos
+				span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(name), diagnostics.FileIDZero)
 				ctx.PushError(diagnostics.NewDuplicateAttributeError(
 					name,
-					entry.Attr.Span,
+					span,
 				))
 				// Remove from unused
 				delete(ctx.attributes.unusedAttributes, entry.ID)
@@ -49,11 +51,13 @@ func (ctx *Context) VisitOptionalSingleAttr(name string) bool {
 	// Check for duplicates
 	hasDuplicates := false
 	for _, entry := range attrs {
-		if entry.Attr.Name.Name == name && entry.ID != foundAttr.ID {
+		if entry.Attr != nil && entry.Attr.GetName() == name && entry.ID != foundAttr.ID {
 			hasDuplicates = true
+			pos := entry.Attr.Pos
+			span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(name), diagnostics.FileIDZero)
 			ctx.PushError(diagnostics.NewDuplicateAttributeError(
 				name,
-				entry.Attr.Span,
+				span,
 			))
 			delete(ctx.attributes.unusedAttributes, entry.ID)
 		}
@@ -78,7 +82,7 @@ func (ctx *Context) VisitRepeatedAttr(name string) bool {
 
 		// Find next unused attribute with this name
 		for _, entry := range ctx.iterAttributes() {
-			if entry.Attr.Name.Name == name {
+			if entry.Attr != nil && entry.Attr.GetName() == name {
 				if _, unused := ctx.attributes.unusedAttributes[entry.ID]; unused {
 					foundAttr = &entry
 					break
@@ -99,7 +103,7 @@ func (ctx *Context) VisitRepeatedAttr(name string) bool {
 
 // VisitDefaultArg visits a default argument (named or unnamed).
 // Returns the expression and its index, or an error.
-func (ctx *Context) VisitDefaultArg(name string) (ast.Expression, int, error) {
+func (ctx *Context) VisitDefaultArg(name string) (v2ast.Expression, int, error) {
 	nameID := ctx.interner.Intern(name)
 
 	// Try named argument first
@@ -127,18 +131,22 @@ func (ctx *Context) VisitDefaultArg(name string) (ast.Expression, int, error) {
 		// Both present - error
 		arg := ctx.argAt(namedIdx)
 		if arg != nil && arg.Name != nil {
+			pos := arg.Pos
+			span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(name), diagnostics.FileIDZero)
 			ctx.PushError(diagnostics.NewDuplicateDefaultArgumentError(
 				name,
-				arg.Span,
+				span,
 			))
 		}
 		return nil, 0, fmt.Errorf("duplicate default argument")
 	} else {
 		// Neither present - error
 		if attr := ctx.currentAttribute(); attr != nil {
+			pos := attr.Pos
+			span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(name), diagnostics.FileIDZero)
 			ctx.PushError(diagnostics.NewArgumentNotFoundError(
 				name,
-				attr.Span,
+				span,
 			))
 		}
 		return nil, 0, fmt.Errorf("argument %s not found", name)
@@ -147,7 +155,7 @@ func (ctx *Context) VisitDefaultArg(name string) (ast.Expression, int, error) {
 
 // VisitOptionalArg visits an optional argument.
 // Returns the expression if found, nil otherwise.
-func (ctx *Context) VisitOptionalArg(name string) ast.Expression {
+func (ctx *Context) VisitOptionalArg(name string) v2ast.Expression {
 	nameID := ctx.interner.Intern(name)
 	idx, ok := ctx.attributes.args[&nameID]
 	if !ok {
@@ -160,7 +168,7 @@ func (ctx *Context) VisitOptionalArg(name string) ast.Expression {
 
 // VisitDefaultArgWithIdx visits a default argument (named or unnamed) and returns both the expression and its index.
 // This is similar to VisitDefaultArg but also returns the argument index.
-func (ctx *Context) VisitDefaultArgWithIdx(name string) (ast.Expression, int, error) {
+func (ctx *Context) VisitDefaultArgWithIdx(name string) (v2ast.Expression, int, error) {
 	return ctx.VisitDefaultArg(name)
 }
 
@@ -172,11 +180,15 @@ func (ctx *Context) ValidateVisitedArguments() {
 	}
 
 	attr := ctx.currentAttribute()
-	if attr != nil {
+	if attr != nil && attr.Arguments != nil {
 		for _, argIdx := range ctx.attributes.args {
 			if argIdx < len(attr.Arguments.Arguments) {
-				arg := &attr.Arguments.Arguments[argIdx]
-				ctx.PushError(diagnostics.NewUnusedArgumentError(arg.Span))
+				arg := attr.Arguments.Arguments[argIdx]
+				if arg != nil {
+					pos := arg.Pos
+					span := diagnostics.NewSpan(pos.Offset, pos.Offset+10, diagnostics.FileIDZero)
+					ctx.PushError(diagnostics.NewUnusedArgumentError(span))
+				}
 			}
 		}
 	}
@@ -193,9 +205,12 @@ func (ctx *Context) ValidateVisitedAttributes() {
 
 	for attrID := range ctx.attributes.unusedAttributes {
 		if attr := ctx.getAttribute(attrID); attr != nil {
+			attrName := attr.GetName()
+			pos := attr.Pos
+			span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(attrName), diagnostics.FileIDZero)
 			ctx.PushError(diagnostics.NewAttributeNotKnownError(
-				attr.Name.Name,
-				attr.Span,
+				attrName,
+				span,
 			))
 		}
 	}
@@ -218,17 +233,20 @@ func (ctx *Context) CurrentAttributeID() AttributeId {
 }
 
 // CurrentAttribute returns the current attribute being validated.
-func (ctx *Context) CurrentAttribute() *ast.Attribute {
+func (ctx *Context) CurrentAttribute() *v2ast.Attribute {
 	return ctx.currentAttribute()
 }
 
 // PushAttributeValidationError pushes an attribute validation error.
 func (ctx *Context) PushAttributeValidationError(message string) {
 	attr := ctx.currentAttribute()
+	attrName := attr.GetName()
+	pos := attr.Pos
+	span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(attrName), diagnostics.FileIDZero)
 	ctx.PushError(diagnostics.NewAttributeValidationError(
 		message,
-		"@"+attr.Name.Name,
-		attr.Span,
+		"@"+attrName,
+		span,
 	))
 }
 
@@ -237,7 +255,7 @@ func (ctx *Context) PushAttributeValidationError(message string) {
 // AttributeEntry represents an attribute with its ID.
 type AttributeEntry struct {
 	ID   AttributeId
-	Attr *ast.Attribute
+	Attr *v2ast.Attribute
 }
 
 // setAttributes initializes the attribute validation state.
@@ -260,7 +278,7 @@ func (ctx *Context) setAttributes(container AttributeContainer) {
 // getAttributesFromContainer gets attributes from an attribute container.
 // This is a simplified version - proper implementation would need to track
 // container types (model, field, enum, etc.) in the AttributeContainer.
-func (ctx *Context) getAttributesFromContainer(container AttributeContainer) []ast.Attribute {
+func (ctx *Context) getAttributesFromContainer(container AttributeContainer) []*v2ast.Attribute {
 	// Find the file
 	var file *FileEntry
 	for i := range ctx.asts.files {
@@ -280,9 +298,21 @@ func (ctx *Context) getAttributesFromContainer(container AttributeContainer) []a
 	// Simplified: try to find model by index
 	modelCount := 0
 	for _, top := range file.AST.Tops {
-		if model := top.AsModel(); model != nil {
+		if model, ok := top.(*v2ast.Model); ok {
 			if uint32(modelCount) == container.ID {
-				return model.Attributes
+				// Convert BlockAttribute to Attribute
+				result := make([]*v2ast.Attribute, len(model.BlockAttributes))
+				for i, blockAttr := range model.BlockAttributes {
+					if blockAttr != nil {
+						// Create Attribute from BlockAttribute (they have the same structure)
+						result[i] = &v2ast.Attribute{
+							Pos:       blockAttr.Pos,
+							Name:      blockAttr.Name,
+							Arguments: blockAttr.Arguments,
+						}
+					}
+				}
+				return result
 			}
 			modelCount++
 		}
@@ -301,7 +331,10 @@ func (ctx *Context) iterAttributes() []AttributeEntry {
 	attrs := ctx.getAttributesFromContainer(container)
 
 	var result []AttributeEntry
-	for i := range attrs {
+	for i, attr := range attrs {
+		if attr == nil {
+			continue
+		}
 		attrID := AttributeId{
 			FileID:    container.FileID,
 			Container: container,
@@ -309,7 +342,7 @@ func (ctx *Context) iterAttributes() []AttributeEntry {
 		}
 		result = append(result, AttributeEntry{
 			ID:   attrID,
-			Attr: &attrs[i],
+			Attr: attr,
 		})
 	}
 	return result
@@ -317,7 +350,7 @@ func (ctx *Context) iterAttributes() []AttributeEntry {
 
 // setAttribute sets the current attribute being validated.
 // Returns true if the attribute is valid enough to be usable.
-func (ctx *Context) setAttribute(attrID AttributeId, attr *ast.Attribute) bool {
+func (ctx *Context) setAttribute(attrID AttributeId, attr *v2ast.Attribute) bool {
 	if ctx.attributes.attribute != nil || len(ctx.attributes.args) > 0 {
 		panic("State error: cannot start validating new arguments before validate_visited_arguments or discard_arguments has been called")
 	}
@@ -330,8 +363,11 @@ func (ctx *Context) setAttribute(attrID AttributeId, attr *ast.Attribute) bool {
 
 	// Process arguments
 	var unnamedArguments []string
-	for i := range attr.Arguments.Arguments {
-		arg := &attr.Arguments.Arguments[i]
+	if attr.Arguments != nil {
+		for i, arg := range attr.Arguments.Arguments {
+			if arg == nil {
+				continue
+			}
 		var argName *StringId
 		if arg.Name != nil {
 			nameID := ctx.interner.Intern(arg.Name.Name)
@@ -342,20 +378,25 @@ func (ctx *Context) setAttribute(attrID AttributeId, attr *ast.Attribute) bool {
 		if existingIdx, exists := ctx.attributes.args[argName]; exists {
 			if argName == nil {
 				// Unnamed argument duplicate
-				if len(unnamedArguments) == 0 {
-					existingArg := &attr.Arguments.Arguments[existingIdx]
+					if len(unnamedArguments) == 0 && existingIdx < len(attr.Arguments.Arguments) {
+						existingArg := attr.Arguments.Arguments[existingIdx]
+						if existingArg != nil {
 					unnamedArguments = append(unnamedArguments, exprToString(existingArg.Value))
+						}
 				}
 				unnamedArguments = append(unnamedArguments, exprToString(arg.Value))
 			} else {
 				// Named argument duplicate
+					pos := arg.Pos
+					span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(arg.Name.Name), diagnostics.FileIDZero)
 				ctx.PushError(diagnostics.NewDuplicateArgumentError(
 					arg.Name.Name,
-					arg.Span,
+						span,
 				))
 			}
 		} else {
 			ctx.attributes.args[argName] = i
+			}
 		}
 	}
 
@@ -376,7 +417,7 @@ func (ctx *Context) discardArguments() {
 }
 
 // currentAttribute returns the current attribute being validated.
-func (ctx *Context) currentAttribute() *ast.Attribute {
+func (ctx *Context) currentAttribute() *v2ast.Attribute {
 	if ctx.attributes.attribute == nil {
 		panic("State error: no current attribute")
 	}
@@ -386,35 +427,36 @@ func (ctx *Context) currentAttribute() *ast.Attribute {
 }
 
 // getAttribute gets an attribute by its ID.
-func (ctx *Context) getAttribute(attrID AttributeId) *ast.Attribute {
+func (ctx *Context) getAttribute(attrID AttributeId) *v2ast.Attribute {
 	attrs := ctx.getAttributesFromContainer(attrID.Container)
 	if attrs != nil && int(attrID.Index) < len(attrs) {
-		return &attrs[attrID.Index]
+		return attrs[attrID.Index]
 	}
 	return nil
 }
 
 // argAt returns an argument at the given index in the current attribute.
-func (ctx *Context) argAt(idx int) *ast.Argument {
+func (ctx *Context) argAt(idx int) *v2ast.Argument {
 	attr := ctx.currentAttribute()
+	if attr == nil || attr.Arguments == nil {
+		return nil
+	}
 	if idx < len(attr.Arguments.Arguments) {
-		return &attr.Arguments.Arguments[idx]
+		return attr.Arguments.Arguments[idx]
 	}
 	return nil
 }
 
 // exprToString converts an expression to a string (simplified).
-func exprToString(expr ast.Expression) string {
+func exprToString(expr v2ast.Expression) string {
 	// This is a simplified version - in reality we'd want proper formatting
 	switch e := expr.(type) {
-	case ast.StringLiteral:
+	case *v2ast.StringValue:
+		return e.GetValue()
+	case *v2ast.NumericValue:
 		return e.Value
-	case ast.IntLiteral:
-		return fmt.Sprintf("%d", e.Value)
-	case ast.FloatLiteral:
-		return fmt.Sprintf("%f", e.Value)
-	case ast.BooleanLiteral:
-		return fmt.Sprintf("%t", e.Value)
+	case *v2ast.ConstantValue:
+		return e.Value
 	default:
 		return "<expression>"
 	}

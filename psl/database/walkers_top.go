@@ -3,7 +3,7 @@ package database
 
 import (
 	"github.com/satishbabariya/prisma-go/psl/diagnostics"
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // TopWalker provides access to any top-level declaration in the Prisma schema.
@@ -27,17 +27,18 @@ func (w *TopWalker) Name() string {
 		return ""
 	}
 
-	// Get name based on type
-	// Top is a pointer to interface, so we need to dereference it
-	topVal := *top
-	if model := topVal.AsModel(); model != nil {
-		return model.Name.Name
-	}
-	if enum := topVal.AsEnum(); enum != nil {
-		return enum.Name.Name
-	}
-	if ct := topVal.AsCompositeType(); ct != nil {
-		return ct.Name.Name
+	// Get name based on type using type assertions
+	switch t := top.(type) {
+	case *v2ast.Model:
+		return t.GetName()
+	case *v2ast.Enum:
+		return t.GetName()
+	case *v2ast.CompositeType:
+		return t.GetName()
+	case *v2ast.SourceConfig:
+		return t.GetName()
+	case *v2ast.GeneratorConfig:
+		return t.GetName()
 	}
 
 	return ""
@@ -49,12 +50,12 @@ func (w *TopWalker) FileID() diagnostics.FileID {
 }
 
 // AstTop returns the AST node for the top-level declaration.
-func (w *TopWalker) AstTop() *ast.Top {
+func (w *TopWalker) AstTop() v2ast.Top {
 	file := w.db.asts.Get(w.id.FileID)
 	if file == nil || int(w.id.ID) >= len(file.AST.Tops) {
 		return nil
 	}
-	return &file.AST.Tops[w.id.ID]
+	return file.AST.Tops[w.id.ID]
 }
 
 // IsDefinedInFile returns whether the top-level declaration is defined in the given file.

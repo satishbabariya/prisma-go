@@ -9,6 +9,7 @@ import (
 
 	"github.com/satishbabariya/prisma-go/cli/internal/ui"
 	psl "github.com/satishbabariya/prisma-go/psl"
+	ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 var validateCmd = &cobra.Command{
@@ -53,7 +54,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 	// Create source file and parse
 	sourceFile := psl.NewSourceFile(schemaPath, string(content))
-	ast, diags := psl.ParseSchemaFromFile(sourceFile)
+	schemaAst, diags := psl.ParseSchemaFromFile(sourceFile)
 
 	// Check for parsing errors
 	if diags.HasErrors() {
@@ -74,14 +75,15 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	datasourceCount := 0
 	generatorCount := 0
 
-	for _, top := range ast.Tops {
-		if top.AsModel() != nil {
+	for _, top := range schemaAst.Tops {
+		switch top.(type) {
+		case *ast.Model:
 			modelCount++
-		} else if top.AsEnum() != nil {
+		case *ast.Enum:
 			enumCount++
-		} else if top.AsSource() != nil {
+		case *ast.SourceConfig:
 			datasourceCount++
-		} else if top.AsGenerator() != nil {
+		case *ast.GeneratorConfig:
 			generatorCount++
 		}
 	}
@@ -117,8 +119,8 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	if modelCount > 0 {
 		fmt.Println()
 		ui.PrintSection("Models")
-		for _, top := range ast.Tops {
-			if model := top.AsModel(); model != nil {
+		for _, top := range schemaAst.Tops {
+			if model, ok := top.(*ast.Model); ok {
 				ui.PrintInfo("%s (%d fields)", model.Name.Name, len(model.Fields))
 			}
 		}

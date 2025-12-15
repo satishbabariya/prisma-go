@@ -43,7 +43,8 @@ func validateAutoIncrement(model *database.ModelWalker, ctx *ValidationContext) 
 				continue
 			}
 
-			span := value.Span()
+			pos := value.Span()
+			span := diagnostics.NewSpan(pos.Offset, pos.Offset+10, diagnostics.FileIDZero) // Approximate length
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				"The `autoincrement()` default value is used with a datasource that does not support it.",
 				"@default",
@@ -57,10 +58,11 @@ func validateAutoIncrement(model *database.ModelWalker, ctx *ValidationContext) 
 	if !ctx.HasCapability(ConnectorCapabilityAutoIncrementMultipleAllowed) && len(autoincrementFields) > 1 {
 		astModel := model.AstModel()
 		if astModel != nil {
+			span := diagnostics.NewSpan(astModel.Pos.Offset, astModel.Pos.Offset+len(astModel.Name.Name), diagnostics.FileIDZero)
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				"The `autoincrement()` default value is used multiple times on this model even though the underlying datasource only supports one instance per table.",
 				"@default",
-				astModel.Span(),
+				span,
 			))
 		}
 	}
@@ -79,10 +81,12 @@ func validateAutoIncrement(model *database.ModelWalker, ctx *ValidationContext) 
 				if defaultValue != nil {
 					value := defaultValue.Value()
 					if value != nil {
+						pos := value.Span()
+						span := diagnostics.NewSpan(pos.Offset, pos.Offset+10, diagnostics.FileIDZero)
 						ctx.PushError(diagnostics.NewAttributeValidationError(
 							"The `autoincrement()` default value is used on a non-id field even though the datasource does not support this.",
 							"@default",
-							value.Span(),
+							span,
 						))
 					}
 				}
@@ -97,10 +101,12 @@ func validateAutoIncrement(model *database.ModelWalker, ctx *ValidationContext) 
 				if defaultValue != nil {
 					value := defaultValue.Value()
 					if value != nil {
+						pos := value.Span()
+						span := diagnostics.NewSpan(pos.Offset, pos.Offset+10, diagnostics.FileIDZero)
 						ctx.PushError(diagnostics.NewAttributeValidationError(
 							"The `autoincrement()` default value is used on a non-indexed field even though the datasource does not support this.",
 							"@default",
-							value.Span(),
+							span,
 						))
 					}
 				}

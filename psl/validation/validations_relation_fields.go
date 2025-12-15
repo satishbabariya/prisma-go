@@ -18,7 +18,7 @@ func validateRelationFieldArity(field *database.RelationFieldWalker, ctx *Valida
 
 	// Check if relation field is optional and has a default
 	// Relation fields cannot have defaults
-	if !astField.FieldType.IsOptional() {
+	if !astField.Arity.IsOptional() {
 		// Required relation fields are valid
 		return
 	}

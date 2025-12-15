@@ -2,7 +2,7 @@
 package database
 
 import (
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // DefaultValueWalker provides access to a @default() attribute on a field.
@@ -13,22 +13,22 @@ type DefaultValueWalker struct {
 }
 
 // Value returns the default value expression.
-func (w *DefaultValueWalker) Value() ast.Expression {
+func (w *DefaultValueWalker) Value() v2ast.Expression {
 	sf := w.db.types.ScalarFields[w.fieldID]
 	astModel := w.db.getModelFromID(sf.ModelID)
 	if astModel == nil || int(sf.FieldID) >= len(astModel.Fields) {
 		return nil
 	}
 
-	astField := &astModel.Fields[sf.FieldID]
-	if w.defaultAttr == nil || int(w.defaultAttr.ArgumentIdx) >= len(astField.Attributes) {
+	astField := astModel.Fields[sf.FieldID]
+	if w.defaultAttr == nil || astField == nil {
 		return nil
 	}
 
 	// Find the @default attribute
 	for _, attr := range astField.Attributes {
-		if attr.Name.Name == "default" {
-			if int(w.defaultAttr.ArgumentIdx) < len(attr.Arguments.Arguments) {
+		if attr != nil && attr.GetName() == "default" {
+			if attr.Arguments != nil && int(w.defaultAttr.ArgumentIdx) < len(attr.Arguments.Arguments) {
 				return attr.Arguments.Arguments[w.defaultAttr.ArgumentIdx].Value
 			}
 		}
@@ -54,8 +54,8 @@ func (w *DefaultValueWalker) IsAutoIncrement() bool {
 	}
 
 	// Check if it's a function call to autoincrement()
-	if funcCall, ok := value.(ast.FunctionCall); ok {
-		return funcCall.Name.Name == "autoincrement"
+	if funcCall, ok := value.(*v2ast.FunctionCall); ok {
+		return funcCall.Name == "autoincrement"
 	}
 
 	return false

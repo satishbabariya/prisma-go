@@ -3,7 +3,7 @@ package database
 
 import (
 	"github.com/satishbabariya/prisma-go/psl/diagnostics"
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // Names holds resolved names for use in the validation process.
@@ -62,65 +62,87 @@ func ResolveNames(db *ParserDatabase, diags *diagnostics.Diagnostics) Names {
 			}
 
 			// Validate identifier
-			var identifier *ast.Identifier
+			var identifierName string
+			var identifierSpan diagnostics.Span
 			var topType string
 
-			if model := top.AsModel(); model != nil {
-				identifier = &model.Name
+			switch t := top.(type) {
+			case *v2ast.Model:
+				identifierName = t.GetName()
+				pos := t.TopPos()
+				identifierSpan = diagnostics.NewSpan(pos.Offset, pos.Offset+len(identifierName), diagnostics.FileIDZero)
 				topType = "Model"
-				validateIdentifier(identifier, "Model", diags)
-				validateModelName(model, "model", diags)
+				validateIdentifier(identifierName, identifierSpan, "Model", diags)
+				validateModelName(t, "model", diags)
 
 				// Validate model fields
-				for j, field := range model.Fields {
-					validateIdentifier(&field.Name, "Field", diags)
-					fieldNameID := db.interner.Intern(field.Name.Name)
+				for j, field := range t.Fields {
+					if field == nil {
+						continue
+					}
+					fieldName := field.GetName()
+					fieldPos := field.Pos
+					fieldSpan := diagnostics.NewSpan(fieldPos.Offset, fieldPos.Offset+len(fieldName), diagnostics.FileIDZero)
+					validateIdentifier(fieldName, fieldSpan, "Field", diags)
+					fieldNameID := db.interner.Intern(fieldName)
 					key := ModelFieldKey{
 						ModelID: ModelId(topID),
 						NameID:  fieldNameID,
 					}
 					if _, exists := names.ModelFields[key]; exists {
 						diags.PushError(diagnostics.NewDuplicateFieldError(
-							model.Name.Name,
-							field.Name.Name,
+							t.GetName(),
+							fieldName,
 							"model",
-							field.Name.Span(),
+							fieldSpan,
 						))
 					} else {
 						names.ModelFields[key] = uint32(j)
 					}
 				}
-			} else if enum := top.AsEnum(); enum != nil {
-				identifier = &enum.Name
+			case *v2ast.Enum:
+				identifierName = t.GetName()
+				pos := t.TopPos()
+				identifierSpan = diagnostics.NewSpan(pos.Offset, pos.Offset+len(identifierName), diagnostics.FileIDZero)
 				topType = "Enum"
-				validateIdentifier(identifier, "Enum", diags)
-				validateEnumName(enum, diags)
+				validateIdentifier(identifierName, identifierSpan, "Enum", diags)
+				validateEnumName(t, diags)
 
 				// Validate enum values
 				tmpNames = make(map[string]bool)
-				for _, value := range enum.Values {
-					validateIdentifier(&value.Name, "Enum Value", diags)
-					if tmpNames[value.Name.Name] {
+				for _, value := range t.Values {
+					if value == nil {
+						continue
+					}
+					valueName := value.GetName()
+					valuePos := value.Pos
+					valueSpan := diagnostics.NewSpan(valuePos.Offset, valuePos.Offset+len(valueName), diagnostics.FileIDZero)
+					validateIdentifier(valueName, valueSpan, "Enum Value", diags)
+					if tmpNames[valueName] {
 						diags.PushError(diagnostics.NewDuplicateEnumValueError(
-							enum.Name.Name,
-							value.Name.Name,
-							value.Name.Span(),
+							t.GetName(),
+							valueName,
+							valueSpan,
 						))
 					}
-					tmpNames[value.Name.Name] = true
+					tmpNames[valueName] = true
 				}
-			} else if source := top.AsSource(); source != nil {
-				identifier = &source.Name
+			case *v2ast.SourceConfig:
+				identifierName = t.GetName()
+				pos := t.TopPos()
+				identifierSpan = diagnostics.NewSpan(pos.Offset, pos.Offset+len(identifierName), diagnostics.FileIDZero)
 				topType = "Datasource"
-				checkForDuplicateProperties(top, source.Properties, tmpNames, diags)
-			} else if generator := top.AsGenerator(); generator != nil {
-				identifier = &generator.Name
+				checkForDuplicateProperties(top, t.Properties, tmpNames, diags)
+			case *v2ast.GeneratorConfig:
+				identifierName = t.GetName()
+				pos := t.TopPos()
+				identifierSpan = diagnostics.NewSpan(pos.Offset, pos.Offset+len(identifierName), diagnostics.FileIDZero)
 				topType = "Generator"
-				checkForDuplicateProperties(top, generator.Properties, tmpNames, diags)
+				checkForDuplicateProperties(top, t.Properties, tmpNames, diags)
 			}
 
-			if identifier != nil {
-				nameID := db.interner.Intern(identifier.Name)
+			if identifierName != "" {
+				nameID := db.interner.Intern(identifierName)
 				var namespace map[StringId]TopId
 
 				switch topType {
@@ -139,10 +161,10 @@ func ResolveNames(db *ParserDatabase, diags *diagnostics.Diagnostics) Names {
 						existingTopAST := existingFile.AST.Tops[existingTop.ID]
 						existingTopType := getTopType(existingTopAST)
 						diags.PushError(diagnostics.NewDuplicateTopError(
-							identifier.Name,
+							identifierName,
 							topType,
 							existingTopType,
-							identifier.Span(),
+							identifierSpan,
 						))
 					}
 				} else {
@@ -156,87 +178,101 @@ func ResolveNames(db *ParserDatabase, diags *diagnostics.Diagnostics) Names {
 }
 
 // validateIdentifier validates that an identifier follows naming rules.
-func validateIdentifier(ident *ast.Identifier, schemaItem string, diags *diagnostics.Diagnostics) {
-	if ident.Name == "" {
+func validateIdentifier(name string, span diagnostics.Span, schemaItem string, diags *diagnostics.Diagnostics) {
+	if name == "" {
 		diags.PushError(diagnostics.NewValidationError(
 			"The name of a "+schemaItem+" must not be empty.",
-			ident.Span(),
+			span,
 		))
-	} else if len(ident.Name) > 0 && ident.Name[0] >= '0' && ident.Name[0] <= '9' {
+	} else if len(name) > 0 && name[0] >= '0' && name[0] <= '9' {
 		diags.PushError(diagnostics.NewValidationError(
 			"The name of a "+schemaItem+" must not start with a number.",
-			ident.Span(),
+			span,
 		))
-	} else if contains(ident.Name, '-') {
+	} else if contains(name, '-') {
 		diags.PushError(diagnostics.NewValidationError(
 			"The character `-` is not allowed in "+schemaItem+" names.",
-			ident.Span(),
+			span,
 		))
 	}
 }
 
 // validateModelName validates a model name.
-func validateModelName(model *ast.Model, containerType string, diags *diagnostics.Diagnostics) {
-	if IsReservedTypeName(model.Name.Name) {
+func validateModelName(model *v2ast.Model, containerType string, diags *diagnostics.Diagnostics) {
+	modelName := model.GetName()
+	if IsReservedTypeName(modelName) {
+		pos := model.TopPos()
+		span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(modelName), diagnostics.FileIDZero)
 		diags.PushError(diagnostics.NewModelValidationError(
-			"The "+containerType+" name `"+model.Name.Name+"` is invalid. It is a reserved name. Please change it. Read more at https://pris.ly/d/naming-models",
+			"The "+containerType+" name `"+modelName+"` is invalid. It is a reserved name. Please change it. Read more at https://pris.ly/d/naming-models",
 			"model",
-			model.Name.Name,
-			model.Span(),
+			modelName,
+			span,
 		))
 	}
 }
 
 // validateEnumName validates an enum name.
-func validateEnumName(enum *ast.Enum, diags *diagnostics.Diagnostics) {
-	if IsReservedTypeName(enum.Name.Name) {
+func validateEnumName(enum *v2ast.Enum, diags *diagnostics.Diagnostics) {
+	enumName := enum.GetName()
+	if IsReservedTypeName(enumName) {
+		pos := enum.TopPos()
+		span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(enumName), diagnostics.FileIDZero)
 		diags.PushError(diagnostics.NewEnumValidationError(
-			"The enum name `"+enum.Name.Name+"` is invalid. It is a reserved name. Please change it. Read more at https://www.prisma.io/docs/reference/tools-and-interfaces/prisma-schema/data-model#naming-enums",
-			enum.Name.Name,
-			enum.Span(),
+			"The enum name `"+enumName+"` is invalid. It is a reserved name. Please change it. Read more at https://www.prisma.io/docs/reference/tools-and-interfaces/prisma-schema/data-model#naming-enums",
+			enumName,
+			span,
 		))
 	}
 }
 
 // checkForDuplicateProperties checks for duplicate properties in config blocks.
-func checkForDuplicateProperties(top ast.Top, props []ast.ConfigBlockProperty, tmpNames map[string]bool, diags *diagnostics.Diagnostics) {
+func checkForDuplicateProperties(top v2ast.Top, props []*v2ast.ConfigBlockProperty, tmpNames map[string]bool, diags *diagnostics.Diagnostics) {
 	clearMap(tmpNames)
 	for _, prop := range props {
-		if tmpNames[prop.Name.Name] {
+		if prop == nil {
+			continue
+		}
+		propName := prop.GetName()
+		if tmpNames[propName] {
+			pos := prop.Pos
+			span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(propName), diagnostics.FileIDZero)
 			diags.PushError(diagnostics.NewDuplicateConfigKeyError(
 				getTopType(top)+" \""+getName(top)+"\"",
-				prop.Name.Name,
-				prop.Name.Span(),
+				propName,
+				span,
 			))
 		}
-		tmpNames[prop.Name.Name] = true
+		tmpNames[propName] = true
 	}
 }
 
 // getTopType returns the type string for a top-level AST node.
-func getTopType(top ast.Top) string {
-	if top.AsModel() != nil {
+func getTopType(top v2ast.Top) string {
+	switch top.(type) {
+	case *v2ast.Model:
 		return "model"
-	} else if top.AsEnum() != nil {
+	case *v2ast.Enum:
 		return "enum"
-	} else if top.AsSource() != nil {
+	case *v2ast.SourceConfig:
 		return "datasource"
-	} else if top.AsGenerator() != nil {
+	case *v2ast.GeneratorConfig:
 		return "generator"
 	}
 	return "unknown"
 }
 
 // getName returns the name for a top-level AST node.
-func getName(top ast.Top) string {
-	if model := top.AsModel(); model != nil {
-		return model.Name.Name
-	} else if enum := top.AsEnum(); enum != nil {
-		return enum.Name.Name
-	} else if source := top.AsSource(); source != nil {
-		return source.Name.Name
-	} else if generator := top.AsGenerator(); generator != nil {
-		return generator.Name.Name
+func getName(top v2ast.Top) string {
+	switch t := top.(type) {
+	case *v2ast.Model:
+		return t.GetName()
+	case *v2ast.Enum:
+		return t.GetName()
+	case *v2ast.SourceConfig:
+		return t.GetName()
+	case *v2ast.GeneratorConfig:
+		return t.GetName()
 	}
 	return ""
 }

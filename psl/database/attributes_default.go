@@ -3,7 +3,7 @@ package database
 
 import (
 	"github.com/satishbabariya/prisma-go/psl/diagnostics"
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 const (
@@ -50,9 +50,16 @@ func HandleModelFieldDefault(
 	}
 
 	// @default(dbgenerated(...)) is always valid.
-	if funcCall, ok := valueExpr.(ast.FunctionCall); ok {
-		if funcCall.Name.Name == FN_DBGENERATED {
-			validateDbGeneratedArgs(funcCall.Arguments, accept, ctx)
+	if funcCall, ok := valueExpr.(*v2ast.FunctionCall); ok {
+		if funcCall.Name == FN_DBGENERATED {
+			var args []v2ast.Expression
+			if funcCall.Arguments != nil && len(funcCall.Arguments.Arguments) > 0 {
+				args = make([]v2ast.Expression, len(funcCall.Arguments.Arguments))
+				for i, arg := range funcCall.Arguments.Arguments {
+					args[i] = arg.Value
+				}
+			}
+			validateDbGeneratedArgs(args, accept, ctx)
 			return
 		}
 	}
@@ -117,8 +124,8 @@ func HandleCompositeFieldDefault(
 	}
 
 	// @default(dbgenerated(...)) is never valid on a composite type's fields.
-	if funcCall, ok := valueExpr.(ast.FunctionCall); ok {
-		if funcCall.Name.Name == FN_DBGENERATED {
+	if funcCall, ok := valueExpr.(*v2ast.FunctionCall); ok {
+		if funcCall.Name == FN_DBGENERATED {
 			ctx.PushAttributeValidationError("Fields of composite types cannot have `dbgenerated()` as default.")
 			return
 		}
@@ -163,7 +170,7 @@ func defaultAttributeMappedName(ctx *Context) *StringId {
 }
 
 // validateDbGeneratedArgs validates the arguments to dbgenerated().
-func validateDbGeneratedArgs(args []ast.Expression, accept func(), ctx *Context) {
+func validateDbGeneratedArgs(args []v2ast.Expression, accept func(), ctx *Context) {
 	// dbgenerated() can have 0 or 1 string argument
 	if len(args) == 0 {
 		accept()
@@ -187,7 +194,7 @@ func validateDbGeneratedArgs(args []ast.Expression, accept func(), ctx *Context)
 // This is a simplified version - full implementation would validate specific scalar types.
 func validateModelBuiltinScalarTypeDefault(
 	sfid ScalarFieldId,
-	value ast.Expression,
+	value v2ast.Expression,
 	mappedName *StringId,
 	accept func(),
 	modelID ModelId,

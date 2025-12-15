@@ -2,7 +2,7 @@
 package database
 
 import (
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // FieldWalker provides access to a model field (scalar or relation).
@@ -18,16 +18,16 @@ func (w *FieldWalker) Name() string {
 	if astField == nil {
 		return ""
 	}
-	return astField.Name.Name
+	return astField.GetName()
 }
 
 // AstField returns the AST node for the field.
-func (w *FieldWalker) AstField() *ast.Field {
+func (w *FieldWalker) AstField() *v2ast.Field {
 	astModel := w.Model().AstModel()
 	if astModel == nil || int(w.fieldID) >= len(astModel.Fields) {
 		return nil
 	}
-	return &astModel.Fields[w.fieldID]
+	return astModel.Fields[w.fieldID]
 }
 
 // Model returns the parent model walker.

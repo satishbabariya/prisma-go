@@ -2,14 +2,14 @@
 package database
 
 import (
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // HandleUpdatedAt handles @updatedAt on a scalar field.
 func HandleUpdatedAt(
 	sfid ScalarFieldId,
 	fieldType ScalarFieldType,
-	astField *ast.Field,
+	astField *v2ast.Field,
 	ctx *Context,
 ) {
 	// Validate that the field type is DateTime
@@ -18,7 +18,7 @@ func HandleUpdatedAt(
 	}
 
 	// Validate that the field is not a list
-	if astField.FieldType.IsArray() {
+	if astField.Arity.IsList() {
 		ctx.PushAttributeValidationError("Fields that are marked with @updatedAt cannot be lists.")
 	}
 

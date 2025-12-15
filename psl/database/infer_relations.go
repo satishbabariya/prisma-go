@@ -4,7 +4,7 @@ package database
 import (
 	"strings"
 
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // fieldsMatchUniqueCriteria checks if the given field IDs exactly match the fields in a unique criteria.
@@ -49,20 +49,20 @@ func InferRelations(ctx *Context) {
 
 // RelationEvidence contains evidence about a relation field.
 type RelationEvidence struct {
-	AstModel                   *ast.Model
-	AstField                   *ast.Field
+	AstModel                   *v2ast.Model
+	AstField                   *v2ast.Field
 	FieldID                    RelationFieldId
 	IsSelfRelation             bool
 	IsTwoWayEmbeddedManyToMany bool
 	RelationField              *RelationField
-	OppositeModel              *ast.Model
+	OppositeModel              *v2ast.Model
 	OppositeRelationField      *OppositeRelationField
 }
 
 // OppositeRelationField represents an opposite relation field.
 type OppositeRelationField struct {
 	FieldID       RelationFieldId
-	AstField      *ast.Field
+	AstField      *v2ast.Field
 	RelationField *RelationField
 }
 
@@ -78,7 +78,7 @@ func relationEvidence(rfid RelationFieldId, rf *RelationField, ctx *Context) *Re
 	if int(rf.FieldID) >= len(astModel.Fields) {
 		return nil
 	}
-	astField := &astModel.Fields[rf.FieldID]
+	astField := astModel.Fields[rf.FieldID]
 
 	// Get the referenced model
 	oppositeModel := getModelFromID(rf.ReferencedModel, ctx)
@@ -102,7 +102,7 @@ func relationEvidence(rfid RelationFieldId, rf *RelationField, ctx *Context) *Re
 						if oppAstModel != nil && int(oppRF.FieldID) < len(oppAstModel.Fields) {
 							oppositeRF = &OppositeRelationField{
 								FieldID:       oppEntry.ID,
-								AstField:      &oppAstModel.Fields[oppRF.FieldID],
+								AstField:      oppAstModel.Fields[oppRF.FieldID],
 								RelationField: oppRF,
 							}
 							break
@@ -114,7 +114,7 @@ func relationEvidence(rfid RelationFieldId, rf *RelationField, ctx *Context) *Re
 					if oppAstModel != nil && int(oppRF.FieldID) < len(oppAstModel.Fields) {
 						oppositeRF = &OppositeRelationField{
 							FieldID:       oppEntry.ID,
-							AstField:      &oppAstModel.Fields[oppRF.FieldID],
+							AstField:      oppAstModel.Fields[oppRF.FieldID],
 							RelationField: oppRF,
 						}
 						break
@@ -159,8 +159,8 @@ func ingestRelation(evidence *RelationEvidence, relations *Relations, ctx *Conte
 			// We will meet the relation twice when we walk over all relation
 			// fields, so we only instantiate it when the relation field is that
 			// of model A, and the opposite is model B.
-			modelAName := evidence.AstModel.Name.Name
-			modelBName := evidence.OppositeModel.Name.Name
+			modelAName := evidence.AstModel.GetName()
+			modelBName := evidence.OppositeModel.GetName()
 
 			if strings.Compare(modelAName, modelBName) > 0 {
 				return // Skip - will be handled by the opposite field
@@ -168,8 +168,8 @@ func ingestRelation(evidence *RelationEvidence, relations *Relations, ctx *Conte
 
 			// For self-relations, the ordering logic is different
 			if evidence.IsSelfRelation {
-				fieldAName := evidence.AstField.Name.Name
-				fieldBName := evidence.OppositeRelationField.AstField.Name.Name
+				fieldAName := evidence.AstField.GetName()
+				fieldBName := evidence.OppositeRelationField.AstField.GetName()
 				if strings.Compare(fieldAName, fieldBName) > 0 {
 					return // Skip - will be handled by the opposite field
 				}
@@ -335,32 +335,30 @@ const (
 )
 
 // getFieldArity determines the arity of a field from its AST representation.
-func getFieldArity(field *ast.Field) FieldArity {
-	// Convert from ast.FieldArity to parserdatabase.FieldArity
+func getFieldArity(field *v2ast.Field) FieldArity {
+	// Convert from v2ast.FieldArity to parserdatabase.FieldArity
 	switch field.Arity {
-	case ast.Required:
+	case v2ast.FieldArityRequired:
 		return Required
-	case ast.Optional:
+	case v2ast.FieldArityOptional:
 		return Optional
-	case ast.List:
+	case v2ast.FieldArityList:
 		return List
 	default:
 		return Required
 	}
-	// Default to required
-	return Required
 }
 
 // getModelFromID retrieves a model from the AST by its ID.
-func getModelFromID(modelID ModelId, ctx *Context) *ast.Model {
+func getModelFromID(modelID ModelId, ctx *Context) *v2ast.Model {
 	for _, file := range ctx.asts.files {
 		if file.FileID == modelID.FileID {
 			// Find the model by index
 			modelCount := 0
 			for _, top := range file.AST.Tops {
-				if top.AsModel() != nil {
+				if model, ok := top.(*v2ast.Model); ok {
 					if uint32(modelCount) == modelID.ID {
-						return top.AsModel()
+						return model
 					}
 					modelCount++
 				}

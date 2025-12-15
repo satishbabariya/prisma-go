@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/satishbabariya/prisma-go/psl/diagnostics"
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // HandleModelIndex handles @@index on a model.
@@ -86,7 +86,9 @@ func HandleModelUnique(
 
 	name := getNameArgument(ctx)
 	if name != nil {
-		validateClientName(attr.Span, astModel.Name.Name, *name, "@@unique", ctx)
+		pos := attr.Pos
+		span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(attr.GetName()), diagnostics.FileIDZero)
+		validateClientName(span, astModel.GetName(), *name, "@@unique", ctx)
 	}
 
 	mappedName := getIndexMappedName(ctx)
@@ -151,7 +153,9 @@ func commonIndexValidations(
 	}
 
 	isUnique := indexData != nil && indexData.Type == IndexTypeUnique
-	resolvedFields, resolveErr := resolveFieldArrayWithArgs(fieldsExpr, attr.Span, modelID, followComposites, isUnique, ctx)
+	pos := attr.Pos
+	span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(attr.GetName()), diagnostics.FileIDZero)
+	resolvedFields, resolveErr := resolveFieldArrayWithArgs(fieldsExpr, span, modelID, followComposites, isUnique, ctx)
 	if resolveErr == errFieldResolutionAlreadyDealtWith {
 		return
 	}
@@ -167,7 +171,7 @@ func commonIndexValidations(
 // This is a simplified version that handles basic cases. Full implementation would support
 // composite type paths like `compositeField.nestedField`.
 func resolveFieldArrayWithArgs(
-	values ast.Expression,
+	values v2ast.Expression,
 	attributeSpan diagnostics.Span,
 	modelID ModelId,
 	followComposites bool,
@@ -175,7 +179,7 @@ func resolveFieldArrayWithArgs(
 	ctx *Context,
 ) ([]FieldWithArgs, error) {
 	// Coerce to array
-	arrayExpr, ok := values.(ast.ArrayLiteral)
+	arrayExpr, ok := values.(*v2ast.ArrayExpression)
 	if !ok {
 		ctx.PushError(diagnostics.NewValueParserError(
 			"array",
@@ -195,6 +199,9 @@ func resolveFieldArrayWithArgs(
 	}
 
 	for _, elem := range arrayExpr.Elements {
+		if elem == nil {
+			continue
+		}
 		// Try to parse as function call first (field with arguments)
 		fieldName, args, _, isFunc := CoerceFunction(elem, ctx.diagnostics)
 		if !isFunc {
@@ -255,7 +262,7 @@ func resolveFieldArrayWithArgs(
 			ctx.PushError(diagnostics.NewModelValidationError(
 				"The index definition refers to the field "+fieldName+" multiple times.",
 				"model",
-				astModel.Name.Name,
+				astModel.GetName(),
 				attributeSpan,
 			))
 			return nil, errFieldResolutionAlreadyDealtWith
@@ -278,7 +285,7 @@ func resolveFieldArrayWithArgs(
 		ctx.PushError(diagnostics.NewModelValidationError(
 			fmt.Sprintf("The %sindex definition refers to the unknown fields: %s.", prefix, formatFieldNames(unknownFields)),
 			"model",
-			astModel.Name.Name,
+			astModel.GetName(),
 			attributeSpan,
 		))
 	}
@@ -287,7 +294,7 @@ func resolveFieldArrayWithArgs(
 		ctx.PushError(diagnostics.NewModelValidationError(
 			"The index definition refers to the relation fields: "+formatFieldNames(relationFields)+". Index definitions must reference only scalar fields.",
 			"model",
-			astModel.Name.Name,
+			astModel.GetName(),
 			attributeSpan,
 		))
 	}
@@ -359,7 +366,7 @@ func getIndexAlgorithm(ctx *Context) *IndexAlgorithm {
 
 // getArgumentName extracts the name from an argument expression.
 // For now, this is a simplified version that handles function call arguments.
-func getArgumentName(arg ast.Expression) (string, bool) {
+func getArgumentName(arg v2ast.Expression) (string, bool) {
 	// In Prisma, arguments can be named or positional
 	// For function calls like field(sort: Desc), we need to extract the argument name
 	// This is a simplified implementation - the full version would need to handle

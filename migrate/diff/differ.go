@@ -7,7 +7,7 @@ import (
 	"github.com/satishbabariya/prisma-go/migrate/converter"
 	"github.com/satishbabariya/prisma-go/migrate/diff/flavour"
 	"github.com/satishbabariya/prisma-go/migrate/introspect"
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // Differ compares database schemas with advanced features

@@ -60,7 +60,7 @@ func validateReferencingScalarFieldTypes(relation *database.RelationWalker, ctx 
 					referencedFields[i].Name(),
 					getScalarTypeDisplayNameForRelation(&referencedType),
 				),
-				astField.Span(),
+				diagnostics.NewSpan(astField.Pos.Offset, astField.Pos.Offset+len(astField.Name.Name), forwardField.Model().FileID()),
 			))
 		}
 	}
@@ -162,7 +162,7 @@ func validateRequiredFieldSetNull(field *database.RelationFieldWalker, ctx *Vali
 	hasRequiredField := false
 	for _, refField := range referencingFields {
 		refAstField := refField.AstField()
-		if refAstField != nil && !refAstField.FieldType.IsOptional() {
+		if refAstField != nil && !refAstField.Arity.IsOptional() {
 			hasRequiredField = true
 			break
 		}
@@ -195,7 +195,7 @@ func validateRequiredFieldSetNull(field *database.RelationFieldWalker, ctx *Vali
 		allowsSetNull = ctx.Connector.AllowsSetNullReferentialActionOnNonNullableFields(relationMode)
 	}
 
-	span := astField.Span()
+	span := diagnostics.NewSpan(astField.Pos.Offset, astField.Pos.Offset+len(astField.Name.Name), field.Model().FileID())
 
 	if allowsSetNull {
 		// Connector allows SetNull on non-nullable fields, but we should still warn

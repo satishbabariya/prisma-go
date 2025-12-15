@@ -28,7 +28,7 @@ func validateScalarFieldDefaultValue(field *database.ScalarFieldWalker, ctx *Val
 		if astField != nil {
 			ctx.PushError(diagnostics.NewValidationError(
 				fmt.Sprintf("Field '%s' has unsupported type and cannot have a default value.", field.Name()),
-				astField.Span(),
+				diagnostics.NewSpan(astField.Pos.Offset, astField.Pos.Offset+len(astField.Name.Name), field.Model().FileID()),
 			))
 		} else {
 			ctx.PushError(diagnostics.NewValidationError(
@@ -45,17 +45,19 @@ func validateScalarFieldDefaultValue(field *database.ScalarFieldWalker, ctx *Val
 		if scalarType == nil || *scalarType != database.ScalarTypeInt {
 			value := defaultValue.Value()
 			if value != nil {
+				pos := value.Span()
+				span := diagnostics.NewSpan(pos.Offset, pos.Offset+10, diagnostics.FileIDZero)
 				ctx.PushError(diagnostics.NewAttributeValidationError(
 					fmt.Sprintf("Field '%s' cannot use autoincrement() - only Int fields support autoincrement.", field.Name()),
 					"@default",
-					value.Span(),
+					span,
 				))
 			} else {
 				astField := field.AstField()
 				if astField != nil {
 					ctx.PushError(diagnostics.NewValidationError(
 						fmt.Sprintf("Field '%s' cannot use autoincrement() - only Int fields support autoincrement.", field.Name()),
-						astField.Span(),
+						diagnostics.NewSpan(astField.Pos.Offset, astField.Pos.Offset+len(astField.Name.Name), field.Model().FileID()),
 					))
 				} else {
 					ctx.PushError(diagnostics.NewValidationError(
@@ -83,7 +85,7 @@ func validatePrimaryKeyClusteringSetting(pk *database.PrimaryKeyWalker, ctx *Val
 		return
 	}
 
-	span := diagnostics.NewSpan(astAttr.Span.Start, astAttr.Span.End, astAttr.Span.FileID)
+	span := diagnostics.NewSpan(astAttr.Pos.Offset, astAttr.Pos.Offset+len(astAttr.String()), pk.Model().FileID())
 	ctx.PushError(diagnostics.NewAttributeValidationError(
 		"Defining clustering is not supported in the current connector.",
 		pk.AttributeName(),
@@ -114,7 +116,7 @@ func validatePrimaryKeyClusteringCanBeDefinedOnlyOnce(pk *database.PrimaryKeyWal
 				return
 			}
 
-			span := diagnostics.NewSpan(astAttr.Span.Start, astAttr.Span.End, astAttr.Span.FileID)
+			span := diagnostics.NewSpan(astAttr.Pos.Offset, astAttr.Pos.Offset+len(astAttr.String()), model.FileID())
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				"A model can only hold one clustered index or id.",
 				pk.AttributeName(),
@@ -162,7 +164,7 @@ func validateScalarFieldConnectorSpecific(field *database.ScalarFieldWalker, ctx
 
 	container := "model"
 	if model := field.Model(); model != nil {
-		if astModel := model.AstModel(); astModel != nil && astModel.IsView {
+		if astModel := model.AstModel(); astModel != nil && astModel.IsView() {
 			container = "view"
 		}
 	}
@@ -176,7 +178,7 @@ func validateScalarFieldConnectorSpecific(field *database.ScalarFieldWalker, ctx
 	if fieldType.BuiltInScalar != nil && *fieldType.BuiltInScalar == database.ScalarTypeJson {
 		if !ctx.HasCapability(ConnectorCapabilityJson) {
 			astField := field.AstField()
-			span := diagnostics.NewSpan(astField.Span().Start, astField.Span().End, astField.Span().FileID)
+			span := diagnostics.NewSpan(astField.Pos.Offset, astField.Pos.Offset+len(astField.Name.Name), field.Model().FileID())
 			ctx.PushError(diagnostics.NewFieldValidationError(
 				fmt.Sprintf("Field `%s` in %s `%s` can't be of type Json. The current connector does not support the Json type.", field.Name(), container, field.Model().Name()),
 				container,
@@ -189,7 +191,7 @@ func validateScalarFieldConnectorSpecific(field *database.ScalarFieldWalker, ctx
 		// Check Json Lists support
 		if field.IsList() && !ctx.HasCapability(ConnectorCapabilityJsonLists) {
 			astField := field.AstField()
-			span := diagnostics.NewSpan(astField.Span().Start, astField.Span().End, astField.Span().FileID)
+			span := diagnostics.NewSpan(astField.Pos.Offset, astField.Pos.Offset+len(astField.Name.Name), field.Model().FileID())
 			ctx.PushError(diagnostics.NewFieldValidationError(
 				fmt.Sprintf("Field `%s` in %s `%s` can't be of type Json[]. The current connector does not support the Json List type.", field.Name(), container, field.Model().Name()),
 				container,
@@ -209,7 +211,7 @@ func validateScalarFieldConnectorSpecific(field *database.ScalarFieldWalker, ctx
 	// Check ScalarLists support
 	if field.IsList() && !ctx.HasCapability(ConnectorCapabilityScalarLists) {
 		astField := field.AstField()
-		span := diagnostics.NewSpan(astField.Span().Start, astField.Span().End, astField.Span().FileID)
+		span := diagnostics.NewSpan(astField.Pos.Offset, astField.Pos.Offset+len(astField.Name.Name), field.Model().FileID())
 		ctx.PushError(diagnostics.NewScalarListFieldsAreNotSupportedError(
 			container,
 			field.Model().Name(),

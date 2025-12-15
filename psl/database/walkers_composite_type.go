@@ -3,7 +3,7 @@ package database
 
 import (
 	"github.com/satishbabariya/prisma-go/psl/diagnostics"
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // CompositeTypeWalker provides access to a composite type declaration in the Prisma schema.
@@ -18,7 +18,7 @@ func (w *CompositeTypeWalker) Name() string {
 	if astCT == nil {
 		return ""
 	}
-	return astCT.Name.Name
+	return astCT.GetName()
 }
 
 // FileID returns the ID of the file containing the composite type.
@@ -27,7 +27,7 @@ func (w *CompositeTypeWalker) FileID() diagnostics.FileID {
 }
 
 // AstCompositeType returns the AST node for the composite type.
-func (w *CompositeTypeWalker) AstCompositeType() *ast.CompositeType {
+func (w *CompositeTypeWalker) AstCompositeType() *v2ast.CompositeType {
 	file := w.db.asts.Get(w.id.FileID)
 	if file == nil {
 		return nil
@@ -35,7 +35,7 @@ func (w *CompositeTypeWalker) AstCompositeType() *ast.CompositeType {
 
 	ctCount := 0
 	for _, top := range file.AST.Tops {
-		if ct := top.AsCompositeType(); ct != nil {
+		if ct, ok := top.(*v2ast.CompositeType); ok {
 			if uint32(ctCount) == w.id.ID {
 				return ct
 			}
@@ -98,16 +98,20 @@ func (w *CompositeTypeFieldWalker) Name() string {
 	if astCT == nil || int(w.fieldID) >= len(astCT.Fields) {
 		return ""
 	}
-	return astCT.Fields[w.fieldID].Name.Name
+	field := astCT.Fields[w.fieldID]
+	if field == nil {
+		return ""
+	}
+	return field.GetName()
 }
 
 // AstField returns the AST node for the field.
-func (w *CompositeTypeFieldWalker) AstField() *ast.Field {
+func (w *CompositeTypeFieldWalker) AstField() *v2ast.Field {
 	astCT := w.db.WalkCompositeType(w.ctID).AstCompositeType()
 	if astCT == nil || int(w.fieldID) >= len(astCT.Fields) {
 		return nil
 	}
-	return &astCT.Fields[w.fieldID]
+	return astCT.Fields[w.fieldID]
 }
 
 // Type returns the type of the field.
@@ -138,7 +142,7 @@ func (w *CompositeTypeFieldWalker) DatabaseName() string {
 
 // DefaultValue returns the default value expression if @default is present.
 // For composite type fields, we return the expression directly from AST.
-func (w *CompositeTypeFieldWalker) DefaultValue() ast.Expression {
+func (w *CompositeTypeFieldWalker) DefaultValue() v2ast.Expression {
 	key := CompositeTypeFieldKeyByID{
 		CompositeTypeID: w.ctID,
 		FieldID:         w.fieldID,
@@ -153,16 +157,22 @@ func (w *CompositeTypeFieldWalker) DefaultValue() ast.Expression {
 		return nil
 	}
 
-	astField := &astCT.Fields[w.fieldID]
+	astField := astCT.Fields[w.fieldID]
+	if astField == nil {
+		return nil
+	}
 	if int(ctf.Default.ArgumentIdx) >= len(astField.Attributes) {
 		return nil
 	}
 
 	// Find the @default attribute
 	for _, attr := range astField.Attributes {
-		if attr.Name.Name == "default" {
-			if int(ctf.Default.ArgumentIdx) < len(attr.Arguments.Arguments) {
-				return attr.Arguments.Arguments[ctf.Default.ArgumentIdx].Value
+		if attr != nil && attr.GetName() == "default" {
+			if attr.Arguments != nil && int(ctf.Default.ArgumentIdx) < len(attr.Arguments.Arguments) {
+				arg := attr.Arguments.Arguments[ctf.Default.ArgumentIdx]
+				if arg != nil {
+					return arg.Value
+				}
 			}
 		}
 	}
@@ -176,5 +186,7 @@ func (w *CompositeTypeFieldWalker) Span() diagnostics.Span {
 	if astField == nil {
 		return diagnostics.EmptySpan()
 	}
-	return astField.Name.Span()
+	pos := astField.Pos
+	span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(astField.GetName()), diagnostics.FileIDZero)
+	return span
 }

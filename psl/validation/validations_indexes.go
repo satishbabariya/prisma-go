@@ -52,7 +52,7 @@ func validateIndexFields(index *database.IndexWalker, model *database.ModelWalke
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				"The list of fields in an index cannot be empty. Please specify at least one field.",
 				index.AttributeName(),
-				astAttr.Span,
+				diagnostics.NewSpan(astAttr.Pos.Offset, astAttr.Pos.Offset+len(astAttr.String()), model.FileID()),
 			))
 		} else {
 			astModel := model.AstModel()
@@ -61,7 +61,7 @@ func validateIndexFields(index *database.IndexWalker, model *database.ModelWalke
 				ctx.PushError(diagnostics.NewAttributeValidationError(
 					"The list of fields in an index cannot be empty. Please specify at least one field.",
 					"@@index",
-					astModel.Span(),
+					diagnostics.NewSpan(astModel.Pos.Offset, astModel.Pos.Offset+len(astModel.Name.Name), model.FileID()),
 				))
 			}
 		}
@@ -77,7 +77,7 @@ func validateIndexFields(index *database.IndexWalker, model *database.ModelWalke
 				ctx.PushError(diagnostics.NewAttributeValidationError(
 					fmt.Sprintf("Index on model '%s' references invalid field.", model.Name()),
 					index.AttributeName(),
-					astAttr.Span,
+					diagnostics.NewSpan(astAttr.Pos.Offset, astAttr.Pos.Offset+len(astAttr.String()), model.FileID()),
 				))
 			} else {
 				ctx.PushError(diagnostics.NewValidationError(
@@ -93,7 +93,7 @@ func validateIndexFields(index *database.IndexWalker, model *database.ModelWalke
 			if astField != nil {
 				ctx.PushError(diagnostics.NewValidationError(
 					fmt.Sprintf("Index on model '%s' references ignored field '%s'.", model.Name(), sf.Name()),
-					astField.Span(),
+					diagnostics.NewSpan(astField.Pos.Offset, astField.Pos.Offset+len(astField.Name.Name), model.FileID()),
 				))
 			} else {
 				ctx.PushError(diagnostics.NewValidationError(
@@ -125,7 +125,7 @@ func validateIndexAlgorithm(index *database.IndexWalker, model *database.ModelWa
 	}
 
 	// Try to get span for "type" argument, otherwise use full attribute span
-	span := astAttr.Span
+	span := diagnostics.NewSpan(astAttr.Pos.Offset, astAttr.Pos.Offset+len(astAttr.String()), model.FileID())
 	if typeSpan := index.SpanForArgument("type"); typeSpan != nil {
 		span = *typeSpan
 	}
@@ -149,7 +149,7 @@ func validateFulltextIndexSupport(index *database.IndexWalker, model *database.M
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				"Defining fulltext indexes is not supported with the current connector.",
 				"@@fulltext",
-				astModel.Span(),
+				diagnostics.NewSpan(astModel.Pos.Offset, astModel.Pos.Offset+len(astModel.Name.Name), model.FileID()),
 			))
 		}
 	}
@@ -176,7 +176,7 @@ func validateFulltextColumnsShouldNotDefineLength(index *database.IndexWalker, m
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				"The length argument is not supported in a @@fulltext attribute.",
 				index.AttributeName(),
-				astAttr.Span,
+				diagnostics.NewSpan(astAttr.Pos.Offset, astAttr.Pos.Offset+len(astAttr.String()), model.FileID()),
 			))
 			return
 		}
@@ -208,7 +208,7 @@ func validateFulltextColumnSortIsSupported(index *database.IndexWalker, model *d
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				"The sort argument is not supported in a @@fulltext attribute in the current connector.",
 				index.AttributeName(),
-				astAttr.Span,
+				diagnostics.NewSpan(astAttr.Pos.Offset, astAttr.Pos.Offset+len(astAttr.String()), model.FileID()),
 			))
 			return
 		}
@@ -268,7 +268,7 @@ func validateFulltextTextColumnsShouldBeBundledTogether(index *database.IndexWal
 				ctx.PushError(diagnostics.NewAttributeValidationError(
 					"All index fields must be listed adjacently in the fields argument.",
 					index.AttributeName(),
-					index.AstAttribute().Span,
+					diagnostics.NewSpan(index.AstAttribute().Pos.Offset, index.AstAttribute().Pos.Offset+len(index.AstAttribute().String()), model.FileID()),
 				))
 				return
 			}
@@ -295,7 +295,7 @@ func validateHashIndexMustNotUseSortParam(index *database.IndexWalker, model *da
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				"Hash type does not support sort option.",
 				index.AttributeName(),
-				index.AstAttribute().Span,
+				diagnostics.NewSpan(index.AstAttribute().Pos.Offset, index.AstAttribute().Pos.Offset+len(index.AstAttribute().String()), model.FileID()),
 			))
 			return
 		}
@@ -322,7 +322,7 @@ func validateIndexClusteringSetting(index *database.IndexWalker, model *database
 	ctx.PushError(diagnostics.NewAttributeValidationError(
 		"Defining clustering is not supported in the current connector.",
 		index.AttributeName(),
-		astAttr.Span,
+		diagnostics.NewSpan(astAttr.Pos.Offset, astAttr.Pos.Offset+len(astAttr.String()), model.FileID()),
 	))
 }
 
@@ -350,7 +350,7 @@ func validateClusteringCanBeDefinedOnlyOnce(index *database.IndexWalker, model *
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				"A model can only hold one clustered index or key.",
 				index.AttributeName(),
-				astAttr.Span,
+				diagnostics.NewSpan(astAttr.Pos.Offset, astAttr.Pos.Offset+len(astAttr.String()), model.FileID()),
 			))
 			return
 		}
@@ -400,7 +400,7 @@ func validateClusteringCanBeDefinedOnlyOnce(index *database.IndexWalker, model *
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				"A model can only hold one clustered index.",
 				index.AttributeName(),
-				astAttr.Span,
+				diagnostics.NewSpan(astAttr.Pos.Offset, astAttr.Pos.Offset+len(astAttr.String()), model.FileID()),
 			))
 			return
 		}
@@ -417,7 +417,7 @@ func validateOpclassesAreNotAllowedWithOtherThanNormalIndices(index *database.In
 				ctx.PushError(diagnostics.NewAttributeValidationError(
 					"Operator classes are only allowed in normal indices, not in @@unique or @@fulltext.",
 					index.AttributeName(),
-					index.AstAttribute().Span,
+					diagnostics.NewSpan(index.AstAttribute().Pos.Offset, index.AstAttribute().Pos.Offset+len(index.AstAttribute().String()), model.FileID()),
 				))
 				return
 			}
@@ -447,7 +447,7 @@ func validateCompositeTypeInCompoundUniqueIndex(index *database.IndexWalker, mod
 					ctx.PushError(diagnostics.NewAttributeValidationError(
 						fmt.Sprintf("Prisma does not currently support composite types in compound unique indices, please remove %s from the index. See https://pris.ly/d/mongodb-composite-compound-indices for more details", sf.Name()),
 						"@@unique",
-						astModel.Span(),
+						diagnostics.NewSpan(astModel.Pos.Offset, astModel.Pos.Offset+len(astModel.Name.Name), model.FileID()),
 					))
 				}
 				return
@@ -497,7 +497,7 @@ func validateUniqueIndexClientNameDoesNotClashWithField(index *database.IndexWal
 					fmt.Sprintf("The field `%s` clashes with the `@@unique` name. Please resolve the conflict by providing a custom id name: `@@unique([...], name: \"custom_name\")`", idxClientName),
 					containerType,
 					model.Name(),
-					astModel.Span(),
+					diagnostics.NewSpan(astModel.Pos.Offset, astModel.Pos.Offset+len(astModel.Name.Name), model.FileID()),
 				))
 			}
 			return
@@ -519,7 +519,7 @@ func validateIndexFieldLengthPrefix(index *database.IndexWalker, model *database
 				ctx.PushError(diagnostics.NewAttributeValidationError(
 					"The length argument is not supported in an index definition with the current connector",
 					index.AttributeName(),
-					astAttr.Span,
+					diagnostics.NewSpan(astAttr.Pos.Offset, astAttr.Pos.Offset+len(astAttr.String()), model.FileID()),
 				))
 			}
 			return
@@ -556,7 +556,7 @@ func validateOnlyOneFulltextAttribute(model *database.ModelWalker, ctx *Validati
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				"The current connector only allows one fulltext attribute per model",
 				"@@fulltext",
-				astModel.Span(),
+				diagnostics.NewSpan(astModel.Pos.Offset, astModel.Pos.Offset+len(astModel.Name.Name), model.FileID()),
 			))
 		}
 	}

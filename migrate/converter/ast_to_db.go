@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/satishbabariya/prisma-go/migrate/introspect"
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // ConvertASTToDBSchema converts Prisma schema AST to DatabaseSchema
@@ -19,14 +19,13 @@ func ConvertASTToDBSchema(schemaAST *ast.SchemaAst, provider string) (*introspec
 	}
 
 	// Convert models to tables
-	for _, top := range schemaAST.Tops {
-		if model := top.AsModel(); model != nil {
-			table, err := convertModelToTable(model, schemaAST, provider)
-			if err != nil {
-				return nil, fmt.Errorf("failed to convert model %s: %w", model.Name.Name, err)
-			}
-			dbSchema.Tables = append(dbSchema.Tables, *table)
+	for _, model := range schemaAST.Models() {
+		// AsModel check not needed as we iterate models directly
+		table, err := convertModelToTable(model, schemaAST, provider)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert model %s: %w", model.Name.Name, err)
 		}
+		dbSchema.Tables = append(dbSchema.Tables, *table)
 	}
 
 	return dbSchema, nil
@@ -52,15 +51,20 @@ func convertModelToTable(model *ast.Model, parsed *ast.SchemaAst, provider strin
 	}
 
 	for _, field := range model.Fields {
+		// field is *ast.Field because model.Fields is []*ast.Field
+
 		// Skip relation fields (they don't become columns)
-		// Relation fields are either list types (one-to-many) or model types (many-to-one)
 		if field.Arity.IsList() {
 			// List fields are relations, skip them
 			continue
 		}
 
 		// Check if field type is a model name (relation)
-		typeName := strings.ToLower(field.FieldType.TypeName())
+		typeName := ""
+		if field.Type != nil {
+			typeName = strings.ToLower(field.Type.Name)
+		}
+
 		if !scalarTypes[typeName] {
 			// This is likely a relation field (model name), skip it
 			// But check if it has @relation attribute - if so, it's definitely a relation
@@ -78,19 +82,19 @@ func convertModelToTable(model *ast.Model, parsed *ast.SchemaAst, provider strin
 			continue
 		}
 
-		column, err := convertFieldToColumn(&field, provider)
+		column, err := convertFieldToColumn(field, provider)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert field %s: %w", field.Name.Name, err)
 		}
 		table.Columns = append(table.Columns, *column)
 
 		// Check for primary key
-		if hasAttribute(&field, "id") {
+		if hasAttribute(field, "id") {
 			primaryKeyColumns = append(primaryKeyColumns, column.Name)
 		}
 
 		// Check for unique index
-		if hasAttribute(&field, "unique") {
+		if hasAttribute(field, "unique") {
 			indexName := fmt.Sprintf("%s_%s_unique", tableName, column.Name)
 			table.Indexes = append(table.Indexes, introspect.Index{
 				Name:     indexName,
@@ -124,8 +128,13 @@ func convertFieldToColumn(field *ast.Field, provider string) (*introspect.Column
 		AutoIncrement: false,
 	}
 
+	typeName := ""
+	if field.Type != nil {
+		typeName = field.Type.Name
+	}
+
 	// Convert Prisma type to database type
-	dbType, err := mapPrismaTypeToDB(field.FieldType.TypeName(), provider)
+	dbType, err := mapPrismaTypeToDB(typeName, provider)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +246,11 @@ func extractForeignKeys(model *ast.Model, tableName string) []introspect.Foreign
 			continue
 		}
 
-		typeName := field.FieldType.TypeName()
+		typeName := ""
+		if field.Type != nil {
+			typeName = field.Type.Name
+		}
+
 		scalarTypes := map[string]bool{
 			"int": true, "bigint": true, "string": true, "boolean": true, "bool": true,
 			"datetime": true, "float": true, "decimal": true, "json": true, "bytes": true,
@@ -272,10 +285,10 @@ func hasAttribute(field *ast.Field, attrName string) bool {
 func isAutoIncrement(field *ast.Field) bool {
 	for _, attr := range field.Attributes {
 		if attr.Name.Name == "default" {
-			if len(attr.Arguments.Arguments) > 0 {
+			if attr.Arguments != nil && len(attr.Arguments.Arguments) > 0 {
 				// Check if default value is autoincrement()
-				if funcCall := attr.Arguments.Arguments[0].Value.AsFunction(); funcCall != nil {
-					if funcCall.Name.Name == "autoincrement" {
+				if funcCall, ok := attr.Arguments.Arguments[0].Value.(*ast.FunctionCall); ok {
+					if funcCall.Name == "autoincrement" {
 						return true
 					}
 				}
@@ -288,16 +301,21 @@ func isAutoIncrement(field *ast.Field) bool {
 func extractDefaultValue(field *ast.Field) *string {
 	for _, attr := range field.Attributes {
 		if attr.Name.Name == "default" {
-			if len(attr.Arguments.Arguments) > 0 {
+			if attr.Arguments != nil && len(attr.Arguments.Arguments) > 0 {
 				arg := attr.Arguments.Arguments[0]
-				if strLit, _ := arg.Value.AsStringValue(); strLit != nil {
-					return &strLit.Value
+				if strLit, ok := arg.Value.(*ast.StringValue); ok {
+					val := strLit.GetValue()
+					return &val
 				}
-				if numVal, _ := arg.Value.AsNumericValue(); numVal != nil {
-					return &numVal.Value
+				if numVal, ok := arg.Value.(*ast.NumericValue); ok {
+					// NumericValue stores parsed number as string in Value? No, float64 or int64?
+					// AST definition: type NumericValue struct { Value string } usually for raw token
+					val := numVal.Value
+					return &val
 				}
-				if constVal, _ := arg.Value.AsConstantValue(); constVal != nil {
-					return &constVal.Value
+				if constVal, ok := arg.Value.(*ast.ConstantValue); ok {
+					val := constVal.Value
+					return &val
 				}
 			}
 		}
@@ -305,7 +323,10 @@ func extractDefaultValue(field *ast.Field) *string {
 	return nil
 }
 
-func findAttributeArgument(attr ast.Attribute, argName string) ast.Expression {
+func findAttributeArgument(attr *ast.Attribute, argName string) ast.Expression {
+	if attr.Arguments == nil {
+		return nil
+	}
 	for _, arg := range attr.Arguments.Arguments {
 		if arg.Name != nil && arg.Name.Name == argName {
 			return arg.Value
@@ -315,13 +336,13 @@ func findAttributeArgument(attr ast.Attribute, argName string) ast.Expression {
 }
 
 func extractStringArray(expr ast.Expression) []string {
-	if arr := expr.AsArray(); arr != nil {
+	if arr, ok := expr.(*ast.ArrayExpression); ok {
 		var result []string
 		for _, elem := range arr.Elements {
-			if strLit, _ := elem.AsStringValue(); strLit != nil {
-				result = append(result, strLit.Value)
-			} else if ident, ok := elem.(ast.Identifier); ok {
-				result = append(result, ident.Name)
+			if strLit, ok := elem.(*ast.StringValue); ok {
+				result = append(result, strLit.GetValue())
+			} else if ident, ok := elem.(*ast.ConstantValue); ok {
+				result = append(result, ident.Value)
 			}
 		}
 		return result

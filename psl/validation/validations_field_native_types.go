@@ -71,7 +71,7 @@ func validateUnsupportedFieldType(field *database.ScalarFieldWalker, ctx *Valida
 	}
 
 	// Get the unsupported type string from the field type name
-	unsupportedTypeName := astField.FieldType.TypeName()
+	unsupportedTypeName := astField.Type.String()
 	if unsupportedTypeName == "" {
 		return
 	}
@@ -107,7 +107,7 @@ func validateUnsupportedFieldType(field *database.ScalarFieldWalker, ctx *Valida
 
 	// Try to parse as native type using connector
 	if ctx.Connector != nil {
-		span := astField.Span()
+		span := diagnostics.NewSpan(astField.Pos.Offset, astField.Pos.Offset+len(astField.Name.Name), field.Model().FileID())
 		diags := diagnostics.NewDiagnostics()
 		nativeType := ctx.Connector.ParseNativeType(prefix, args, span, &diags)
 
@@ -144,7 +144,7 @@ func validateUnsupportedFieldType(field *database.ScalarFieldWalker, ctx *Valida
 
 				ctx.PushError(diagnostics.NewValidationError(
 					message,
-					astField.Span(),
+					span,
 				))
 			}
 		}

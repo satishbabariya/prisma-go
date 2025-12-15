@@ -198,14 +198,14 @@ func (g *MySQLGenerator) GenerateSelectWithJoins(
 
 	// LIMIT
 	if limit != nil && *limit > 0 {
-		parts = append(parts, fmt.Sprintf("LIMIT ?", argIndex))
+		parts = append(parts, "LIMIT ?")
 		args = append(args, *limit)
 		argIndex++
 	}
 
 	// OFFSET
 	if offset != nil && *offset > 0 {
-		parts = append(parts, fmt.Sprintf("OFFSET ?", argIndex))
+		parts = append(parts, "OFFSET ?")
 		args = append(args, *offset)
 		argIndex++
 	}
@@ -442,14 +442,14 @@ func (g *SQLiteGenerator) GenerateSelectWithJoins(
 
 	// LIMIT
 	if limit != nil && *limit > 0 {
-		parts = append(parts, fmt.Sprintf("LIMIT ?", argIndex))
+		parts = append(parts, "LIMIT ?")
 		args = append(args, *limit)
 		argIndex++
 	}
 
 	// OFFSET
 	if offset != nil && *offset > 0 {
-		parts = append(parts, fmt.Sprintf("OFFSET ?", argIndex))
+		parts = append(parts, "OFFSET ?")
 		args = append(args, *offset)
 		argIndex++
 	}

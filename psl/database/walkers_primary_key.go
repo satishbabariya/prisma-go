@@ -2,7 +2,7 @@
 package database
 
 import (
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // PrimaryKeyWalker provides access to a primary key (@id or @@id).
@@ -77,7 +77,7 @@ func (w *PrimaryKeyWalker) Model() *ModelWalker {
 }
 
 // AstAttribute returns the AST attribute for this primary key.
-func (w *PrimaryKeyWalker) AstAttribute() *ast.Attribute {
+func (w *PrimaryKeyWalker) AstAttribute() *v2ast.Attribute {
 	model := w.Model()
 	if model == nil {
 		return nil
@@ -87,12 +87,18 @@ func (w *PrimaryKeyWalker) AstAttribute() *ast.Attribute {
 		return nil
 	}
 	// Find the @@id or @id attribute
-	for i := range astModel.Attributes {
-		attr := &astModel.Attributes[i]
-		if attr.Name.Name == "@@id" || attr.Name.Name == "@id" {
-			return attr
+	// Check block attributes first (for @@id)
+	for _, attr := range astModel.BlockAttributes {
+		if attr != nil && attr.GetName() == "id" {
+			return &v2ast.Attribute{
+				Pos:       attr.Pos,
+				Name:      attr.Name,
+				Arguments: attr.Arguments,
+			}
 		}
 	}
+	// Check field attributes (for @id) - would need to search through fields
+	// For now, return nil as field-level attributes are harder to locate
 	return nil
 }
 

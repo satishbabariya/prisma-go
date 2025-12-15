@@ -2,7 +2,7 @@
 package validation
 
 import (
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 
 	"fmt"
 	"strings"
@@ -21,7 +21,7 @@ const (
 // LoadGeneratorsFromAST loads all generators from the provided schema AST.
 // featureMapWithProvider can be nil if preview features are not yet implemented.
 func LoadGeneratorsFromAST(
-	astSchema *ast.SchemaAst,
+	astSchema *v2ast.SchemaAst,
 	diags *diagnostics.Diagnostics,
 	featureMapWithProvider *FeatureMapWithProvider,
 ) []Generator {
@@ -29,7 +29,7 @@ func LoadGeneratorsFromAST(
 
 	// Extract all generator configs from AST
 	for _, top := range astSchema.Tops {
-		if generator := top.AsGenerator(); generator != nil {
+		if generator, ok := top.(*v2ast.GeneratorConfig); ok {
 			if gen := liftGenerator(generator, diags, featureMapWithProvider); gen != nil {
 				generators = append(generators, *gen)
 			}
@@ -41,26 +41,28 @@ func LoadGeneratorsFromAST(
 
 // liftGenerator lifts a generator from the AST to a Generator configuration.
 func liftGenerator(
-	astGenerator *ast.GeneratorConfig,
+	astGenerator *v2ast.GeneratorConfig,
 	diags *diagnostics.Diagnostics,
 	featureMapWithProvider *FeatureMapWithProvider,
 ) *Generator {
-	generatorName := astGenerator.Name.Name
+	generatorName := astGenerator.GetName()
 
 	// Extract properties into a map
-	args := make(map[string]*ast.ConfigBlockProperty)
+	args := make(map[string]*v2ast.ConfigBlockProperty)
 	hasErrors := false
 	for i := range astGenerator.Properties {
-		prop := &astGenerator.Properties[i]
-		key := prop.Name.Name
+		prop := astGenerator.Properties[i]
+		key := prop.GetName()
 		if prop.Value != nil {
 			args[key] = prop
 		} else {
+			genPos := astGenerator.Pos
+			genSpan := diagnostics.NewSpan(genPos.Offset, genPos.Offset+len(generatorName), diagnostics.FileIDZero)
 			diags.PushError(diagnostics.NewConfigPropertyMissingValueError(
 				key,
 				generatorName,
 				"generator",
-				astGenerator.Span(),
+				genSpan,
 			))
 			hasErrors = true
 		}
@@ -73,12 +75,14 @@ func liftGenerator(
 
 	// Validate engineType is a string if present
 	if engineTypeProp, hasEngineType := args[generatorEngineTypeKey]; hasEngineType {
-		if _, ok := engineTypeProp.Value.(ast.StringLiteral); !ok {
+		if _, ok := engineTypeProp.Value.AsStringValue(); !ok {
+			propPos := engineTypeProp.Pos
+			propSpan := diagnostics.NewSpan(propPos.Offset, propPos.Offset+len(generatorEngineTypeKey), diagnostics.FileIDZero)
 			diags.PushError(diagnostics.NewTypeMismatchError(
 				"String",
 				"unknown",
 				"",
-				engineTypeProp.Span(),
+				propSpan,
 			))
 		}
 	}
@@ -86,10 +90,12 @@ func liftGenerator(
 	// Extract provider (required)
 	providerProp, hasProvider := args[generatorProviderKey]
 	if !hasProvider {
+		genPos := astGenerator.Pos
+		genSpan := diagnostics.NewSpan(genPos.Offset, genPos.Offset+len(generatorName), diagnostics.FileIDZero)
 		diags.PushError(diagnostics.NewGeneratorArgumentNotFoundError(
 			generatorProviderKey,
 			generatorName,
-			astGenerator.Span(),
+			genSpan,
 		))
 		return nil
 	}
@@ -110,7 +116,7 @@ func liftGenerator(
 	// Extract binaryTargets (optional)
 	binaryTargets := []string{}
 	if binaryTargetsProp, hasBinaryTargets := args[generatorBinaryTargetsKey]; hasBinaryTargets {
-		if arr, ok := binaryTargetsProp.Value.(ast.ArrayLiteral); ok {
+		if arr, ok := binaryTargetsProp.Value.AsArray(); ok {
 			for _, elem := range arr.Elements {
 				if str, err := coerceStringFromEnvVar(elem, diags); err == nil {
 					binaryTargets = append(binaryTargets, str)
@@ -122,19 +128,21 @@ func liftGenerator(
 	// Extract previewFeatures (optional)
 	var previewFeatures *PreviewFeatures
 	if previewFeaturesProp, hasPreviewFeatures := args[generatorPreviewFeaturesKey]; hasPreviewFeatures {
-		if arr, ok := previewFeaturesProp.Value.(ast.ArrayLiteral); ok {
+		if arr, ok := previewFeaturesProp.Value.AsArray(); ok {
 			features := []string{}
 			for _, elem := range arr.Elements {
-				if strLit, ok := elem.(ast.StringLiteral); ok {
-					features = append(features, strLit.Value)
+				if strVal, ok := elem.AsStringValue(); ok {
+					features = append(features, strVal.GetValue())
 				}
 			}
 			// Parse and validate preview features
 			if featureMapWithProvider != nil {
+				propPos := previewFeaturesProp.Pos
+				propSpan := diagnostics.NewSpan(propPos.Offset, propPos.Offset+len(generatorPreviewFeaturesKey), diagnostics.FileIDZero)
 				previewFeatures = parseAndValidatePreviewFeatures(
 					features,
 					featureMapWithProvider,
-					previewFeaturesProp.Span(),
+					propSpan,
 					diags,
 				)
 			} else {
@@ -175,62 +183,73 @@ func liftGenerator(
 }
 
 // coerceStringFromEnvVar coerces an expression to a string, supporting env() function.
-func coerceStringFromEnvVar(expr ast.Expression, diags *diagnostics.Diagnostics) (string, error) {
+func coerceStringFromEnvVar(expr v2ast.Expression, diags *diagnostics.Diagnostics) (string, error) {
 	// Handle string literal
-	if strLit, ok := expr.(ast.StringLiteral); ok {
-		return strLit.Value, nil
+	if strVal, ok := expr.AsStringValue(); ok {
+		return strVal.GetValue(), nil
 	}
 
 	// Handle env() function
-	if funcCall, ok := expr.(ast.FunctionCall); ok {
-		if funcCall.Name.Name == "env" {
-			if len(funcCall.Arguments) > 0 {
-				if strLit, ok := funcCall.Arguments[0].(ast.StringLiteral); ok {
-					// Return as env:VAR_NAME format
-					return fmt.Sprintf("env:%s", strLit.Value), nil
+	if funcCall, ok := expr.AsFunction(); ok {
+		if funcCall.Name == "env" {
+			if funcCall.Arguments != nil && len(funcCall.Arguments.Arguments) > 0 {
+				if arg := funcCall.Arguments.Arguments[0]; arg != nil {
+					if strVal, ok := arg.Value.AsStringValue(); ok {
+						// Return as env:VAR_NAME format
+						return fmt.Sprintf("env:%s", strVal.GetValue()), nil
+					}
 				}
 			}
-			diags.PushError(diagnostics.NewNamedEnvValError(expr.Span()))
+			pos := expr.Span()
+			span := diagnostics.NewSpan(pos.Offset, pos.Offset+10, diagnostics.FileIDZero)
+			diags.PushError(diagnostics.NewNamedEnvValError(span))
 			return "", fmt.Errorf("invalid env() function")
 		}
 	}
 
+	pos := expr.Span()
+	span := diagnostics.NewSpan(pos.Offset, pos.Offset+10, diagnostics.FileIDZero)
 	diags.PushError(diagnostics.NewTypeMismatchError(
 		"String",
 		"unknown",
 		"",
-		expr.Span(),
+		span,
 	))
 	return "", fmt.Errorf("not a string")
 }
 
 // extractGeneratorConfigValue extracts a value from an AST expression for generator config.
-func extractGeneratorConfigValue(value ast.Expression, diags *diagnostics.Diagnostics) interface{} {
-	switch v := value.(type) {
-	case ast.StringLiteral:
-		return v.Value
-	case ast.BooleanLiteral:
-		return v.Value
-	case ast.IntLiteral:
-		return v.Value
-	case ast.FloatLiteral:
-		return v.Value
-	case ast.ArrayLiteral:
+func extractGeneratorConfigValue(value v2ast.Expression, diags *diagnostics.Diagnostics) interface{} {
+	if strVal, ok := value.AsStringValue(); ok {
+		return strVal.GetValue()
+	}
+	if numVal, ok := value.AsNumericValue(); ok {
+		return numVal.Value
+	}
+	if constVal, ok := value.AsConstantValue(); ok {
+		if boolVal, ok := constVal.AsBooleanValue(); ok {
+			return boolVal
+		}
+		return constVal.Value
+	}
+	if arrExpr, ok := value.AsArray(); ok {
 		result := []interface{}{}
-		for _, elem := range v.Elements {
+		for _, elem := range arrExpr.Elements {
 			result = append(result, extractGeneratorConfigValue(elem, diags))
 		}
 		return result
-	case ast.FunctionCall:
-		if v.Name.Name == "env" && len(v.Arguments) > 0 {
-			if strLit, ok := v.Arguments[0].(ast.StringLiteral); ok {
-				return fmt.Sprintf("env:%s", strLit.Value)
+	}
+	if funcCall, ok := value.AsFunction(); ok {
+		if funcCall.Name == "env" && funcCall.Arguments != nil && len(funcCall.Arguments.Arguments) > 0 {
+			if arg := funcCall.Arguments.Arguments[0]; arg != nil {
+				if strVal, ok := arg.Value.AsStringValue(); ok {
+					return fmt.Sprintf("env:%s", strVal.GetValue())
+				}
 			}
 		}
 		return nil
-	default:
-		return nil
 	}
+	return nil
 }
 
 // parseAndValidatePreviewFeatures parses and validates preview features.

@@ -234,7 +234,7 @@ func validateModelWithNames(model *database.ModelWalker, ctx *ValidationContext,
 	}
 
 	astModel := model.AstModel()
-	isView := astModel != nil && astModel.IsView
+	isView := astModel != nil && astModel.IsView()
 
 	// View-specific validations
 	if isView {
@@ -296,7 +296,7 @@ func validateModelWithNames(model *database.ModelWalker, ctx *ValidationContext,
 				if astAttr == nil {
 					continue
 				}
-				span := diagnostics.NewSpan(astAttr.Span.Start, astAttr.Span.End, astAttr.Span.FileID)
+				span := diagnostics.NewSpan(astAttr.Pos.Offset, astAttr.Pos.Offset+len(astAttr.String()), model.FileID())
 				validateLengthUsedWithCorrectTypesForPrimaryKey(fieldAttr, pk.AttributeName(), span, ctx)
 			}
 		}
@@ -360,7 +360,7 @@ func validateModelIndexesWithNames(ctx *ValidationContext, names *Names) {
 		}
 
 		astModel := model.AstModel()
-		isView := astModel != nil && astModel.IsView
+		isView := astModel != nil && astModel.IsView()
 
 		indexes := model.Indexes()
 		for _, index := range indexes {

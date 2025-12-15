@@ -3,7 +3,7 @@ package database
 
 import (
 	"github.com/satishbabariya/prisma-go/psl/diagnostics"
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // Context is a validation context that contains the database itself,
@@ -152,5 +152,5 @@ func (ctx *Context) IterTops() []TopEntry {
 // TopEntry represents a top-level entry.
 type TopEntry struct {
 	TopID TopId
-	Top   ast.Top
+	Top   v2ast.Top
 }

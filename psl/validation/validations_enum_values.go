@@ -24,7 +24,7 @@ func validateEnumValueNames(enum *database.EnumWalker, ctx *ValidationContext) {
 			if astEnum != nil {
 				ctx.PushError(diagnostics.NewValidationError(
 					fmt.Sprintf("Enum '%s' has duplicate value name '%s'.", enum.Name(), name),
-					astEnum.Span(),
+					diagnostics.NewSpan(astEnum.Pos.Offset, astEnum.Pos.Offset+len(astEnum.Name.Name), enum.FileID()),
 				))
 			} else {
 				ctx.PushError(diagnostics.NewValidationError(
@@ -53,7 +53,7 @@ func validateEnumValueDatabaseNames(enum *database.EnumWalker, ctx *ValidationCo
 			if astEnum != nil {
 				ctx.PushError(diagnostics.NewValidationError(
 					fmt.Sprintf("Enum '%s' has duplicate value database name '%s'.", enum.Name(), dbName),
-					astEnum.Span(),
+					diagnostics.NewSpan(astEnum.Pos.Offset, astEnum.Pos.Offset+len(astEnum.Name.Name), enum.FileID()),
 				))
 			} else {
 				ctx.PushError(diagnostics.NewValidationError(
@@ -83,7 +83,7 @@ func validateEnumValueReservedNames(enum *database.EnumWalker, ctx *ValidationCo
 				if astEnum != nil {
 					ctx.PushWarning(diagnostics.NewDatamodelWarning(
 						fmt.Sprintf("Enum value '%s' in enum '%s' uses reserved name '%s'.", name, enum.Name(), reserved),
-						astEnum.Span(),
+						diagnostics.NewSpan(astEnum.Pos.Offset, astEnum.Pos.Offset+len(astEnum.Name.Name), enum.FileID()),
 					))
 				}
 			}

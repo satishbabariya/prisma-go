@@ -2,8 +2,6 @@
 package validation
 
 import (
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
-
 	"fmt"
 	"strings"
 
@@ -204,9 +202,11 @@ func (c *MongoDbConnector) ValidateModel(modelWalker *ModelWalker, relationMode 
 	if modelWalker.PrimaryKey() == nil {
 		astModel := modelWalker.AstModel()
 		if astModel != nil {
+			modelPos := astModel.TopPos()
+			modelSpan := diagnostics.NewSpan(modelPos.Offset, modelPos.Offset+len(astModel.GetName()), diagnostics.FileIDZero)
 			diags.PushError(diagnostics.NewInvalidModelError(
 				"MongoDB models require exactly one identity field annotated with @id",
-				astModel.Span(),
+				modelSpan,
 			))
 		}
 		return
@@ -256,12 +256,14 @@ func (c *MongoDbConnector) ValidateScalarFieldUnknownDefaultFunctions(db *databa
 	for _, model := range db.WalkModels() {
 		for _, field := range model.ScalarFields() {
 			if defaultValue := field.DefaultValue(); defaultValue != nil {
-				if funcCall, ok := defaultValue.Value().(ast.FunctionCall); ok {
-					switch funcCall.Name.Name {
+				if funcCall, ok := defaultValue.Value().AsFunction(); ok {
+					switch funcCall.Name {
 					case "now", "uuid", "cuid", "cuid2", "autoincrement", "dbgenerated", "env", "objectid", "auto":
 						// Known functions for MongoDB
 					default:
-						diags.PushError(diagnostics.NewDefaultUnknownFunctionError(funcCall.Name.Name, funcCall.Span()))
+						funcPos := funcCall.Pos
+						funcSpan := diagnostics.NewSpan(funcPos.Offset, funcPos.Offset+len(funcCall.Name), diagnostics.FileIDZero)
+						diags.PushError(diagnostics.NewDefaultUnknownFunctionError(funcCall.Name, funcSpan))
 					}
 				}
 			}
@@ -274,81 +276,78 @@ func validateMongoDBScalarField(field *database.ScalarFieldWalker, diags *diagno
 	// Check @default(auto()) requires @db.ObjectId
 	if defaultValue := field.DefaultValue(); defaultValue != nil {
 		if value := defaultValue.Value(); value != nil {
-			if funcCall, ok := value.(ast.FunctionCall); ok && funcCall.Name.Name == "auto" {
-				// Check if native type is ObjectId
-				nativeTypeInfo := field.NativeType()
-				if nativeTypeInfo == nil {
+			if funcCall, ok := value.AsFunction(); ok {
+				if funcCall.Name == "auto" {
+					// Check if native type is ObjectId
+					nativeTypeInfo := field.NativeType()
+					if nativeTypeInfo == nil {
+						container := "model"
+						if model := field.Model(); model != nil {
+							if astModel := model.AstModel(); astModel != nil && astModel.IsView() {
+								container = "view"
+							}
+						}
+						astField := field.AstField()
+						span := diagnostics.EmptySpan()
+						if astField != nil {
+							fieldPos := astField.Pos
+							span = diagnostics.NewSpan(fieldPos.Offset, fieldPos.Offset+len(astField.GetName()), diagnostics.FileIDZero)
+						}
+						diags.PushError(diagnostics.NewFieldValidationError(
+							"MongoDB `@default(auto())` fields must have `ObjectId` native type.",
+							container,
+							field.Model().Name(),
+							field.Name(),
+							span,
+						))
+					}
+
+					// Check @default(auto()) requires @id
+					if !field.IsSinglePK() && !field.IsPartOfCompoundPK() {
+						container := "model"
+						if model := field.Model(); model != nil {
+							if astModel := model.AstModel(); astModel != nil && astModel.IsView() {
+								container = "view"
+							}
+						}
+						astField := field.AstField()
+						span := diagnostics.EmptySpan()
+						if astField != nil {
+							fieldPos := astField.Pos
+							span = diagnostics.NewSpan(fieldPos.Offset, fieldPos.Offset+len(astField.GetName()), diagnostics.FileIDZero)
+						}
+						diags.PushError(diagnostics.NewFieldValidationError(
+							"MongoDB `@default(auto())` fields must have the `@id` attribute.",
+							container,
+							field.Model().Name(),
+							field.Name(),
+							span,
+						))
+					}
+				}
+
+				// Check @default(dbgenerated()) is not allowed
+				if funcCall.Name == "dbgenerated" {
 					container := "model"
 					if model := field.Model(); model != nil {
-						if astModel := model.AstModel(); astModel != nil && astModel.IsView {
+						if astModel := model.AstModel(); astModel != nil && astModel.IsView() {
 							container = "view"
 						}
 					}
 					astField := field.AstField()
 					span := diagnostics.EmptySpan()
 					if astField != nil {
-						span = astField.Span()
+						fieldPos := astField.Pos
+						span = diagnostics.NewSpan(fieldPos.Offset, fieldPos.Offset+len(astField.GetName()), diagnostics.FileIDZero)
 					}
 					diags.PushError(diagnostics.NewFieldValidationError(
-						"MongoDB `@default(auto())` fields must have `ObjectId` native type.",
-						container,
-						field.Model().Name(),
-						field.Name(),
-						span,
-					))
-				} else {
-					// Check if native type name is ObjectId
-					// We'd need to parse it, but for now we'll check the raw type name
-					// This is a simplified check - full implementation would parse through connector
-				}
-			}
-		}
-
-		// Check @default(auto()) requires @id
-		if value := defaultValue.Value(); value != nil {
-			if funcCall, ok := value.(ast.FunctionCall); ok && funcCall.Name.Name == "auto" {
-				if !field.IsSinglePK() && !field.IsPartOfCompoundPK() {
-					container := "model"
-					if model := field.Model(); model != nil {
-						if astModel := model.AstModel(); astModel != nil && astModel.IsView {
-							container = "view"
-						}
-					}
-					astField := field.AstField()
-					span := diagnostics.EmptySpan()
-					if astField != nil {
-						span = astField.Span()
-					}
-					diags.PushError(diagnostics.NewFieldValidationError(
-						"MongoDB `@default(auto())` fields must have the `@id` attribute.",
+						"The `dbgenerated()` function is not allowed with MongoDB. Please use `auto()` instead.",
 						container,
 						field.Model().Name(),
 						field.Name(),
 						span,
 					))
 				}
-			}
-
-			// Check @default(dbgenerated()) is not allowed
-			if funcCall, ok := value.(ast.FunctionCall); ok && funcCall.Name.Name == "dbgenerated" {
-				container := "model"
-				if model := field.Model(); model != nil {
-					if astModel := model.AstModel(); astModel != nil && astModel.IsView {
-						container = "view"
-					}
-				}
-				astField := field.AstField()
-				span := diagnostics.EmptySpan()
-				if astField != nil {
-					span = astField.Span()
-				}
-				diags.PushError(diagnostics.NewFieldValidationError(
-					"The `dbgenerated()` function is not allowed with MongoDB. Please use `auto()` instead.",
-					container,
-					field.Model().Name(),
-					field.Name(),
-					span,
-				))
 			}
 		}
 	}
@@ -361,7 +360,7 @@ func validateMongoDBScalarField(field *database.ScalarFieldWalker, diags *diagno
 			// Try to find @map attribute span
 			for _, attr := range astField.Attributes {
 				if attr.Name.Name == "map" {
-					span = attr.Span
+					span = diagnostics.NewSpan(attr.Pos.Offset, attr.Pos.Offset+len(attr.String()), diagnostics.FileIDZero)
 					break
 				}
 			}
@@ -408,7 +407,7 @@ func validateMongoDBPrimaryKeyMappedName(pk *database.PrimaryKeyWalker, diags *d
 
 	container := "model"
 	if model := scalarField.Model(); model != nil {
-		if astModel := model.AstModel(); astModel != nil && astModel.IsView {
+		if astModel := model.AstModel(); astModel != nil && astModel.IsView() {
 			container = "view"
 		}
 	}
@@ -416,7 +415,8 @@ func validateMongoDBPrimaryKeyMappedName(pk *database.PrimaryKeyWalker, diags *d
 	astField := scalarField.AstField()
 	span := diagnostics.EmptySpan()
 	if astField != nil {
-		span = astField.Span()
+		fieldPos := astField.Pos
+		span = diagnostics.NewSpan(fieldPos.Offset, fieldPos.Offset+len(astField.GetName()), diagnostics.FileIDZero)
 	}
 
 	var err diagnostics.DatamodelError
@@ -468,7 +468,7 @@ func validateMongoDBIndex(index *database.IndexWalker, diags *diagnostics.Diagno
 		if scalarField != nil && scalarField.IsSinglePK() {
 			span := diagnostics.EmptySpan()
 			if astAttr := index.AstAttribute(); astAttr != nil {
-				span = astAttr.Span
+				span = diagnostics.NewSpan(astAttr.Pos.Offset, astAttr.Pos.Offset+len(astAttr.String()), diagnostics.FileIDZero)
 			}
 			diags.PushError(diagnostics.NewAttributeValidationError(
 				"The same field cannot be an id and unique on MongoDB.",
@@ -509,10 +509,10 @@ func validateMongoDBRelationFieldNativeTypes(field *database.RelationFieldWalker
 				for _, attr := range astField.Attributes {
 					if attr.Name.Name == "db" && len(attr.Arguments.Arguments) > 0 {
 						if firstArg := attr.Arguments.Arguments[0]; firstArg.Value != nil {
-							if strLit, ok := firstArg.Value.(ast.StringLiteral); ok {
+							if strLit, ok := firstArg.Value.AsStringValue(); ok {
 								refTypeName = strLit.Value
-							} else if ident, ok := firstArg.Value.(ast.Identifier); ok {
-								refTypeName = ident.Name
+							} else if constVal, ok := firstArg.Value.AsConstantValue(); ok {
+								refTypeName = constVal.Value
 							}
 						}
 						break
@@ -527,10 +527,10 @@ func validateMongoDBRelationFieldNativeTypes(field *database.RelationFieldWalker
 				for _, attr := range astField.Attributes {
 					if attr.Name.Name == "db" && len(attr.Arguments.Arguments) > 0 {
 						if firstArg := attr.Arguments.Arguments[0]; firstArg.Value != nil {
-							if strLit, ok := firstArg.Value.(ast.StringLiteral); ok {
+							if strLit, ok := firstArg.Value.AsStringValue(); ok {
 								refdTypeName = strLit.Value
-							} else if ident, ok := firstArg.Value.(ast.Identifier); ok {
-								refdTypeName = ident.Name
+							} else if constVal, ok := firstArg.Value.AsConstantValue(); ok {
+								refdTypeName = constVal.Value
 							}
 						}
 						break
@@ -587,7 +587,7 @@ func validateMongoDBRelationFieldNativeTypes(field *database.RelationFieldWalker
 			astField := refField.AstField()
 			span := diagnostics.EmptySpan()
 			if astField != nil {
-				span = astField.Span()
+				span = diagnostics.NewSpan(astField.Pos.Offset, astField.Pos.Offset+len(astField.Name.Name), diagnostics.FileIDZero)
 			}
 
 			diags.PushWarning(diagnostics.NewFieldValidationWarning(

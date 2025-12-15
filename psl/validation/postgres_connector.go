@@ -2,8 +2,6 @@
 package validation
 
 import (
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
-
 	"fmt"
 	"strings"
 
@@ -324,7 +322,7 @@ func (c *PostgresConnector) ValidateModel(modelWalker *ModelWalker, relationMode
 				// Get span from AST attribute
 				span := diagnostics.NewSpan(0, 0, diagnostics.FileIDZero)
 				if astAttr := index.AstAttribute(); astAttr != nil {
-					span = astAttr.Span
+					span = diagnostics.NewSpan(astAttr.Pos.Offset, astAttr.Pos.Offset+len(astAttr.String()), diagnostics.FileIDZero)
 				}
 				diags.PushError(diagnostics.NewAttributeValidationError(
 					"SpGist does not support multi-column indices.",
@@ -380,12 +378,14 @@ func (c *PostgresConnector) ValidateScalarFieldUnknownDefaultFunctions(db *datab
 	for _, model := range db.WalkModels() {
 		for _, field := range model.ScalarFields() {
 			if defaultValue := field.DefaultValue(); defaultValue != nil {
-				if funcCall, ok := defaultValue.Value().(ast.FunctionCall); ok {
-					switch funcCall.Name.Name {
+				if funcCall, ok := defaultValue.Value().AsFunction(); ok {
+					switch funcCall.Name {
 					case "now", "uuid", "cuid", "cuid2", "autoincrement", "dbgenerated", "env":
 						// Known functions, do nothing
 					default:
-						diags.PushError(diagnostics.NewDefaultUnknownFunctionError(funcCall.Name.Name, funcCall.Span()))
+						pos := funcCall.Span()
+						span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(funcCall.Name), diagnostics.FileIDZero)
+						diags.PushError(diagnostics.NewDefaultUnknownFunctionError(funcCall.Name, span))
 					}
 				}
 			}

@@ -3,7 +3,7 @@ package database
 
 import (
 	"github.com/satishbabariya/prisma-go/psl/diagnostics"
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // ScalarFieldWalker provides access to a scalar field in a model.
@@ -18,7 +18,7 @@ func (w *ScalarFieldWalker) Name() string {
 	if astField == nil {
 		return ""
 	}
-	return astField.Name.Name
+	return astField.GetName()
 }
 
 // FieldID returns the field ID in the AST.
@@ -31,7 +31,7 @@ func (w *ScalarFieldWalker) FieldID() uint32 {
 }
 
 // AstField returns the AST node for the field.
-func (w *ScalarFieldWalker) AstField() *ast.Field {
+func (w *ScalarFieldWalker) AstField() *v2ast.Field {
 	sf := w.attributes()
 	if sf == nil {
 		return nil
@@ -41,7 +41,7 @@ func (w *ScalarFieldWalker) AstField() *ast.Field {
 	if astModel == nil || int(sf.FieldID) >= len(astModel.Fields) {
 		return nil
 	}
-	return &astModel.Fields[sf.FieldID]
+	return astModel.Fields[sf.FieldID]
 }
 
 // Model returns the parent model walker.
@@ -97,7 +97,7 @@ func (w *ScalarFieldWalker) IsOptional() bool {
 	if astField == nil {
 		return false
 	}
-	return astField.FieldType.IsOptional()
+	return astField.Arity.IsOptional()
 }
 
 // IsList returns whether the field is a list.
@@ -106,7 +106,7 @@ func (w *ScalarFieldWalker) IsList() bool {
 	if astField == nil {
 		return false
 	}
-	return astField.FieldType.IsArray()
+	return astField.Arity.IsList()
 }
 
 // ScalarFieldType returns the type of the scalar field.
@@ -275,5 +275,7 @@ func (w *ScalarFieldWalker) Span() diagnostics.Span {
 	if astField == nil {
 		return diagnostics.EmptySpan()
 	}
-	return astField.Name.Span()
+	pos := astField.Pos
+	span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(astField.GetName()), diagnostics.FileIDZero)
+	return span
 }

@@ -75,7 +75,7 @@ func validateModelHasStrictUniqueCriteria(model *database.ModelWalker, ctx *Vali
 
 	containerType := "model"
 	astModel := model.AstModel()
-	if astModel != nil && astModel.IsView {
+	if astModel != nil && astModel.IsView() {
 		containerType = "view"
 	}
 
@@ -88,7 +88,7 @@ func validateModelHasStrictUniqueCriteria(model *database.ModelWalker, ctx *Vali
 
 	var span diagnostics.Span
 	if astModel != nil {
-		span = astModel.Span()
+		span = diagnostics.NewSpan(astModel.Pos.Offset, astModel.Pos.Offset+len(astModel.Name.Name), model.FileID())
 	} else {
 		span = diagnostics.NewSpan(0, 0, model.FileID())
 	}
@@ -184,7 +184,7 @@ func validatePrimaryKeyConnectorSpecific(model *database.ModelWalker, ctx *Valid
 				"The current connector does not support compound ids.",
 				containerType,
 				model.Name(),
-				astModel.Span(),
+				diagnostics.NewSpan(astModel.Pos.Offset, astModel.Pos.Offset+len(astModel.Name.Name), model.FileID()),
 			))
 		}
 	}
@@ -292,7 +292,7 @@ func validatePrimaryKeyClientNameDoesNotClashWithField(model *database.ModelWalk
 					fmt.Sprintf("The field `%s` clashes with the `@@id` attribute's name. Please resolve the conflict by providing a custom id name: `@@id([...], name: \"custom_name\")`", idClientName),
 					containerType,
 					model.Name(),
-					astModel.Span(),
+					diagnostics.NewSpan(astModel.Pos.Offset, astModel.Pos.Offset+len(astModel.Name.Name), model.FileID()),
 				))
 			}
 			return
@@ -314,7 +314,7 @@ func validateShardKeyIsSupported(model *database.ModelWalker, ctx *ValidationCon
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				"Defining shard keys requires enabling the `shardKeys` preview feature",
 				shardKey.AttributeName(),
-				attr.Span,
+				diagnostics.NewSpan(attr.Pos.Offset, attr.Pos.Offset+len(attr.String()), model.FileID()),
 			))
 		}
 		return
@@ -327,7 +327,7 @@ func validateShardKeyIsSupported(model *database.ModelWalker, ctx *ValidationCon
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				fmt.Sprintf("Shard keys are not currently supported for provider %s", ctx.Connector.ProviderName()),
 				shardKey.AttributeName(),
-				attr.Span,
+				diagnostics.NewSpan(attr.Pos.Offset, attr.Pos.Offset+len(attr.String()), model.FileID()),
 			))
 		}
 	}
@@ -347,7 +347,7 @@ func validateShardKeyHasFields(model *database.ModelWalker, ctx *ValidationConte
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				fmt.Sprintf("The list of fields in a `%s()` attribute cannot be empty. Please specify at least one field.", shardKey.AttributeName()),
 				shardKey.AttributeName(),
-				attr.Span,
+				diagnostics.NewSpan(attr.Pos.Offset, attr.Pos.Offset+len(attr.String()), model.FileID()),
 			))
 		}
 	}
