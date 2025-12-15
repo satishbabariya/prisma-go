@@ -56,7 +56,7 @@ func (g *Generator) GenerateClient(outputDir string) error {
 
 	// Generate models.go
 	debug.Debug("Generating models.go file", "outputDir", outputDir)
-	if err := codegen.GenerateModelsFile(models, outputDir); err != nil {
+	if err := codegen.GenerateModelsFile(g.ast, models, outputDir); err != nil {
 		debug.Error("Failed to generate models file", "error", err)
 		return fmt.Errorf("failed to generate models: %w", err)
 	}

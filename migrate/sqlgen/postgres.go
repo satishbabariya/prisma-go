@@ -278,10 +278,40 @@ func (g *PostgresMigrationGenerator) generateColumnDefinition(col introspect.Col
 	}
 
 	if col.DefaultValue != nil && *col.DefaultValue != "" {
-		def += fmt.Sprintf(" DEFAULT %s", *col.DefaultValue)
+		def += fmt.Sprintf(" DEFAULT %s", quoteDefaultValue(*col.DefaultValue, col.Type))
 	}
 
 	return def
+}
+
+// quoteDefaultValue quotes a default value if it's a string type
+func quoteDefaultValue(value string, colType string) string {
+	// Don't quote if it's a function call or numeric
+	if strings.Contains(value, "(") || isNumericType(colType) || value == "true" || value == "false" ||
+		strings.ToUpper(value) == "NULL" || strings.ToUpper(value) == "CURRENT_TIMESTAMP" {
+		return value
+	}
+
+	// Check if already quoted
+	if strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'") {
+		return value
+	}
+
+	// Quote string literals
+	return fmt.Sprintf("'%s'", strings.ReplaceAll(value, "'", "''"))
+}
+
+// isNumericType checks if a column type is numeric
+func isNumericType(colType string) bool {
+	numericTypes := []string{"INTEGER", "INT", "BIGINT", "SMALLINT", "DECIMAL", "NUMERIC",
+		"REAL", "DOUBLE PRECISION", "FLOAT", "SERIAL", "BIGSERIAL"}
+	upperType := strings.ToUpper(colType)
+	for _, t := range numericTypes {
+		if strings.HasPrefix(upperType, t) {
+			return true
+		}
+	}
+	return false
 }
 
 // generateAlterTable generates ALTER TABLE SQL
@@ -334,7 +364,7 @@ func (g *PostgresMigrationGenerator) generateAlterTable(change diff.TableChange,
 				// Default change
 				if ch.ColumnMetadata.DefaultValue != nil && *ch.ColumnMetadata.DefaultValue != "" {
 					sql.WriteString(fmt.Sprintf("ALTER TABLE \"%s\" ALTER COLUMN \"%s\" SET DEFAULT %s;\n",
-						change.Name, ch.Column, *ch.ColumnMetadata.DefaultValue))
+						change.Name, ch.Column, quoteDefaultValue(*ch.ColumnMetadata.DefaultValue, ch.ColumnMetadata.Type)))
 				} else if ch.ColumnMetadata.OldNullable != nil {
 					// Only remove default if we're sure it changed (heuristic: if old nullable is set, we're modifying)
 					sql.WriteString(fmt.Sprintf("-- ALTER TABLE \"%s\" ALTER COLUMN \"%s\" DROP DEFAULT;\n",
@@ -354,8 +384,36 @@ func (g *PostgresMigrationGenerator) generateAlterTable(change diff.TableChange,
 
 		case "CreateIndex":
 			sql.WriteString(fmt.Sprintf("-- Create index %s\n", ch.Index))
-			sql.WriteString(fmt.Sprintf("CREATE INDEX \"%s\" ON \"%s\" (\"%s\");\n",
-				ch.Index, change.Name, ch.Column))
+			// Try to find index in dbSchema
+			if dbSchema != nil {
+				indexFound := false
+				for _, table := range dbSchema.Tables {
+					if table.Name == change.Name {
+						for _, idx := range table.Indexes {
+							if idx.Name == ch.Index {
+								sql.WriteString(g.generateCreateIndex(change.Name, idx))
+								sql.WriteString("\n")
+								indexFound = true
+								break
+							}
+						}
+						break
+					}
+				}
+				if !indexFound {
+					// Fallback: if column is specified in change, use it
+					if ch.Column != "" {
+						sql.WriteString(fmt.Sprintf("CREATE INDEX \"%s\" ON \"%s\" (\"%s\");\n",
+							ch.Index, change.Name, ch.Column))
+					} else {
+						sql.WriteString(fmt.Sprintf("-- TODO: Index %s definition not found in schema\n", ch.Index))
+					}
+				}
+			} else {
+				// Fallback: generate placeholder SQL
+				sql.WriteString(fmt.Sprintf("-- CREATE INDEX \"%s\" ON \"%s\" (...);\n",
+					ch.Index, change.Name))
+			}
 
 		case "DropIndex":
 			sql.WriteString(fmt.Sprintf("-- Drop index %s\n", ch.Index))
@@ -455,7 +513,7 @@ func (g *PostgresMigrationGenerator) generateColumnDefinitionFromMetadata(meta *
 	}
 
 	if meta.DefaultValue != nil && *meta.DefaultValue != "" {
-		def += fmt.Sprintf(" DEFAULT %s", *meta.DefaultValue)
+		def += fmt.Sprintf(" DEFAULT %s", quoteDefaultValue(*meta.DefaultValue, meta.Type))
 	}
 
 	return def
