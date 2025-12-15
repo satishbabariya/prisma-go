@@ -287,18 +287,16 @@ func generateFieldInfo(field *ast.Field, modelName string) FieldInfo {
 
 	// Check for optional/list fields using Arity
 	// V2 AST FieldArity is an int with methods
-	if field.Arity.IsOptional() {
-		if !isRelation {
-			goType = "*" + goType
-		} else {
-			// For relations, optional means pointer to the model
-			goType = "*" + goType
-		}
-	} else if field.Arity.IsList() {
+	if field.Arity.IsList() {
 		goType = "[]" + goType
 		if isRelation {
 			isList = true
 		}
+	} else if isRelation {
+		// All single relations must be pointers to prevent recursive struct definitions
+		goType = "*" + goType
+	} else if field.Arity.IsOptional() {
+		goType = "*" + goType
 	}
 
 	tags := generateFieldTags(field, isRelation)

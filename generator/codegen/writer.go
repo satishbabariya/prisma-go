@@ -1394,9 +1394,11 @@ func buildQueryBuilderExecuteBody(model ModelInfo, withJoins bool) *ast.BlockStm
 			),
 			nil,
 		),
-		newIfStmt(
-			&ast.BinaryExpr{
-				X: &ast.CallExpr{
+		newAssignStmt(
+			[]ast.Expr{ast.NewIdent("err")},
+			token.DEFINE,
+			[]ast.Expr{
+				&ast.CallExpr{
 					Fun: newSelectorExpr(
 						newSelectorExpr(newSelectorExpr(ast.NewIdent("q"), "client"), "executor"),
 						"FindManyWithRelations",
@@ -1414,6 +1416,11 @@ func buildQueryBuilderExecuteBody(model ModelInfo, withJoins bool) *ast.BlockStm
 						&ast.UnaryExpr{Op: token.AND, X: ast.NewIdent("results")},
 					},
 				},
+			},
+		),
+		newIfStmt(
+			&ast.BinaryExpr{
+				X:  ast.NewIdent("err"),
 				Op: token.NEQ,
 				Y:  ast.NewIdent("nil"),
 			},
@@ -1552,9 +1559,11 @@ func buildQueryBuilderExecuteFirstBody(model ModelInfo) *ast.BlockStmt {
 			),
 			nil,
 		),
-		newIfStmt(
-			&ast.BinaryExpr{
-				X: &ast.CallExpr{
+		newAssignStmt(
+			[]ast.Expr{ast.NewIdent("err")},
+			token.DEFINE,
+			[]ast.Expr{
+				&ast.CallExpr{
 					Fun: newSelectorExpr(
 						newSelectorExpr(newSelectorExpr(ast.NewIdent("q"), "client"), "executor"),
 						"FindFirstWithJoins",
@@ -1571,6 +1580,11 @@ func buildQueryBuilderExecuteFirstBody(model ModelInfo) *ast.BlockStmt {
 						&ast.UnaryExpr{Op: token.AND, X: ast.NewIdent("result")},
 					},
 				},
+			},
+		),
+		newIfStmt(
+			&ast.BinaryExpr{
+				X:  ast.NewIdent("err"),
 				Op: token.NEQ,
 				Y:  ast.NewIdent("nil"),
 			},
@@ -2400,28 +2414,37 @@ func buildCRUDMethods(model ModelInfo) []ast.Decl {
 		newReturnStmt(&ast.UnaryExpr{Op: token.AND, X: ast.NewIdent("result")}, ast.NewIdent("nil")),
 	)
 	// Fix the Update call
-	body.List[2] = newIfStmt(
-		&ast.BinaryExpr{
-			X: &ast.CallExpr{
-				Fun: newSelectorExpr(
-					newSelectorExpr(newSelectorExpr(ast.NewIdent("u"), "client"), "executor"),
-					"Update",
-				),
-				Args: []ast.Expr{
-					ast.NewIdent("ctx"),
-					newSelectorExpr(newSelectorExpr(ast.NewIdent("u"), "client"), "table"),
-					newCallExpr(newSelectorExpr(newSelectorExpr(ast.NewIdent("u"), "UpdateBuilder"), "GetSet")),
-					ast.NewIdent("whereClause"),
-					&ast.UnaryExpr{Op: token.AND, X: ast.NewIdent("result")},
+	body.List[2] = newBlockStmt(
+		newAssignStmt(
+			[]ast.Expr{ast.NewIdent("err")},
+			token.DEFINE,
+			[]ast.Expr{
+				&ast.CallExpr{
+					Fun: newSelectorExpr(
+						newSelectorExpr(newSelectorExpr(ast.NewIdent("u"), "client"), "executor"),
+						"Update",
+					),
+					Args: []ast.Expr{
+						ast.NewIdent("ctx"),
+						newSelectorExpr(newSelectorExpr(ast.NewIdent("u"), "client"), "table"),
+						newCallExpr(newSelectorExpr(newSelectorExpr(ast.NewIdent("u"), "UpdateBuilder"), "GetSet")),
+						ast.NewIdent("whereClause"),
+						&ast.UnaryExpr{Op: token.AND, X: ast.NewIdent("result")},
+					},
 				},
 			},
-			Op: token.NEQ,
-			Y:  ast.NewIdent("nil"),
-		},
-		newBlockStmt(
-			newReturnStmt(ast.NewIdent("nil"), ast.NewIdent("err")),
 		),
-		nil,
+		newIfStmt(
+			&ast.BinaryExpr{
+				X:  ast.NewIdent("err"),
+				Op: token.NEQ,
+				Y:  ast.NewIdent("nil"),
+			},
+			newBlockStmt(
+				newReturnStmt(ast.NewIdent("nil"), ast.NewIdent("err")),
+			),
+			nil,
+		),
 	)
 	decls = append(decls, newFuncDecl("Execute", "Execute executes the UPDATE query", recv, params, results, body))
 
