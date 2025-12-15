@@ -822,14 +822,29 @@ func buildRawSQLMethods() []ast.Decl {
 		},
 	}
 	body = newBlockStmt(
-		newReturnStmt(
-			newCallExpr(
-				newSelectorExpr(newSelectorExpr(ast.NewIdent("c"), "PrismaClient"), "RawQuery"),
-				ast.NewIdent("ctx"),
-				ast.NewIdent("query"),
-				ast.NewIdent("args"),
-			),
+		newAssignStmt(
+			[]ast.Expr{ast.NewIdent("rows"), ast.NewIdent("err")},
+			token.DEFINE,
+			[]ast.Expr{
+				&ast.CallExpr{
+					Fun: newSelectorExpr(newSelectorExpr(ast.NewIdent("c"), "PrismaClient"), "RawQuery"),
+					Args: []ast.Expr{
+						ast.NewIdent("ctx"),
+						ast.NewIdent("query"),
+						ast.NewIdent("args"),
+					},
+					Ellipsis: 1, // Hack: just needs to be non-zero to show dots
+				},
+			},
 		),
+		newIfStmt(
+			&ast.BinaryExpr{X: ast.NewIdent("err"), Op: token.NEQ, Y: ast.NewIdent("nil")},
+			newBlockStmt(
+				newReturnStmt(ast.NewIdent("nil"), ast.NewIdent("err")),
+			),
+			nil,
+		),
+		newReturnStmt(ast.NewIdent("rows"), ast.NewIdent("nil")),
 	)
 	methods = append(methods, newFuncDecl("RawQuery", "RawQuery executes a raw SQL query and returns rows", recv, params, results, body))
 
@@ -913,9 +928,11 @@ func buildFindManyMethods(model ModelInfo) []ast.Decl {
 			),
 			nil,
 		),
-		newIfStmt(
-			&ast.BinaryExpr{
-				X: &ast.CallExpr{
+		newAssignStmt(
+			[]ast.Expr{ast.NewIdent("err")},
+			token.DEFINE,
+			[]ast.Expr{
+				&ast.CallExpr{
 					Fun: newSelectorExpr(
 						newSelectorExpr(ast.NewIdent("c"), "executor"),
 						"FindManyWithRelations",
@@ -933,6 +950,11 @@ func buildFindManyMethods(model ModelInfo) []ast.Decl {
 						&ast.UnaryExpr{Op: token.AND, X: ast.NewIdent("results")},
 					},
 				},
+			},
+		),
+		newIfStmt(
+			&ast.BinaryExpr{
+				X:  ast.NewIdent("err"),
 				Op: token.NEQ,
 				Y:  ast.NewIdent("nil"),
 			},
@@ -1053,9 +1075,11 @@ func buildFindFirstMethods(model ModelInfo) []ast.Decl {
 			),
 			nil,
 		),
-		newIfStmt(
-			&ast.BinaryExpr{
-				X: &ast.CallExpr{
+		newAssignStmt(
+			[]ast.Expr{ast.NewIdent("err")},
+			token.DEFINE,
+			[]ast.Expr{
+				&ast.CallExpr{
 					Fun: newSelectorExpr(
 						newSelectorExpr(ast.NewIdent("c"), "executor"),
 						"FindFirstWithRelations",
@@ -1071,6 +1095,11 @@ func buildFindFirstMethods(model ModelInfo) []ast.Decl {
 						&ast.UnaryExpr{Op: token.AND, X: ast.NewIdent("result")},
 					},
 				},
+			},
+		),
+		newIfStmt(
+			&ast.BinaryExpr{
+				X:  ast.NewIdent("err"),
 				Op: token.NEQ,
 				Y:  ast.NewIdent("nil"),
 			},
@@ -2103,7 +2132,9 @@ func buildJoinIncludeSelectBuilders(model ModelInfo) []ast.Decl {
 							ast.NewIdent(relatedModel+"IncludeBuilder"),
 							[]ast.Expr{
 								newKeyValueExpr("IncludeBuilder", newSelectorExpr(ast.NewIdent("i"), "IncludeBuilder")),
-								newKeyValueExpr("queryBuilder", newSelectorExpr(ast.NewIdent("i"), "queryBuilder")),
+								// For nested includes, we don't pass the parent query builder because types don't match
+								// and we don't need to return to the parent query builder from a nested include
+								newKeyValueExpr("queryBuilder", ast.NewIdent("nil")),
 							},
 						),
 					},

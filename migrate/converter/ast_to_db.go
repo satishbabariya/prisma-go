@@ -34,6 +34,16 @@ func ConvertASTToDBSchema(schemaAST *ast.SchemaAst, provider string) (*introspec
 // convertModelToTable converts an AST model to a database table
 func convertModelToTable(model *ast.Model, parsed *ast.SchemaAst, provider string) (*introspect.Table, error) {
 	tableName := toSnakeCase(model.Name.Name)
+
+	// Check for @@map attribute
+	for _, attr := range model.BlockAttributes {
+		if attr.Name.Name == "map" {
+			if val := extractMapValue(attr); val != "" {
+				tableName = val
+			}
+		}
+	}
+
 	table := &introspect.Table{
 		Name:        tableName,
 		Schema:      "public", // Default schema
@@ -121,8 +131,19 @@ func convertModelToTable(model *ast.Model, parsed *ast.SchemaAst, provider strin
 
 // convertFieldToColumn converts an AST field to a database column
 func convertFieldToColumn(field *ast.Field, provider string) (*introspect.Column, error) {
+	columnName := toSnakeCase(field.Name.Name)
+
+	// Check for @map attribute
+	for _, attr := range field.Attributes {
+		if attr.Name.Name == "map" {
+			if val := extractMapValue(attr); val != "" {
+				columnName = val
+			}
+		}
+	}
+
 	column := &introspect.Column{
-		Name:          toSnakeCase(field.Name.Name),
+		Name:          columnName,
 		Nullable:      field.Arity.IsOptional(),
 		DefaultValue:  nil,
 		AutoIncrement: false,
@@ -359,4 +380,40 @@ func toSnakeCase(s string) string {
 		result.WriteRune(r)
 	}
 	return strings.ToLower(result.String())
+}
+
+func extractMapValue(attr interface{}) string {
+	var args *ast.ArgumentsList
+
+	switch v := attr.(type) {
+	case *ast.Attribute:
+		args = v.Arguments
+	case *ast.BlockAttribute:
+		args = v.Arguments
+	default:
+		return ""
+	}
+
+	if args == nil || len(args.Arguments) == 0 {
+		return ""
+	}
+
+	// Check named argument "name"
+	for _, arg := range args.Arguments {
+		if arg.Name != nil && arg.Name.Name == "name" {
+			if strLit, ok := arg.Value.(*ast.StringValue); ok {
+				return strLit.GetValue()
+			}
+		}
+	}
+
+	// Check first positional argument
+	firstArg := args.Arguments[0]
+	if firstArg.Name == nil {
+		if strLit, ok := firstArg.Value.(*ast.StringValue); ok {
+			return strLit.GetValue()
+		}
+	}
+
+	return ""
 }

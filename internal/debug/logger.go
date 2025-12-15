@@ -16,6 +16,11 @@ var (
 	mu sync.RWMutex
 )
 
+func init() {
+	// Initialize with debug logging disabled by default to prevent nil pointer dereference
+	Init(false)
+}
+
 // Init initializes the debug logger
 // If enable is true, debug logs will be written to os.Stderr
 // If enable is false, debug logs will be silently discarded
