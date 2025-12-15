@@ -67,6 +67,23 @@ func GenerateModelsFromAST(schemaAST *ast.SchemaAst) []ModelInfo {
 		modelMap[model.Name.Name] = &models[len(models)-1]
 	}
 
+	// Process ExtendedType declarations and merge fields into base models
+	for _, top := range schemaAST.Tops {
+		if extendedType, ok := top.(*ast.ExtendedType); ok {
+			typeName := extendedType.Name.Name
+			// Find the base model
+			if baseModel, exists := modelMap[typeName]; exists {
+				// Merge extended fields into the base model
+				for _, field := range extendedType.Fields {
+					fieldInfo := generateFieldInfo(field, typeName)
+					baseModel.Fields = append(baseModel.Fields, fieldInfo)
+				}
+			}
+			// If base model doesn't exist, extended type is orphaned (schema error)
+			// but we'll skip it gracefully rather than creating a duplicate
+		}
+	}
+
 	// Also generate composite types as structs (foundation for future expansion)
 	// Composite types are already parsed and validated, but code generation
 	// would need to be added to generate Go structs for them
@@ -214,6 +231,26 @@ func GenerateModelsFromAST(schemaAST *ast.SchemaAst) []ModelInfo {
 					if relation.ForeignKey != "" {
 						model.Relations = append(model.Relations, relation)
 					}
+				}
+			}
+		}
+	}
+
+	// Third pass: Fix IsRelation for enum-typed fields
+	// Some fields were marked as relations because their type starts with capital letter
+	// but they're actually enum types, not model types
+	for i := range models {
+		model := &models[i]
+		for j := range model.Fields {
+			field := &model.Fields[j]
+			// If marked as relation, verify the type is actually a model
+			if field.IsRelation && field.RelationTo != "" {
+				// Check if RelationTo refers to an actual model
+				if _, exists := modelMap[field.RelationTo]; !exists {
+					// Not a model - must be an enum or other type
+					field.IsRelation = false
+					field.RelationTo = ""
+					field.IsList = false
 				}
 			}
 		}
