@@ -34,3 +34,6 @@ func (e *ExtendedType) GetDocumentation() string {
 func (e *ExtendedType) TopPos() lexer.Position {
 	return e.Pos
 }
+
+// isTop implements the Top interface marker method.
+func (e *ExtendedType) isTop() {}
