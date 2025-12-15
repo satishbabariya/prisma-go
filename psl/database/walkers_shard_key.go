@@ -2,7 +2,7 @@
 package database
 
 import (
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // ShardKeyWalker provides access to a @shardKey or @@shardKey attribute.
@@ -13,7 +13,7 @@ type ShardKeyWalker struct {
 }
 
 // AstAttribute returns the @(@)shardKey AST node.
-func (w *ShardKeyWalker) AstAttribute() *ast.Attribute {
+func (w *ShardKeyWalker) AstAttribute() *v2ast.Attribute {
 	if w.attribute == nil {
 		return nil
 	}
@@ -31,22 +31,26 @@ func (w *ShardKeyWalker) AstAttribute() *ast.Attribute {
 	// If defined on a field, search field attributes
 	if w.attribute.SourceField != nil {
 		if int(*w.attribute.SourceField) < len(astModel.Fields) {
-			field := &astModel.Fields[*w.attribute.SourceField]
-			for i := range field.Attributes {
-				attr := &field.Attributes[i]
-				if attr.Name.Name == "shardKey" {
+			field := astModel.Fields[*w.attribute.SourceField]
+			if field != nil {
+				for _, attr := range field.Attributes {
+					if attr != nil && attr.GetName() == "shardKey" {
 					return attr
+					}
 				}
 			}
 		}
 		return nil
 	}
 
-	// Otherwise, search model attributes
-	for i := range astModel.Attributes {
-		attr := &astModel.Attributes[i]
-		if attr.Name.Name == "shardKey" {
-			return attr
+	// Otherwise, search model block attributes
+	for _, attr := range astModel.BlockAttributes {
+		if attr != nil && attr.GetName() == "shardKey" {
+			return &v2ast.Attribute{
+				Pos:       attr.Pos,
+				Name:      attr.Name,
+				Arguments: attr.Arguments,
+			}
 		}
 	}
 

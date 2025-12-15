@@ -36,12 +36,16 @@ func HandleModelIgnore(modelID ModelId, modelAttrs *ModelAttributes, ctx *Contex
 		if entry.Field.IsIgnored {
 			astModel := getModelFromID(modelID, ctx)
 			if astModel != nil && int(entry.Field.FieldID) < len(astModel.Fields) {
-				astField := &astModel.Fields[entry.Field.FieldID]
+					astField := astModel.Fields[entry.Field.FieldID]
+					if astField != nil {
+						pos := astField.Pos
+						span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(astField.GetName()), diagnostics.FileIDZero)
 				ctx.PushError(diagnostics.NewAttributeValidationError(
 					"Fields on an already ignored Model do not need an `@ignore` annotation.",
 					"@ignore",
-					astField.Name.Span(),
+							span,
 				))
+					}
 			}
 		}
 	}
@@ -52,12 +56,16 @@ func HandleModelIgnore(modelID ModelId, modelAttrs *ModelAttributes, ctx *Contex
 		if entry.Field.IsIgnored {
 			astModel := getModelFromID(modelID, ctx)
 			if astModel != nil && int(entry.Field.FieldID) < len(astModel.Fields) {
-				astField := &astModel.Fields[entry.Field.FieldID]
+				astField := astModel.Fields[entry.Field.FieldID]
+				if astField != nil {
+					pos := astField.Pos
+					span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(astField.GetName()), diagnostics.FileIDZero)
 				ctx.PushError(diagnostics.NewAttributeValidationError(
 					"Fields on an already ignored Model do not need an `@ignore` annotation.",
 					"@ignore",
-					astField.Name.Span(),
+						span,
 				))
+				}
 			}
 		}
 	}

@@ -37,12 +37,8 @@ func visitSchemaAttribute(ctx *Context) *SchemaInfo {
 	}
 
 	nameID := ctx.interner.Intern(name)
-	var span diagnostics.Span
-	if spanExpr, ok := arg.(interface{ Span() diagnostics.Span }); ok {
-		span = spanExpr.Span()
-	} else {
-		span = diagnostics.EmptySpan()
-	}
+	pos := arg.Span()
+	span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(name), diagnostics.FileIDZero)
 
 	return &SchemaInfo{
 		Name: nameID,

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/satishbabariya/prisma-go/internal/debug"
+	prismaAST "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // getColumnType returns the column type for a Go type
@@ -376,7 +377,7 @@ func writeASTFile(file *ast.File, filePath string) error {
 }
 
 // GenerateModelsFile generates the models.go file using AST
-func GenerateModelsFile(models []ModelInfo, outputDir string) error {
+func GenerateModelsFile(schemaAST *prismaAST.SchemaAst, models []ModelInfo, outputDir string) error {
 	// Create AST file
 	file := newFile("generated")
 
@@ -409,6 +410,59 @@ func GenerateModelsFile(models []ModelInfo, outputDir string) error {
 		imports = append([]string{"time"}, imports...)
 	}
 	addImports(file, imports)
+
+	// Generate enum types BEFORE models (since models reference enums)
+	for _, enumAST := range schemaAST.Enums() {
+		enumName := enumAST.Name.Name
+
+		// Create type alias for enum (type PlayerStatus string)
+		typeDecl := &ast.GenDecl{
+			Tok: token.TYPE,
+			Specs: []ast.Spec{
+				&ast.TypeSpec{
+					Name: ast.NewIdent(enumName),
+					Type: ast.NewIdent("string"),
+				},
+			},
+		}
+		file.Decls = append(file.Decls, typeDecl)
+
+		// Create const block for enum values
+		constSpecs := []ast.Spec{}
+		for i, value := range enumAST.Values {
+			valueIdent := value.Name.Name
+			var valueExpr ast.Expr
+
+			if i == 0 {
+				// First value: PlayerStatusACTIVE PlayerStatus = "ACTIVE"
+				valueExpr = &ast.BasicLit{
+					Kind:  token.STRING,
+					Value: fmt.Sprintf("\"%s\"", valueIdent),
+				}
+			} else {
+				// Subsequent values: PlayerStatusINACTIVE PlayerStatus = "INACTIVE"
+				valueExpr = &ast.BasicLit{
+					Kind:  token.STRING,
+					Value: fmt.Sprintf("\"%s\"", valueIdent),
+				}
+			}
+
+			spec := &ast.ValueSpec{
+				Names:  []*ast.Ident{ast.NewIdent(enumName + valueIdent)},
+				Type:   ast.NewIdent(enumName),
+				Values: []ast.Expr{valueExpr},
+			}
+			constSpecs = append(constSpecs, spec)
+		}
+
+		if len(constSpecs) > 0 {
+			constDecl := &ast.GenDecl{
+				Tok:   token.CONST,
+				Specs: constSpecs,
+			}
+			file.Decls = append(file.Decls, constDecl)
+		}
+	}
 
 	// Generate model structs
 	for _, model := range models {
@@ -694,7 +748,7 @@ func buildRawSQLMethods() []ast.Decl {
 				newSelectorExpr(newSelectorExpr(ast.NewIdent("c"), "PrismaClient"), "Raw"),
 				ast.NewIdent("ctx"),
 				ast.NewIdent("query"),
-				&ast.Ellipsis{Elt: ast.NewIdent("args")},
+				ast.NewIdent("args"),
 			),
 		),
 	)
@@ -721,7 +775,7 @@ func buildRawSQLMethods() []ast.Decl {
 				ast.NewIdent("ctx"),
 				ast.NewIdent("dest"),
 				ast.NewIdent("query"),
-				&ast.Ellipsis{Elt: ast.NewIdent("args")},
+				ast.NewIdent("args"),
 			),
 		),
 	)
@@ -747,7 +801,7 @@ func buildRawSQLMethods() []ast.Decl {
 				newSelectorExpr(newSelectorExpr(ast.NewIdent("c"), "PrismaClient"), "RawExec"),
 				ast.NewIdent("ctx"),
 				ast.NewIdent("query"),
-				&ast.Ellipsis{Elt: ast.NewIdent("args")},
+				ast.NewIdent("args"),
 			),
 		),
 	)
@@ -768,14 +822,29 @@ func buildRawSQLMethods() []ast.Decl {
 		},
 	}
 	body = newBlockStmt(
-		newReturnStmt(
-			newCallExpr(
-				newSelectorExpr(newSelectorExpr(ast.NewIdent("c"), "PrismaClient"), "RawQuery"),
-				ast.NewIdent("ctx"),
-				ast.NewIdent("query"),
-				&ast.Ellipsis{Elt: ast.NewIdent("args")},
-			),
+		newAssignStmt(
+			[]ast.Expr{ast.NewIdent("rows"), ast.NewIdent("err")},
+			token.DEFINE,
+			[]ast.Expr{
+				&ast.CallExpr{
+					Fun: newSelectorExpr(newSelectorExpr(ast.NewIdent("c"), "PrismaClient"), "RawQuery"),
+					Args: []ast.Expr{
+						ast.NewIdent("ctx"),
+						ast.NewIdent("query"),
+						ast.NewIdent("args"),
+					},
+					Ellipsis: 1, // Hack: just needs to be non-zero to show dots
+				},
+			},
 		),
+		newIfStmt(
+			&ast.BinaryExpr{X: ast.NewIdent("err"), Op: token.NEQ, Y: ast.NewIdent("nil")},
+			newBlockStmt(
+				newReturnStmt(ast.NewIdent("nil"), ast.NewIdent("err")),
+			),
+			nil,
+		),
+		newReturnStmt(ast.NewIdent("rows"), ast.NewIdent("nil")),
 	)
 	methods = append(methods, newFuncDecl("RawQuery", "RawQuery executes a raw SQL query and returns rows", recv, params, results, body))
 
@@ -859,9 +928,11 @@ func buildFindManyMethods(model ModelInfo) []ast.Decl {
 			),
 			nil,
 		),
-		newIfStmt(
-			&ast.BinaryExpr{
-				X: &ast.CallExpr{
+		newAssignStmt(
+			[]ast.Expr{ast.NewIdent("err")},
+			token.DEFINE,
+			[]ast.Expr{
+				&ast.CallExpr{
 					Fun: newSelectorExpr(
 						newSelectorExpr(ast.NewIdent("c"), "executor"),
 						"FindManyWithRelations",
@@ -879,6 +950,11 @@ func buildFindManyMethods(model ModelInfo) []ast.Decl {
 						&ast.UnaryExpr{Op: token.AND, X: ast.NewIdent("results")},
 					},
 				},
+			},
+		),
+		newIfStmt(
+			&ast.BinaryExpr{
+				X:  ast.NewIdent("err"),
 				Op: token.NEQ,
 				Y:  ast.NewIdent("nil"),
 			},
@@ -999,9 +1075,11 @@ func buildFindFirstMethods(model ModelInfo) []ast.Decl {
 			),
 			nil,
 		),
-		newIfStmt(
-			&ast.BinaryExpr{
-				X: &ast.CallExpr{
+		newAssignStmt(
+			[]ast.Expr{ast.NewIdent("err")},
+			token.DEFINE,
+			[]ast.Expr{
+				&ast.CallExpr{
 					Fun: newSelectorExpr(
 						newSelectorExpr(ast.NewIdent("c"), "executor"),
 						"FindFirstWithRelations",
@@ -1017,6 +1095,11 @@ func buildFindFirstMethods(model ModelInfo) []ast.Decl {
 						&ast.UnaryExpr{Op: token.AND, X: ast.NewIdent("result")},
 					},
 				},
+			},
+		),
+		newIfStmt(
+			&ast.BinaryExpr{
+				X:  ast.NewIdent("err"),
 				Op: token.NEQ,
 				Y:  ast.NewIdent("nil"),
 			},
@@ -1340,9 +1423,11 @@ func buildQueryBuilderExecuteBody(model ModelInfo, withJoins bool) *ast.BlockStm
 			),
 			nil,
 		),
-		newIfStmt(
-			&ast.BinaryExpr{
-				X: &ast.CallExpr{
+		newAssignStmt(
+			[]ast.Expr{ast.NewIdent("err")},
+			token.DEFINE,
+			[]ast.Expr{
+				&ast.CallExpr{
 					Fun: newSelectorExpr(
 						newSelectorExpr(newSelectorExpr(ast.NewIdent("q"), "client"), "executor"),
 						"FindManyWithRelations",
@@ -1360,6 +1445,11 @@ func buildQueryBuilderExecuteBody(model ModelInfo, withJoins bool) *ast.BlockStm
 						&ast.UnaryExpr{Op: token.AND, X: ast.NewIdent("results")},
 					},
 				},
+			},
+		),
+		newIfStmt(
+			&ast.BinaryExpr{
+				X:  ast.NewIdent("err"),
 				Op: token.NEQ,
 				Y:  ast.NewIdent("nil"),
 			},
@@ -1498,9 +1588,11 @@ func buildQueryBuilderExecuteFirstBody(model ModelInfo) *ast.BlockStmt {
 			),
 			nil,
 		),
-		newIfStmt(
-			&ast.BinaryExpr{
-				X: &ast.CallExpr{
+		newAssignStmt(
+			[]ast.Expr{ast.NewIdent("err")},
+			token.DEFINE,
+			[]ast.Expr{
+				&ast.CallExpr{
 					Fun: newSelectorExpr(
 						newSelectorExpr(newSelectorExpr(ast.NewIdent("q"), "client"), "executor"),
 						"FindFirstWithJoins",
@@ -1517,6 +1609,11 @@ func buildQueryBuilderExecuteFirstBody(model ModelInfo) *ast.BlockStmt {
 						&ast.UnaryExpr{Op: token.AND, X: ast.NewIdent("result")},
 					},
 				},
+			},
+		),
+		newIfStmt(
+			&ast.BinaryExpr{
+				X:  ast.NewIdent("err"),
 				Op: token.NEQ,
 				Y:  ast.NewIdent("nil"),
 			},
@@ -2035,7 +2132,9 @@ func buildJoinIncludeSelectBuilders(model ModelInfo) []ast.Decl {
 							ast.NewIdent(relatedModel+"IncludeBuilder"),
 							[]ast.Expr{
 								newKeyValueExpr("IncludeBuilder", newSelectorExpr(ast.NewIdent("i"), "IncludeBuilder")),
-								newKeyValueExpr("queryBuilder", newSelectorExpr(ast.NewIdent("i"), "queryBuilder")),
+								// For nested includes, we don't pass the parent query builder because types don't match
+								// and we don't need to return to the parent query builder from a nested include
+								newKeyValueExpr("queryBuilder", ast.NewIdent("nil")),
 							},
 						),
 					},
@@ -2346,28 +2445,37 @@ func buildCRUDMethods(model ModelInfo) []ast.Decl {
 		newReturnStmt(&ast.UnaryExpr{Op: token.AND, X: ast.NewIdent("result")}, ast.NewIdent("nil")),
 	)
 	// Fix the Update call
-	body.List[2] = newIfStmt(
-		&ast.BinaryExpr{
-			X: &ast.CallExpr{
-				Fun: newSelectorExpr(
-					newSelectorExpr(newSelectorExpr(ast.NewIdent("u"), "client"), "executor"),
-					"Update",
-				),
-				Args: []ast.Expr{
-					ast.NewIdent("ctx"),
-					newSelectorExpr(newSelectorExpr(ast.NewIdent("u"), "client"), "table"),
-					newCallExpr(newSelectorExpr(newSelectorExpr(ast.NewIdent("u"), "UpdateBuilder"), "GetSet")),
-					ast.NewIdent("whereClause"),
-					&ast.UnaryExpr{Op: token.AND, X: ast.NewIdent("result")},
+	body.List[2] = newBlockStmt(
+		newAssignStmt(
+			[]ast.Expr{ast.NewIdent("err")},
+			token.DEFINE,
+			[]ast.Expr{
+				&ast.CallExpr{
+					Fun: newSelectorExpr(
+						newSelectorExpr(newSelectorExpr(ast.NewIdent("u"), "client"), "executor"),
+						"Update",
+					),
+					Args: []ast.Expr{
+						ast.NewIdent("ctx"),
+						newSelectorExpr(newSelectorExpr(ast.NewIdent("u"), "client"), "table"),
+						newCallExpr(newSelectorExpr(newSelectorExpr(ast.NewIdent("u"), "UpdateBuilder"), "GetSet")),
+						ast.NewIdent("whereClause"),
+						&ast.UnaryExpr{Op: token.AND, X: ast.NewIdent("result")},
+					},
 				},
 			},
-			Op: token.NEQ,
-			Y:  ast.NewIdent("nil"),
-		},
-		newBlockStmt(
-			newReturnStmt(ast.NewIdent("nil"), ast.NewIdent("err")),
 		),
-		nil,
+		newIfStmt(
+			&ast.BinaryExpr{
+				X:  ast.NewIdent("err"),
+				Op: token.NEQ,
+				Y:  ast.NewIdent("nil"),
+			},
+			newBlockStmt(
+				newReturnStmt(ast.NewIdent("nil"), ast.NewIdent("err")),
+			),
+			nil,
+		),
 	)
 	decls = append(decls, newFuncDecl("Execute", "Execute executes the UPDATE query", recv, params, results, body))
 

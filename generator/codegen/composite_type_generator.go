@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // CompositeTypeInfo represents information about a composite type for code generation
@@ -18,20 +18,19 @@ type CompositeTypeInfo struct {
 func GenerateCompositeTypesFromAST(schemaAST *ast.SchemaAst) []CompositeTypeInfo {
 	var compositeTypes []CompositeTypeInfo
 
-	for _, top := range schemaAST.Tops {
-		if compositeType := top.AsCompositeType(); compositeType != nil {
-			compositeTypeInfo := CompositeTypeInfo{
-				Name:   compositeType.Name.Name,
-				Fields: []FieldInfo{},
-			}
-
-			for _, field := range compositeType.Fields {
-				fieldInfo := generateFieldInfo(&field, compositeType.Name.Name)
-				compositeTypeInfo.Fields = append(compositeTypeInfo.Fields, fieldInfo)
-			}
-
-			compositeTypes = append(compositeTypes, compositeTypeInfo)
+	// Use helper method if available, or manual traversal
+	for _, compositeType := range schemaAST.CompositeTypes() {
+		compositeTypeInfo := CompositeTypeInfo{
+			Name:   compositeType.Name.Name,
+			Fields: []FieldInfo{},
 		}
+
+		for _, field := range compositeType.Fields {
+			fieldInfo := generateFieldInfo(field, compositeType.Name.Name)
+			compositeTypeInfo.Fields = append(compositeTypeInfo.Fields, fieldInfo)
+		}
+
+		compositeTypes = append(compositeTypes, compositeTypeInfo)
 	}
 
 	return compositeTypes

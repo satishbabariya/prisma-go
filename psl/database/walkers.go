@@ -1,6 +1,8 @@
 // Package parserdatabase provides walkers for convenient access to parsed schema data.
 package database
 
+import v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
+
 // Walker is a generic walker that provides access to parsed schema elements.
 // It holds a reference to the ParserDatabase and an identifier.
 type Walker struct {
@@ -74,7 +76,7 @@ func (pd *ParserDatabase) FindModel(name string) *ModelWalker {
 		return nil
 	}
 	top := file.AST.Tops[topID.ID]
-	if top.AsModel() == nil {
+	if _, ok := top.(*v2ast.Model); !ok {
 		return nil
 	}
 
@@ -104,7 +106,7 @@ func (pd *ParserDatabase) FindEnum(name string) *EnumWalker {
 		return nil
 	}
 	top := file.AST.Tops[topID.ID]
-	if top.AsEnum() == nil {
+	if _, ok := top.(*v2ast.Enum); !ok {
 		return nil
 	}
 
@@ -134,7 +136,7 @@ func (pd *ParserDatabase) FindCompositeType(name string) *CompositeTypeWalker {
 		return nil
 	}
 	top := file.AST.Tops[topID.ID]
-	if top.AsCompositeType() == nil {
+	if _, ok := top.(*v2ast.CompositeType); !ok {
 		return nil
 	}
 
@@ -153,7 +155,7 @@ func (pd *ParserDatabase) WalkModels() []*ModelWalker {
 	for _, file := range pd.asts.files {
 		modelCount := 0
 		for _, top := range file.AST.Tops {
-			if model := top.AsModel(); model != nil {
+			if _, ok := top.(*v2ast.Model); ok {
 				modelID := ModelId{
 					FileID: file.FileID,
 					ID:     uint32(modelCount),
@@ -174,7 +176,7 @@ func (pd *ParserDatabase) WalkEnums() []*EnumWalker {
 	for _, file := range pd.asts.files {
 		enumCount := 0
 		for _, top := range file.AST.Tops {
-			if enum := top.AsEnum(); enum != nil {
+			if _, ok := top.(*v2ast.Enum); ok {
 				enumID := EnumId{
 					FileID: file.FileID,
 					ID:     uint32(enumCount),
@@ -195,7 +197,7 @@ func (pd *ParserDatabase) WalkCompositeTypes() []*CompositeTypeWalker {
 	for _, file := range pd.asts.files {
 		ctCount := 0
 		for _, top := range file.AST.Tops {
-			if ct := top.AsCompositeType(); ct != nil {
+			if _, ok := top.(*v2ast.CompositeType); ok {
 				ctID := CompositeTypeId{
 					FileID: file.FileID,
 					ID:     uint32(ctCount),

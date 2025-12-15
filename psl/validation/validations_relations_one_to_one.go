@@ -23,7 +23,7 @@ func validateOneToOneBothSidesAreDefined(relation *database.InlineRelationWalker
 	containerType := "model"
 	model := forwardField.Model()
 	astModel := model.AstModel()
-	if astModel != nil && astModel.IsView {
+	if astModel != nil && astModel.IsView() {
 		containerType = "view"
 	}
 
@@ -48,7 +48,7 @@ func validateOneToOneBothSidesAreDefined(relation *database.InlineRelationWalker
 			containerType,
 			model.Name(),
 			forwardField.Name(),
-			astField.Span(),
+			diagnostics.NewSpan(astField.Pos.Offset, astField.Pos.Offset+len(astField.Name.Name), model.FileID()),
 		))
 	}
 }
@@ -80,7 +80,7 @@ func validateOneToOneFieldsAndReferencesAreDefined(relation *database.InlineRela
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				message,
 				"@relation",
-				forwardAstField.Span(),
+				diagnostics.NewSpan(forwardAstField.Pos.Offset, forwardAstField.Pos.Offset+len(forwardAstField.Name.Name), forwardField.Model().FileID()),
 			))
 		}
 
@@ -89,7 +89,7 @@ func validateOneToOneFieldsAndReferencesAreDefined(relation *database.InlineRela
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				message,
 				"@relation",
-				backAstField.Span(),
+				diagnostics.NewSpan(backAstField.Pos.Offset, backAstField.Pos.Offset+len(backAstField.Name.Name), backField.Model().FileID()),
 			))
 		}
 	}
@@ -112,7 +112,7 @@ func validateOneToOneFieldsAndReferencesAreDefined(relation *database.InlineRela
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				message,
 				"@relation",
-				forwardAstField.Span(),
+				diagnostics.NewSpan(forwardAstField.Pos.Offset, forwardAstField.Pos.Offset+len(forwardAstField.Name.Name), forwardField.Model().FileID()),
 			))
 		}
 
@@ -121,7 +121,7 @@ func validateOneToOneFieldsAndReferencesAreDefined(relation *database.InlineRela
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				message,
 				"@relation",
-				backAstField.Span(),
+				diagnostics.NewSpan(backAstField.Pos.Offset, backAstField.Pos.Offset+len(backAstField.Name.Name), backField.Model().FileID()),
 			))
 		}
 	}
@@ -155,7 +155,7 @@ func validateOneToOneFieldsAndReferencesOnOneSideOnly(relation *database.InlineR
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				message,
 				"@relation",
-				forwardAstField.Span(),
+				diagnostics.NewSpan(forwardAstField.Pos.Offset, forwardAstField.Pos.Offset+len(forwardAstField.Name.Name), forwardField.Model().FileID()),
 			))
 		}
 
@@ -164,7 +164,7 @@ func validateOneToOneFieldsAndReferencesOnOneSideOnly(relation *database.InlineR
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				message,
 				"@relation",
-				backAstField.Span(),
+				diagnostics.NewSpan(backAstField.Pos.Offset, backAstField.Pos.Offset+len(backAstField.Name.Name), backField.Model().FileID()),
 			))
 		}
 	}
@@ -188,7 +188,7 @@ func validateOneToOneFieldsAndReferencesOnOneSideOnly(relation *database.InlineR
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				message,
 				"@relation",
-				forwardAstField.Span(),
+				diagnostics.NewSpan(forwardAstField.Pos.Offset, forwardAstField.Pos.Offset+len(forwardAstField.Name.Name), forwardField.Model().FileID()),
 			))
 		}
 
@@ -197,7 +197,7 @@ func validateOneToOneFieldsAndReferencesOnOneSideOnly(relation *database.InlineR
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				message,
 				"@relation",
-				backAstField.Span(),
+				diagnostics.NewSpan(backAstField.Pos.Offset, backAstField.Pos.Offset+len(backAstField.Name.Name), backField.Model().FileID()),
 			))
 		}
 	}
@@ -245,7 +245,7 @@ func validateOneToOneFieldsReferencesMixups(relation *database.InlineRelationWal
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				message,
 				"@relation",
-				forwardAstField.Span(),
+				diagnostics.NewSpan(forwardAstField.Pos.Offset, forwardAstField.Pos.Offset+len(forwardAstField.Name.Name), forwardField.Model().FileID()),
 			))
 		}
 
@@ -254,7 +254,7 @@ func validateOneToOneFieldsReferencesMixups(relation *database.InlineRelationWal
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				message,
 				"@relation",
-				backAstField.Span(),
+				diagnostics.NewSpan(backAstField.Pos.Offset, backAstField.Pos.Offset+len(backAstField.Name.Name), backField.Model().FileID()),
 			))
 		}
 	}
@@ -277,7 +277,7 @@ func validateOneToOneFieldsReferencesMixups(relation *database.InlineRelationWal
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				message,
 				"@relation",
-				forwardAstField.Span(),
+				diagnostics.NewSpan(forwardAstField.Pos.Offset, forwardAstField.Pos.Offset+len(forwardAstField.Name.Name), forwardField.Model().FileID()),
 			))
 		}
 
@@ -286,7 +286,7 @@ func validateOneToOneFieldsReferencesMixups(relation *database.InlineRelationWal
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				message,
 				"@relation",
-				backAstField.Span(),
+				diagnostics.NewSpan(backAstField.Pos.Offset, backAstField.Pos.Offset+len(backAstField.Name.Name), backField.Model().FileID()),
 			))
 		}
 	}
@@ -320,7 +320,7 @@ func validateOneToOneBackRelationArityIsOptional(relation *database.InlineRelati
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				message,
 				"@relation",
-				backAstField.Span(),
+				diagnostics.NewSpan(backAstField.Pos.Offset, backAstField.Pos.Offset+len(backAstField.Name.Name), backField.Model().FileID()),
 			))
 		}
 	}
@@ -359,7 +359,7 @@ func validateOneToOneFieldsAndReferencesOnWrongSide(relation *database.InlineRel
 				ctx.PushError(diagnostics.NewAttributeValidationError(
 					message,
 					"@relation",
-					astField.Span(),
+					diagnostics.NewSpan(astField.Pos.Offset, astField.Pos.Offset+len(astField.Name.Name), backField.Model().FileID()),
 				))
 			}
 		}
@@ -452,7 +452,7 @@ func validateOneToOneFieldsMustBeUnique(relation *database.InlineRelationWalker,
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				message,
 				"@relation",
-				forwardAstField.Span(),
+				diagnostics.NewSpan(forwardAstField.Pos.Offset, forwardAstField.Pos.Offset+len(forwardAstField.Name.Name), forwardField.Model().FileID()),
 			))
 		}
 	} else if len(fieldNames) > 1 {
@@ -464,7 +464,7 @@ func validateOneToOneFieldsMustBeUnique(relation *database.InlineRelationWalker,
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				message,
 				"@relation",
-				forwardAstField.Span(),
+				diagnostics.NewSpan(forwardAstField.Pos.Offset, forwardAstField.Pos.Offset+len(forwardAstField.Name.Name), forwardField.Model().FileID()),
 			))
 		}
 	}

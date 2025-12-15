@@ -45,7 +45,7 @@ func validateRelationReferencingScalarFieldTypes(relation *database.InlineRelati
 					referencedFields[i].Name(),
 					getScalarTypeDisplayNameForRelations(&referencedType),
 				),
-				astField.Span(),
+				diagnostics.NewSpan(astField.Pos.Offset, astField.Pos.Offset+len(astField.Name.Name), forwardField.Model().FileID()),
 			))
 		}
 	}
@@ -149,7 +149,7 @@ func validateRelationFieldArityAdvanced(relation *database.InlineRelationWalker,
 	}
 
 	// If the relation field is required, all referencing fields must also be required
-	if !astField.FieldType.IsOptional() {
+	if !astField.Arity.IsOptional() {
 		referencingFields := forwardField.ReferencingFields()
 		if len(referencingFields) == 0 {
 			return
@@ -159,7 +159,7 @@ func validateRelationFieldArityAdvanced(relation *database.InlineRelationWalker,
 		optionalFields := []string{}
 		for _, field := range referencingFields {
 			fieldAst := field.AstField()
-			if fieldAst != nil && fieldAst.FieldType.IsOptional() {
+			if fieldAst != nil && fieldAst.Arity.IsOptional() {
 				optionalFields = append(optionalFields, field.Name())
 			}
 		}
@@ -184,7 +184,7 @@ func validateRelationFieldArityAdvanced(relation *database.InlineRelationWalker,
 					forwardField.Name(),
 					fieldNamesStr,
 				),
-				astField.Span(),
+				diagnostics.NewSpan(astField.Pos.Offset, astField.Pos.Offset+len(astField.Name.Name), forwardField.Model().FileID()),
 			))
 		}
 	}
@@ -211,7 +211,7 @@ func validateRelationSameLengthAdvanced(relation *database.InlineRelationWalker,
 		}
 
 		// Try to get the relation attribute span
-		span := astField.Span()
+		span := diagnostics.NewSpan(astField.Pos.Offset, astField.Pos.Offset+len(astField.Name.Name), forwardField.Model().FileID())
 		// TODO: Get span from relation attribute when available
 
 		ctx.PushError(diagnostics.NewValidationError(

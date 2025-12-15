@@ -3,7 +3,7 @@ package database
 
 import (
 	"github.com/satishbabariya/prisma-go/psl/diagnostics"
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // VisitMapAttribute visits a @map attribute and returns the mapped name.
@@ -41,8 +41,8 @@ func HandleModelMap(modelAttrs *ModelAttributes, ctx *Context) {
 // HandleScalarFieldMap handles @map on a scalar field.
 func HandleScalarFieldMap(
 	sfid ScalarFieldId,
-	astModel *ast.Model,
-	astField *ast.Field,
+	astModel *v2ast.Model,
+	astField *v2ast.Field,
 	modelID ModelId,
 	fieldID uint32,
 	ctx *Context,
@@ -63,11 +63,14 @@ func HandleScalarFieldMap(
 		NameID:  *mappedName,
 	}
 	if existingFieldID, exists := ctx.mappedModelScalarFieldNames[key]; exists {
+		fieldName := astField.GetName()
+		pos := astField.Pos
+		span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(fieldName), diagnostics.FileIDZero)
 		ctx.PushError(diagnostics.NewDuplicateFieldError(
-			astModel.Name.Name,
-			astField.Name.Name,
+			astModel.GetName(),
+			fieldName,
 			"model",
-			astField.Name.Span(),
+			span,
 		))
 		_ = existingFieldID
 		return
@@ -86,11 +89,14 @@ func HandleScalarFieldMap(
 				}
 				if entry.Field.MappedName == nil {
 					// Conflict with regular field name
+					fieldName := astField.GetName()
+					pos := astField.Pos
+					span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(fieldName), diagnostics.FileIDZero)
 					ctx.PushError(diagnostics.NewDuplicateFieldError(
-						astModel.Name.Name,
-						astField.Name.Name,
+						astModel.GetName(),
+						fieldName,
 						"model",
-						astField.Name.Span(),
+						span,
 					))
 				}
 				break
@@ -101,8 +107,8 @@ func HandleScalarFieldMap(
 
 // HandleCompositeTypeFieldMap handles @map on a composite type field.
 func HandleCompositeTypeFieldMap(
-	ct *ast.CompositeType,
-	astField *ast.Field,
+	ct *v2ast.CompositeType,
+	astField *v2ast.Field,
 	ctID CompositeTypeId,
 	fieldID uint32,
 	ctx *Context,
@@ -136,10 +142,13 @@ func HandleCompositeTypeFieldMap(
 		}
 		if existingField, exists := ctx.types.CompositeTypeFields[existingFieldKey]; exists {
 			if existingField.MappedName != nil && *existingField.MappedName == *mappedName {
+				fieldName := astField.GetName()
+				pos := astField.Pos
+				span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(fieldName), diagnostics.FileIDZero)
 				ctx.PushError(diagnostics.NewCompositeTypeDuplicateFieldError(
-					ct.Name.Name,
+					ct.GetName(),
 					ctx.interner.Get(*mappedName),
-					astField.Name.Span(),
+					span,
 				))
 				return
 			}
@@ -164,10 +173,13 @@ func HandleCompositeTypeFieldMap(
 				return // Other field has mapped name, no conflict
 			}
 			// Conflict with regular field name
+			fieldName := astField.GetName()
+			pos := astField.Pos
+			span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(fieldName), diagnostics.FileIDZero)
 			ctx.PushError(diagnostics.NewCompositeTypeDuplicateFieldError(
-				ct.Name.Name,
-				astField.Name.Name,
-				astField.Name.Span(),
+				ct.GetName(),
+				fieldName,
+				span,
 			))
 		}
 	}

@@ -2,8 +2,6 @@
 package validation
 
 import (
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
-
 	"fmt"
 	"strings"
 
@@ -207,12 +205,14 @@ func (c *SqliteConnector) ValidateScalarFieldUnknownDefaultFunctions(db *databas
 	for _, model := range db.WalkModels() {
 		for _, field := range model.ScalarFields() {
 			if defaultValue := field.DefaultValue(); defaultValue != nil {
-				if funcCall, ok := defaultValue.Value().(ast.FunctionCall); ok {
-					switch funcCall.Name.Name {
+				if funcCall, ok := defaultValue.Value().AsFunction(); ok {
+					switch funcCall.Name {
 					case "now", "uuid", "cuid", "cuid2", "autoincrement", "dbgenerated", "env":
 						// Known functions, do nothing
 					default:
-						diags.PushError(diagnostics.NewDefaultUnknownFunctionError(funcCall.Name.Name, funcCall.Span()))
+						pos := funcCall.Span()
+						span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(funcCall.Name), diagnostics.FileIDZero)
+						diags.PushError(diagnostics.NewDefaultUnknownFunctionError(funcCall.Name, span))
 					}
 				}
 			}

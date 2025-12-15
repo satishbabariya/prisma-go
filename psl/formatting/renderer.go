@@ -1,10 +1,9 @@
-// Package schemaast provides rendering functionality for Prisma schema ASTs.
+// Package formatting provides rendering functionality for Prisma schema ASTs.
 package formatting
 
 import (
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 
-	"fmt"
 	"strings"
 )
 
@@ -19,12 +18,14 @@ func NewRenderer() *Renderer {
 }
 
 // Render renders the entire schema AST to a string.
-func (r *Renderer) Render(ast *ast.SchemaAst) string {
+func (r *Renderer) Render(schema *ast.SchemaAst) string {
 	r.builder.Reset()
 
-	for _, top := range ast.Tops {
+	for i, top := range schema.Tops {
+		if i > 0 {
+			r.builder.WriteString("\n\n")
+		}
 		r.renderTop(top)
-		r.builder.WriteString("\n\n")
 	}
 
 	return r.builder.String()
@@ -48,18 +49,18 @@ func (r *Renderer) renderTop(top ast.Top) {
 
 // renderModel renders a model.
 func (r *Renderer) renderModel(model *ast.Model) {
-	r.builder.WriteString("model ")
-	r.renderIdentifier(&model.Name)
+	r.builder.WriteString(model.Keyword + " ")
+	r.renderIdentifier(model.Name)
 	r.builder.WriteString(" {\n")
 
 	// Render fields
 	for _, field := range model.Fields {
-		r.renderField(&field, "  ")
+		r.renderField(field, "  ")
 	}
 
 	// Render attributes
-	for _, attr := range model.Attributes {
-		r.renderAttribute(&attr, "  ")
+	for _, attr := range model.BlockAttributes {
+		r.renderBlockAttribute(attr, "  ")
 	}
 
 	r.builder.WriteString("}")
@@ -68,17 +69,17 @@ func (r *Renderer) renderModel(model *ast.Model) {
 // renderEnum renders an enum.
 func (r *Renderer) renderEnum(enum *ast.Enum) {
 	r.builder.WriteString("enum ")
-	r.renderIdentifier(&enum.Name)
+	r.renderIdentifier(enum.Name)
 	r.builder.WriteString(" {\n")
 
 	// Render values
 	for _, value := range enum.Values {
-		r.renderEnumValue(&value, "  ")
+		r.renderEnumValue(value, "  ")
 	}
 
-	// Render attributes
-	for _, attr := range enum.Attributes {
-		r.renderAttribute(&attr, "  ")
+	// Render attributes (block attributes for enums usually @@map but typically enum attributes are mostly on values or block level)
+	for _, attr := range enum.BlockAttributes {
+		r.renderBlockAttribute(attr, "  ")
 	}
 
 	r.builder.WriteString("}")
@@ -87,17 +88,12 @@ func (r *Renderer) renderEnum(enum *ast.Enum) {
 // renderCompositeType renders a composite type.
 func (r *Renderer) renderCompositeType(compositeType *ast.CompositeType) {
 	r.builder.WriteString("type ")
-	r.renderIdentifier(&compositeType.Name)
+	r.renderIdentifier(compositeType.Name)
 	r.builder.WriteString(" {\n")
 
 	// Render fields
 	for _, field := range compositeType.Fields {
-		r.renderField(&field, "  ")
-	}
-
-	// Render attributes
-	for _, attr := range compositeType.Attributes {
-		r.renderAttribute(&attr, "  ")
+		r.renderField(field, "  ")
 	}
 
 	r.builder.WriteString("}")
@@ -106,11 +102,11 @@ func (r *Renderer) renderCompositeType(compositeType *ast.CompositeType) {
 // renderSourceConfig renders a datasource configuration.
 func (r *Renderer) renderSourceConfig(source *ast.SourceConfig) {
 	r.builder.WriteString("datasource ")
-	r.renderIdentifier(&source.Name)
+	r.renderIdentifier(source.Name)
 	r.builder.WriteString(" {\n")
 
 	for _, prop := range source.Properties {
-		r.renderConfigProperty(&prop, "  ")
+		r.renderConfigBlockProperty(prop, "  ")
 	}
 
 	r.builder.WriteString("}")
@@ -119,11 +115,11 @@ func (r *Renderer) renderSourceConfig(source *ast.SourceConfig) {
 // renderGeneratorConfig renders a generator configuration.
 func (r *Renderer) renderGeneratorConfig(generator *ast.GeneratorConfig) {
 	r.builder.WriteString("generator ")
-	r.renderIdentifier(&generator.Name)
+	r.renderIdentifier(generator.Name)
 	r.builder.WriteString(" {\n")
 
 	for _, prop := range generator.Properties {
-		r.renderConfigProperty(&prop, "  ")
+		r.renderConfigBlockProperty(prop, "  ")
 	}
 
 	r.builder.WriteString("}")
@@ -132,9 +128,11 @@ func (r *Renderer) renderGeneratorConfig(generator *ast.GeneratorConfig) {
 // renderField renders a field.
 func (r *Renderer) renderField(field *ast.Field, indent string) {
 	r.builder.WriteString(indent)
-	r.renderIdentifier(&field.Name)
-	r.builder.WriteString("  ")
-	r.renderFieldType(&field.FieldType)
+	if field.Name != nil {
+		r.builder.WriteString(field.Name.Name)
+	}
+	r.builder.WriteString(" ")
+	r.renderFieldType(field.Type)
 
 	// Render arity modifiers
 	if field.Arity.IsList() {
@@ -146,7 +144,7 @@ func (r *Renderer) renderField(field *ast.Field, indent string) {
 	// Render attributes
 	for _, attr := range field.Attributes {
 		r.builder.WriteString(" ")
-		r.renderAttribute(&attr, "")
+		r.renderAttribute(attr)
 	}
 
 	r.builder.WriteString("\n")
@@ -155,54 +153,53 @@ func (r *Renderer) renderField(field *ast.Field, indent string) {
 // renderEnumValue renders an enum value.
 func (r *Renderer) renderEnumValue(value *ast.EnumValue, indent string) {
 	r.builder.WriteString(indent)
-	r.renderIdentifier(&value.Name)
+	r.renderIdentifier(value.Name)
 
 	// Render attributes
 	for _, attr := range value.Attributes {
 		r.builder.WriteString(" ")
-		r.renderAttribute(&attr, "")
+		r.renderAttribute(attr)
 	}
 
 	r.builder.WriteString("\n")
 }
 
-// renderAttribute renders an attribute.
-func (r *Renderer) renderAttribute(attr *ast.Attribute, indent string) {
-	r.builder.WriteString(indent)
+// renderAttribute renders a field attribute.
+func (r *Renderer) renderAttribute(attr *ast.Attribute) {
 	r.builder.WriteString("@")
-	r.renderIdentifier(&attr.Name)
+	r.renderIdentifier(attr.Name)
+	r.renderArguments(attr.Arguments)
+}
 
-	hasArgs := len(attr.Arguments.Arguments) > 0 || len(attr.Arguments.EmptyArguments) > 0
+// renderBlockAttribute renders a block attribute (@@).
+func (r *Renderer) renderBlockAttribute(attr *ast.BlockAttribute, indent string) {
+	r.builder.WriteString(indent)
+	r.builder.WriteString("@@")
+	r.renderIdentifier(attr.Name)
+	r.renderArguments(attr.Arguments)
+	r.builder.WriteString("\n")
+}
+
+// renderArguments renders argument list.
+func (r *Renderer) renderArguments(args *ast.ArgumentsList) {
+	if args == nil {
+		return
+	}
+
+	// We only have Arguments in V2 AST ArgumentsList struct
+	hasArgs := len(args.Arguments) > 0
 	if hasArgs {
 		r.builder.WriteString("(")
 
-		// Render regular arguments
-		for i, arg := range attr.Arguments.Arguments {
+		for i, arg := range args.Arguments {
 			if i > 0 {
 				r.builder.WriteString(", ")
 			}
-			r.renderArgument(&arg)
+			r.renderArgument(arg)
 		}
 
-		// Render empty arguments (for autocompletion/invalid syntax)
-		if len(attr.Arguments.EmptyArguments) > 0 {
-			if len(attr.Arguments.Arguments) > 0 {
-				r.builder.WriteString(", ")
-			}
-			for i, emptyArg := range attr.Arguments.EmptyArguments {
-				if i > 0 {
-					r.builder.WriteString(", ")
-				}
-				r.renderIdentifier(&emptyArg.Name)
-				r.builder.WriteString(": ")
-			}
-		}
-
-		// Render trailing comma if present
-		if attr.Arguments.TrailingComma != nil {
-			if hasArgs {
-				r.builder.WriteString(", ")
-			}
+		if args.TrailingComma {
+			r.builder.WriteString(",")
 		}
 
 		r.builder.WriteString(")")
@@ -221,10 +218,10 @@ func (r *Renderer) renderArgument(arg *ast.Argument) {
 	}
 }
 
-// renderConfigProperty renders a config property.
-func (r *Renderer) renderConfigProperty(prop *ast.ConfigBlockProperty, indent string) {
+// renderConfigBlockProperty renders a config property.
+func (r *Renderer) renderConfigBlockProperty(prop *ast.ConfigBlockProperty, indent string) {
 	r.builder.WriteString(indent)
-	r.renderIdentifier(&prop.Name)
+	r.renderIdentifier(prop.Name)
 	if prop.Value != nil {
 		r.builder.WriteString(" = ")
 		r.renderExpression(prop.Value)
@@ -234,30 +231,34 @@ func (r *Renderer) renderConfigProperty(prop *ast.ConfigBlockProperty, indent st
 
 // renderFieldType renders a field type.
 func (r *Renderer) renderFieldType(fieldType *ast.FieldType) {
-	r.builder.WriteString(fieldType.Name())
-
-	// Note: Arity is now stored separately on ast.Field, not on ast.FieldType
-	// This method should be called with the ast.Field's Arity information
-	// For now, we'll render based on the type name only
+	if fieldType == nil {
+		return
+	}
+	r.builder.WriteString(fieldType.Name)
 }
 
 // renderIdentifier renders an identifier.
 func (r *Renderer) renderIdentifier(ident *ast.Identifier) {
-	r.builder.WriteString(ident.Name)
+	if ident != nil {
+		r.builder.WriteString(ident.Name)
+	}
 }
 
 // renderExpression renders an expression.
 func (r *Renderer) renderExpression(expr ast.Expression) {
 	switch e := expr.(type) {
-	case ast.StringLiteral:
-		r.builder.WriteString(fmt.Sprintf(`"%s"`, e.Value))
-	case ast.IntLiteral:
-		r.builder.WriteString(fmt.Sprintf("%d", e.Value))
-	case ast.FloatLiteral:
-		r.builder.WriteString(fmt.Sprintf("%f", e.Value))
-	case ast.BooleanLiteral:
-		r.builder.WriteString(fmt.Sprintf("%t", e.Value))
-	case ast.ArrayLiteral:
+	case *ast.StringValue:
+		// e.Value includes quotes
+		r.builder.WriteString(e.Value)
+	case *ast.NumericValue:
+		r.builder.WriteString(e.Value)
+	case *ast.ConstantValue:
+		// Includes booleans (true/false) and identifiers
+		r.builder.WriteString(e.Value)
+	case *ast.FunctionCall:
+		r.builder.WriteString(e.Name)
+		r.renderArguments(e.Arguments)
+	case *ast.ArrayExpression:
 		r.builder.WriteString("[")
 		for i, elem := range e.Elements {
 			if i > 0 {
@@ -266,17 +267,12 @@ func (r *Renderer) renderExpression(expr ast.Expression) {
 			r.renderExpression(elem)
 		}
 		r.builder.WriteString("]")
-	case ast.FunctionCall:
-		r.renderIdentifier(&e.Name)
-		r.builder.WriteString("(")
-		for i, arg := range e.Arguments {
-			if i > 0 {
-				r.builder.WriteString(", ")
-			}
-			r.renderExpression(arg)
-		}
-		r.builder.WriteString(")")
+	case *ast.PathValue:
+		r.builder.WriteString(strings.Join(e.Parts, "."))
 	default:
+		// Fallback for types that might not match directly or if interface handling differs
+		// But in V2 AST, Expression IS the interface implemented by these pointers.
+		// So this should cover it.
 		r.builder.WriteString("/* unknown expression */")
 	}
 }

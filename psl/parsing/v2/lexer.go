@@ -7,7 +7,7 @@ import (
 // PrismaLexer defines the token types for Prisma Schema Language.
 var PrismaLexer = lexer.MustSimple([]lexer.SimpleRule{
 	// Keywords
-	{Name: "Keyword", Pattern: `\b(model|enum|type|view|datasource|generator|Unsupported)\b`},
+	{Name: "Keyword", Pattern: `\b(model|enum|type|view|datasource|generator|extend|Unsupported)\b`},
 
 	// Block attribute prefix (must come before single @)
 	{Name: "BlockAttr", Pattern: `@@`},

@@ -5,35 +5,32 @@ import (
 	"strings"
 
 	"github.com/satishbabariya/prisma-go/psl/diagnostics"
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // ResolveTypes resolves types for all models, enums, and composite types.
 // This is the second pass of validation after name resolution.
 func ResolveTypes(ctx *Context) {
 	for _, entry := range ctx.IterTops() {
-		switch {
-		case entry.Top.AsModel() != nil:
-			model := entry.Top.AsModel()
+		switch t := entry.Top.(type) {
+		case *v2ast.Model:
 			modelID := ModelId{
 				FileID: entry.TopID.FileID,
 				ID:     entry.TopID.ID,
 			}
-			visitModel(modelID, model, ctx)
-		case entry.Top.AsEnum() != nil:
-			enum := entry.Top.AsEnum()
+			visitModel(modelID, t, ctx)
+		case *v2ast.Enum:
 			enumID := EnumId{
 				FileID: entry.TopID.FileID,
 				ID:     entry.TopID.ID,
 			}
-			visitEnum(enumID, enum, ctx)
-		case entry.Top.AsCompositeType() != nil:
-			ct := entry.Top.AsCompositeType()
+			visitEnum(enumID, t, ctx)
+		case *v2ast.CompositeType:
 			ctID := CompositeTypeId{
 				FileID: entry.TopID.FileID,
 				ID:     entry.TopID.ID,
 			}
-			visitCompositeType(ctID, ct, ctx)
+			visitCompositeType(ctID, t, ctx)
 		}
 	}
 }
@@ -46,35 +43,40 @@ type FieldType struct {
 }
 
 // visitModel processes a model and resolves types for all its fields.
-func visitModel(modelID ModelId, astModel *ast.Model, ctx *Context) {
+func visitModel(modelID ModelId, astModel *v2ast.Model, ctx *Context) {
 	for i, astField := range astModel.Fields {
+		if astField == nil {
+			continue
+		}
 		fieldID := uint32(i)
 		fieldType, err := resolveFieldType(astField, ctx)
 
 		if err != nil {
 			// Type not found - try to find similar types for better error messages
-			typeName := astField.FieldType.TypeName()
+			typeName := astField.GetTypeName()
 			foundSimilar := false
 
 			// Check for case-insensitive matches in top-level names
 			for _, entry := range ctx.IterTops() {
 				var name string
-				switch {
-				case entry.Top.AsModel() != nil:
-					name = entry.Top.AsModel().Name.Name
-				case entry.Top.AsEnum() != nil:
-					name = entry.Top.AsEnum().Name.Name
-				case entry.Top.AsCompositeType() != nil:
-					name = entry.Top.AsCompositeType().Name.Name
+				switch t := entry.Top.(type) {
+				case *v2ast.Model:
+					name = t.GetName()
+				case *v2ast.Enum:
+					name = t.GetName()
+				case *v2ast.CompositeType:
+					name = t.GetName()
 				default:
 					continue
 				}
 
 				if strings.EqualFold(name, typeName) {
+					pos := astField.Pos
+					span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(typeName), diagnostics.FileIDZero)
 					ctx.PushError(diagnostics.NewTypeForCaseNotFoundError(
 						typeName,
 						name,
-						astField.FieldType.Span(),
+						span,
 					))
 					foundSimilar = true
 					break
@@ -84,19 +86,23 @@ func visitModel(modelID ModelId, astModel *ast.Model, ctx *Context) {
 			// Check for case-insensitive matches in scalar types
 			if !foundSimilar {
 				if scalarType := parseScalarTypeCaseInsensitive(typeName); scalarType != nil {
+					pos := astField.Pos
+					span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(typeName), diagnostics.FileIDZero)
 					ctx.PushError(diagnostics.NewTypeForCaseNotFoundError(
 						typeName,
 						string(*scalarType),
-						astField.FieldType.Span(),
+						span,
 					))
 					foundSimilar = true
 				}
 			}
 
 			if !foundSimilar {
+				pos := astField.Pos
+				span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(typeName), diagnostics.FileIDZero)
 				ctx.PushError(diagnostics.NewTypeNotFoundError(
 					typeName,
-					astField.FieldType.Span(),
+					span,
 				))
 			}
 			continue
@@ -136,12 +142,14 @@ func visitModel(modelID ModelId, astModel *ast.Model, ctx *Context) {
 }
 
 // visitEnum processes an enum and stores its attributes.
-func visitEnum(enumID EnumId, astEnum *ast.Enum, ctx *Context) {
+func visitEnum(enumID EnumId, astEnum *v2ast.Enum, ctx *Context) {
 	// Validate that enum has at least one value
 	if len(astEnum.Values) == 0 {
+		pos := astEnum.TopPos()
+		span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(astEnum.GetName()), diagnostics.FileIDZero)
 		ctx.PushError(diagnostics.NewValidationError(
 			"An enum must have at least one value.",
-			astEnum.Span(),
+			span,
 		))
 	}
 
@@ -152,16 +160,22 @@ func visitEnum(enumID EnumId, astEnum *ast.Enum, ctx *Context) {
 }
 
 // visitCompositeType processes a composite type and resolves types for all its fields.
-func visitCompositeType(ctID CompositeTypeId, astCT *ast.CompositeType, ctx *Context) {
+func visitCompositeType(ctID CompositeTypeId, astCT *v2ast.CompositeType, ctx *Context) {
 	for i, astField := range astCT.Fields {
+		if astField == nil {
+			continue
+		}
 		fieldID := uint32(i)
 		fieldType, err := resolveFieldType(astField, ctx)
 
 		if err != nil {
 			// Type not found
+			typeName := astField.GetTypeName()
+			pos := astField.Pos
+			span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(typeName), diagnostics.FileIDZero)
 			ctx.PushError(diagnostics.NewTypeNotFoundError(
-				astField.FieldType.TypeName(),
-				astField.FieldType.Span(),
+				typeName,
+				span,
 			))
 			continue
 		}
@@ -171,21 +185,24 @@ func visitCompositeType(ctID CompositeTypeId, astCT *ast.CompositeType, ctx *Con
 			// Find the model name for the error message
 			var modelName string
 			for _, entry := range ctx.IterTops() {
-				if entry.Top.AsModel() != nil {
+				if model, ok := entry.Top.(*v2ast.Model); ok {
 					entryModelID := ModelId{
 						FileID: entry.TopID.FileID,
 						ID:     entry.TopID.ID,
 					}
 					if entryModelID == *fieldType.ModelID {
-						modelName = entry.Top.AsModel().Name.Name
+						modelName = model.GetName()
 						break
 					}
 				}
 			}
+			typeName := astField.GetTypeName()
+			pos := astField.Pos
+			span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(typeName), diagnostics.FileIDZero)
 			ctx.PushError(diagnostics.NewCompositeTypeValidationError(
 				modelName+" refers to a model, making this a relation field. Relation fields inside composite types are not supported.",
-				astCT.Name.Name,
-				astField.FieldType.Span(),
+				astCT.GetName(),
+				span,
 			))
 			continue
 		}
@@ -208,8 +225,8 @@ func visitCompositeType(ctID CompositeTypeId, astCT *ast.CompositeType, ctx *Con
 
 // resolveFieldType determines the type of a field (relation or scalar).
 // Returns (FieldType, error) where error is non-nil if the type is not found.
-func resolveFieldType(field ast.Field, ctx *Context) (FieldType, error) {
-	typeName := field.FieldType.TypeName()
+func resolveFieldType(field *v2ast.Field, ctx *Context) (FieldType, error) {
+	typeName := field.GetTypeName()
 
 	// Check if it's a built-in scalar type
 	if scalarType := parseScalarType(typeName); scalarType != nil {
@@ -226,8 +243,8 @@ func resolveFieldType(field ast.Field, ctx *Context) (FieldType, error) {
 		// Get the actual top-level item
 		for _, entry := range ctx.IterTops() {
 			if entry.TopID == topID {
-				switch {
-				case entry.Top.AsModel() != nil:
+				switch entry.Top.(type) {
+				case *v2ast.Model:
 					modelID := ModelId{
 						FileID: topID.FileID,
 						ID:     topID.ID,
@@ -237,7 +254,7 @@ func resolveFieldType(field ast.Field, ctx *Context) (FieldType, error) {
 						ModelID:    &modelID,
 						ScalarType: nil,
 					}, nil
-				case entry.Top.AsEnum() != nil:
+				case *v2ast.Enum:
 					enumID := EnumId{
 						FileID: topID.FileID,
 						ID:     topID.ID,
@@ -246,7 +263,7 @@ func resolveFieldType(field ast.Field, ctx *Context) (FieldType, error) {
 						IsModel:    false,
 						ScalarType: &ScalarFieldType{EnumID: &enumID},
 					}, nil
-				case entry.Top.AsCompositeType() != nil:
+				case *v2ast.CompositeType:
 					ctID := CompositeTypeId{
 						FileID: topID.FileID,
 						ID:     topID.ID,

@@ -1,12 +1,14 @@
-// Package pls provides the main API for working with Prisma Schema Language.
-package pls
+// Package psl provides the main API for working with Prisma Schema Language.
+package psl
 
 import (
+	"strings"
+
 	"github.com/satishbabariya/prisma-go/psl/core"
 	"github.com/satishbabariya/prisma-go/psl/diagnostics"
 	"github.com/satishbabariya/prisma-go/psl/formatting"
-	"github.com/satishbabariya/prisma-go/psl/parsing"
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	parser "github.com/satishbabariya/prisma-go/psl/parsing/v2"
+	"github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // Re-export key types for convenience
@@ -21,12 +23,24 @@ type (
 
 // ParseSchema parses a Prisma schema string and returns the AST and diagnostics.
 func ParseSchema(input string) (*ast.SchemaAst, diagnostics.Diagnostics) {
-	return parsing.ParseSchema(input)
+	// Adapt V2 parser (returns error) to legacy signature (returns Diagnostics)
+	schema, err := parser.ParseSchema("schema.prisma", strings.NewReader(input))
+	var diags diagnostics.Diagnostics
+	if err != nil {
+		// Create a simple error diagnostic
+		diags.PushError(diagnostics.NewDatamodelError(err.Error(), diagnostics.Span{}))
+	}
+	return schema, diags
 }
 
 // ParseSchemaFromFile parses a Prisma schema from a source file.
 func ParseSchemaFromFile(file core.SourceFile) (*ast.SchemaAst, diagnostics.Diagnostics) {
-	return parsing.ParseSchemaFromSourceFile(file)
+	schema, err := parser.ParseSchema(file.Path, strings.NewReader(file.Data))
+	var diags diagnostics.Diagnostics
+	if err != nil {
+		diags.PushError(diagnostics.NewDatamodelError(err.Error(), diagnostics.Span{}))
+	}
+	return schema, diags
 }
 
 // Reformat reformats a Prisma schema string.

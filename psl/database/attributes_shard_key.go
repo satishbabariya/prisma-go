@@ -3,7 +3,7 @@ package database
 
 import (
 	"github.com/satishbabariya/prisma-go/psl/diagnostics"
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // HandleModelShardKey handles @@shardKey on a model.
@@ -23,7 +23,9 @@ func HandleModelShardKey(
 		return
 	}
 
-	resolvedFields, resolveErr := resolveFieldArrayWithoutArgs(fieldsExpr, attr.Span, modelID, ctx)
+	pos := attr.Pos
+	span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(attr.GetName()), diagnostics.FileIDZero)
+	resolvedFields, resolveErr := resolveFieldArrayWithoutArgs(fieldsExpr, span, modelID, ctx)
 	if resolveErr == errFieldResolutionAlreadyDealtWith {
 		return
 	}
@@ -43,30 +45,37 @@ func HandleModelShardKey(
 		if int(sfid) < len(ctx.types.ScalarFields) {
 			sf := &ctx.types.ScalarFields[sfid]
 			if astModel != nil && int(sf.FieldID) < len(astModel.Fields) {
-				astField := &astModel.Fields[sf.FieldID]
+				astField := astModel.Fields[sf.FieldID]
+				if astField == nil {
+					continue
+				}
 				// Check if field is required (not optional and not array)
-				if astField.FieldType.IsOptional() || astField.FieldType.IsArray() {
-					fieldsThatAreNotRequired = append(fieldsThatAreNotRequired, astField.Name.Name)
+				if astField.Arity.IsOptional() || astField.Arity.IsList() {
+					fieldsThatAreNotRequired = append(fieldsThatAreNotRequired, astField.GetName())
 				}
 			}
 		}
 	}
 
 	if len(fieldsThatAreNotRequired) > 0 && !modelAttrs.IsIgnored {
+		pos := attr.Pos
+		span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(attr.GetName()), diagnostics.FileIDZero)
 		ctx.PushError(diagnostics.NewModelValidationError(
 			"The shard key definition refers to the optional fields: "+formatFieldNames(fieldsThatAreNotRequired)+". Shard key definitions must reference only required fields.",
 			"model",
-			astModel.Name.Name,
-			attr.Span,
+			astModel.GetName(),
+			span,
 		))
 	}
 
 	if modelAttrs.ShardKey != nil {
+		pos := astModel.TopPos()
+		span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(astModel.GetName()), diagnostics.FileIDZero)
 		ctx.PushError(diagnostics.NewModelValidationError(
 			"Each model must have at most one shard key. You can't have `@shardKey` and `@@shardKey` at the same time.",
 			"model",
-			astModel.Name.Name,
-			astModel.Span(),
+			astModel.GetName(),
+			span,
 		))
 		return
 	}
@@ -81,18 +90,20 @@ func HandleModelShardKey(
 
 // HandleFieldShardKey handles @shardKey on a scalar field.
 func HandleFieldShardKey(
-	astModel *ast.Model,
+	astModel *v2ast.Model,
 	sfid ScalarFieldId,
 	fieldID uint32,
 	modelAttrs *ModelAttributes,
 	ctx *Context,
 ) {
 	if modelAttrs.ShardKey != nil {
+		pos := astModel.TopPos()
+		span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(astModel.GetName()), diagnostics.FileIDZero)
 		ctx.PushError(diagnostics.NewModelValidationError(
 			"At most one field must be marked as the shard key with the `@shardKey` attribute.",
 			"model",
-			astModel.Name.Name,
-			astModel.Span(),
+			astModel.GetName(),
+			span,
 		))
 		return
 	}
@@ -134,13 +145,18 @@ func ValidateShardKeyFieldArities(
 		return
 	}
 
-	astField := &astModel.Fields[*sk.SourceField]
-	if astField.FieldType.IsOptional() || astField.FieldType.IsArray() {
+	astField := astModel.Fields[*sk.SourceField]
+	if astField == nil {
+		return
+	}
+	if astField.Arity.IsOptional() || astField.Arity.IsList() {
 		// TODO: Get proper attribute span from AttributeId
+		pos := astField.Pos
+		span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(astField.GetName()), diagnostics.FileIDZero)
 		ctx.PushError(diagnostics.NewAttributeValidationError(
 			"Fields that are marked as shard keys must be required.",
 			"@shardKey",
-			astField.Name.Span(),
+			span,
 		))
 	}
 }

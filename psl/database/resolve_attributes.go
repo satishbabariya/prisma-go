@@ -2,7 +2,7 @@
 package database
 
 import (
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // ResolveAttributes resolves attributes for all models, enums, composite types, and fields.
@@ -15,27 +15,25 @@ func ResolveAttributes(ctx *Context) {
 
 	// Then resolve top-level attributes (models, enums, composite types)
 	for _, entry := range ctx.IterTops() {
-		switch {
-		case entry.Top.AsModel() != nil:
+		switch t := entry.Top.(type) {
+		case *v2ast.Model:
 			modelID := ModelId{
 				FileID: entry.TopID.FileID,
 				ID:     entry.TopID.ID,
 			}
 			resolveModelAttributes(modelID, ctx)
-		case entry.Top.AsEnum() != nil:
+		case *v2ast.Enum:
 			enumID := EnumId{
 				FileID: entry.TopID.FileID,
 				ID:     entry.TopID.ID,
 			}
-			enum := entry.Top.AsEnum()
-			resolveEnumAttributes(enumID, enum, ctx)
-		case entry.Top.AsCompositeType() != nil:
+			resolveEnumAttributes(enumID, t, ctx)
+		case *v2ast.CompositeType:
 			ctID := CompositeTypeId{
 				FileID: entry.TopID.FileID,
 				ID:     entry.TopID.ID,
 			}
-			ct := entry.Top.AsCompositeType()
-			resolveCompositeTypeAttributes(ctID, ct, ctx)
+			resolveCompositeTypeAttributes(ctID, t, ctx)
 		}
 	}
 }
@@ -45,23 +43,7 @@ func visitRelationFieldAttributes(rfid RelationFieldId, ctx *Context) {
 	rf := &ctx.types.RelationFields[rfid]
 
 	// Get the model from AST
-	var astModel *ast.Model
-
-	for _, file := range ctx.asts.files {
-		if file.FileID == rf.ModelID.FileID {
-			for _, top := range file.AST.Tops {
-				if model := top.AsModel(); model != nil {
-					// Check if this is the right model
-					modelIdx := int(rf.ModelID.ID)
-					if modelIdx < len(file.AST.Tops) {
-						// This is a simplified check - in reality we need to track model indices
-						astModel = model
-						break
-					}
-				}
-			}
-		}
-	}
+	astModel := getModelFromID(rf.ModelID, ctx)
 
 	if astModel == nil {
 		return
@@ -90,10 +72,12 @@ func visitRelationFieldAttributes(rfid RelationFieldId, ctx *Context) {
 	// @id (error - relation fields can't be @id)
 	if ctx.VisitOptionalSingleAttr("id") {
 		if int(rf.FieldID) < len(astModel.Fields) {
-			astField := &astModel.Fields[rf.FieldID]
-			ctx.PushAttributeValidationError(
-				"The field `" + astField.Name.Name + "` is a relation field and cannot be marked with `@id`. Only scalar fields can be declared as id.",
-			)
+			astField := astModel.Fields[rf.FieldID]
+			if astField != nil {
+				ctx.PushAttributeValidationError(
+					"The field `" + astField.GetName() + "` is a relation field and cannot be marked with `@id`. Only scalar fields can be declared as id.",
+				)
+			}
 		}
 		ctx.DiscardArguments()
 	}
@@ -126,22 +110,7 @@ func resolveModelAttributes(modelID ModelId, ctx *Context) {
 	}
 
 	// Get the model from AST
-	var astModel *ast.Model
-	modelCount := 0
-	for _, file := range ctx.asts.files {
-		if file.FileID == modelID.FileID {
-			for _, top := range file.AST.Tops {
-				if model := top.AsModel(); model != nil {
-					if uint32(modelCount) == modelID.ID {
-						astModel = model
-						break
-					}
-					modelCount++
-				}
-			}
-		}
-	}
-
+	astModel := getModelFromID(modelID, ctx)
 	if astModel == nil {
 		return
 	}
@@ -226,7 +195,10 @@ func visitScalarFieldAttributes(sfid ScalarFieldId, modelAttrs *ModelAttributes,
 	if int(sf.FieldID) >= len(astModel.Fields) {
 		return
 	}
-	astField := &astModel.Fields[sf.FieldID]
+	astField := astModel.Fields[sf.FieldID]
+	if astField == nil {
+		return
+	}
 
 	// Create attribute container for field
 	// TODO: Properly encode field container in AttributeContainer
@@ -281,7 +253,7 @@ func visitScalarFieldAttributes(sfid ScalarFieldId, modelAttrs *ModelAttributes,
 }
 
 // resolveEnumAttributes processes attributes on an enum.
-func resolveEnumAttributes(enumID EnumId, astEnum *ast.Enum, ctx *Context) {
+func resolveEnumAttributes(enumID EnumId, astEnum *v2ast.Enum, ctx *Context) {
 	enumAttrs := EnumAttributes{
 		MappedName:   nil,
 		Schema:       nil,
@@ -335,9 +307,12 @@ func resolveEnumAttributes(enumID EnumId, astEnum *ast.Enum, ctx *Context) {
 }
 
 // resolveCompositeTypeAttributes processes attributes on a composite type.
-func resolveCompositeTypeAttributes(ctID CompositeTypeId, astCT *ast.CompositeType, ctx *Context) {
+func resolveCompositeTypeAttributes(ctID CompositeTypeId, astCT *v2ast.CompositeType, ctx *Context) {
 	// Process each field in the composite type
-	for i := range astCT.Fields {
+	for i, field := range astCT.Fields {
+		if field == nil {
+			continue
+		}
 		fieldID := uint32(i)
 
 		// Get the composite type field from types
@@ -376,7 +351,7 @@ func resolveCompositeTypeAttributes(ctID CompositeTypeId, astCT *ast.CompositeTy
 
 		// @map
 		if ctx.VisitOptionalSingleAttr("map") {
-			HandleCompositeTypeFieldMap(astCT, &astCT.Fields[i], ctID, fieldID, ctx)
+			HandleCompositeTypeFieldMap(astCT, astCT.Fields[i], ctID, fieldID, ctx)
 			ctx.ValidateVisitedArguments()
 		}
 

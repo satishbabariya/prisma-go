@@ -44,9 +44,12 @@ func (ctx *Context) VisitDatasourceScoped() (StringId, StringId, AttributeId, bo
 
 			// Check for duplicates
 			if nativeTypeAttr != nil {
+				// Convert lexer.Position to diagnostics.Span
+				pos := entry.Attr.Pos
+				span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(datasourceName), diagnostics.FileIDZero)
 				ctx.PushError(diagnostics.NewDuplicateAttributeError(
 					datasourceName,
-					entry.Attr.Span,
+					span,
 				))
 				continue
 			}

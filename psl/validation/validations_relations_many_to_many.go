@@ -35,7 +35,7 @@ func validateImplicitManyToManySingularId(relation *database.ImplicitManyToManyR
 	if relatedModelA != nil && !hasSingleIdField(relatedModelA) {
 		containerType := "model"
 		astModelA := relatedModelA.AstModel()
-		if astModelA != nil && astModelA.IsView {
+		if astModelA != nil && astModelA.IsView() {
 			containerType = "view"
 		}
 
@@ -54,7 +54,7 @@ func validateImplicitManyToManySingularId(relation *database.ImplicitManyToManyR
 				containerType,
 				fieldA.Model().Name(),
 				fieldA.Name(),
-				astFieldA.Span(),
+				diagnostics.NewSpan(astFieldA.Pos.Offset, astFieldA.Pos.Offset+len(astFieldA.Name.Name), fieldA.Model().FileID()),
 			))
 		}
 
@@ -81,7 +81,7 @@ func validateImplicitManyToManySingularId(relation *database.ImplicitManyToManyR
 					if astFieldA != nil {
 						ctx.PushError(diagnostics.NewValidationError(
 							message,
-							astFieldA.Span(),
+							diagnostics.NewSpan(astFieldA.Pos.Offset, astFieldA.Pos.Offset+len(astFieldA.Name.Name), fieldA.Model().FileID()),
 						))
 					}
 				}
@@ -94,7 +94,7 @@ func validateImplicitManyToManySingularId(relation *database.ImplicitManyToManyR
 	if relatedModelB != nil && !hasSingleIdField(relatedModelB) {
 		containerType := "model"
 		astModelB := relatedModelB.AstModel()
-		if astModelB != nil && astModelB.IsView {
+		if astModelB != nil && astModelB.IsView() {
 			containerType = "view"
 		}
 
@@ -113,7 +113,7 @@ func validateImplicitManyToManySingularId(relation *database.ImplicitManyToManyR
 				containerType,
 				fieldB.Model().Name(),
 				fieldB.Name(),
-				astFieldB.Span(),
+				diagnostics.NewSpan(astFieldB.Pos.Offset, astFieldB.Pos.Offset+len(astFieldB.Name.Name), fieldB.Model().FileID()),
 			))
 		}
 
@@ -140,7 +140,7 @@ func validateImplicitManyToManySingularId(relation *database.ImplicitManyToManyR
 					if astFieldB != nil {
 						ctx.PushError(diagnostics.NewValidationError(
 							message,
-							astFieldB.Span(),
+							diagnostics.NewSpan(astFieldB.Pos.Offset, astFieldB.Pos.Offset+len(astFieldB.Name.Name), fieldB.Model().FileID()),
 						))
 					}
 				}
@@ -164,8 +164,8 @@ func validateImplicitManyToManySupports(relation *database.ImplicitManyToManyRel
 	astModelA := modelA.AstModel()
 	astModelB := modelB.AstModel()
 
-	isViewA := astModelA != nil && astModelA.IsView
-	isViewB := astModelB != nil && astModelB.IsView
+	isViewA := astModelA != nil && astModelA.IsView()
+	isViewB := astModelB != nil && astModelB.IsView()
 
 	if isViewA || isViewB {
 		message := "Implicit many-to-many relations are not supported for views."
@@ -175,14 +175,14 @@ func validateImplicitManyToManySupports(relation *database.ImplicitManyToManyRel
 		if astFieldA != nil {
 			ctx.PushError(diagnostics.NewValidationError(
 				message,
-				astFieldA.Span(),
+				diagnostics.NewSpan(astFieldA.Pos.Offset, astFieldA.Pos.Offset+len(astFieldA.Name.Name), fieldA.Model().FileID()),
 			))
 		}
 
 		if astFieldB != nil {
 			ctx.PushError(diagnostics.NewValidationError(
 				message,
-				astFieldB.Span(),
+				diagnostics.NewSpan(astFieldB.Pos.Offset, astFieldB.Pos.Offset+len(astFieldB.Name.Name), fieldB.Model().FileID()),
 			))
 		}
 		return
@@ -206,14 +206,14 @@ func validateImplicitManyToManySupports(relation *database.ImplicitManyToManyRel
 		if astFieldA != nil {
 			ctx.PushError(diagnostics.NewValidationError(
 				message,
-				astFieldA.Span(),
+				diagnostics.NewSpan(astFieldA.Pos.Offset, astFieldA.Pos.Offset+len(astFieldA.Name.Name), fieldA.Model().FileID()),
 			))
 		}
 
 		if astFieldB != nil {
 			ctx.PushError(diagnostics.NewValidationError(
 				message,
-				astFieldB.Span(),
+				diagnostics.NewSpan(astFieldB.Pos.Offset, astFieldB.Pos.Offset+len(astFieldB.Name.Name), fieldB.Model().FileID()),
 			))
 		}
 	}
@@ -235,7 +235,7 @@ func validateImplicitManyToManyCannotDefineReferences(relation *database.Implici
 				ctx.PushError(diagnostics.NewAttributeValidationError(
 					message,
 					"@relation",
-					astFieldA.Span(),
+					diagnostics.NewSpan(astFieldA.Pos.Offset, astFieldA.Pos.Offset+len(astFieldA.Name.Name), fieldA.Model().FileID()),
 				))
 			}
 		}
@@ -250,7 +250,7 @@ func validateImplicitManyToManyCannotDefineReferences(relation *database.Implici
 				ctx.PushError(diagnostics.NewAttributeValidationError(
 					message,
 					"@relation",
-					astFieldB.Span(),
+					diagnostics.NewSpan(astFieldB.Pos.Offset, astFieldB.Pos.Offset+len(astFieldB.Name.Name), fieldB.Model().FileID()),
 				))
 			}
 		}
@@ -286,14 +286,14 @@ func validateEmbeddedManyToManySupports(relation *database.TwoWayEmbeddedManyToM
 	if astFieldA != nil {
 		ctx.PushError(diagnostics.NewValidationError(
 			message,
-			astFieldA.Span(),
+			diagnostics.NewSpan(astFieldA.Pos.Offset, astFieldA.Pos.Offset+len(astFieldA.Name.Name), fieldA.Model().FileID()),
 		))
 	}
 
 	if astFieldB != nil {
 		ctx.PushError(diagnostics.NewValidationError(
 			message,
-			astFieldB.Span(),
+			diagnostics.NewSpan(astFieldB.Pos.Offset, astFieldB.Pos.Offset+len(astFieldB.Name.Name), fieldB.Model().FileID()),
 		))
 	}
 }
@@ -321,7 +321,7 @@ func validateEmbeddedManyToManyDefinesReferences(relation *database.TwoWayEmbedd
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				message,
 				"@relation",
-				astFieldA.Span(),
+				diagnostics.NewSpan(astFieldA.Pos.Offset, astFieldA.Pos.Offset+len(astFieldA.Name.Name), fieldA.Model().FileID()),
 			))
 		}
 	}
@@ -334,7 +334,7 @@ func validateEmbeddedManyToManyDefinesReferences(relation *database.TwoWayEmbedd
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				message,
 				"@relation",
-				astFieldB.Span(),
+				diagnostics.NewSpan(astFieldB.Pos.Offset, astFieldB.Pos.Offset+len(astFieldB.Name.Name), fieldB.Model().FileID()),
 			))
 		}
 	}
@@ -363,7 +363,7 @@ func validateEmbeddedManyToManyDefinesFields(relation *database.TwoWayEmbeddedMa
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				message,
 				"@relation",
-				astFieldA.Span(),
+				diagnostics.NewSpan(astFieldA.Pos.Offset, astFieldA.Pos.Offset+len(astFieldA.Name.Name), fieldA.Model().FileID()),
 			))
 		}
 	}
@@ -376,7 +376,7 @@ func validateEmbeddedManyToManyDefinesFields(relation *database.TwoWayEmbeddedMa
 			ctx.PushError(diagnostics.NewAttributeValidationError(
 				message,
 				"@relation",
-				astFieldB.Span(),
+				diagnostics.NewSpan(astFieldB.Pos.Offset, astFieldB.Pos.Offset+len(astFieldB.Name.Name), fieldB.Model().FileID()),
 			))
 		}
 	}
@@ -426,7 +426,7 @@ func validateEmbeddedManyToManyReferencesId(relation *database.TwoWayEmbeddedMan
 				ctx.PushError(diagnostics.NewAttributeValidationError(
 					message,
 					"@relation",
-					astFieldA.Span(),
+					diagnostics.NewSpan(astFieldA.Pos.Offset, astFieldA.Pos.Offset+len(astFieldA.Name.Name), fieldA.Model().FileID()),
 				))
 			}
 		}
@@ -441,7 +441,7 @@ func validateEmbeddedManyToManyReferencesId(relation *database.TwoWayEmbeddedMan
 				ctx.PushError(diagnostics.NewAttributeValidationError(
 					message,
 					"@relation",
-					astFieldB.Span(),
+					diagnostics.NewSpan(astFieldB.Pos.Offset, astFieldB.Pos.Offset+len(astFieldB.Name.Name), fieldB.Model().FileID()),
 				))
 			}
 		}

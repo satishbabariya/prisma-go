@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // ModelInfo represents information about a model for code generation
@@ -46,25 +46,41 @@ func GenerateModelsFromAST(schemaAST *ast.SchemaAst) []ModelInfo {
 	modelMap := make(map[string]*ModelInfo)
 
 	// First pass: create all models (including views)
+	astModels := schemaAST.Models()
+	for _, model := range astModels {
+		// Extract table name from @@map attribute if present
+		tableName := extractTableNameFromModel(model)
+
+		modelInfo := ModelInfo{
+			Name:      model.Name.Name,
+			TableName: tableName,
+			Fields:    []FieldInfo{},
+			Relations: []RelationInfo{},
+		}
+
+		for _, field := range model.Fields {
+			fieldInfo := generateFieldInfo(field, model.Name.Name)
+			modelInfo.Fields = append(modelInfo.Fields, fieldInfo)
+		}
+
+		models = append(models, modelInfo)
+		modelMap[model.Name.Name] = &models[len(models)-1]
+	}
+
+	// Process ExtendedType declarations and merge fields into base models
 	for _, top := range schemaAST.Tops {
-		if model := top.AsModel(); model != nil {
-			// Extract table name from @@map attribute if present
-			tableName := extractTableNameFromModel(model)
-
-			modelInfo := ModelInfo{
-				Name:      model.Name.Name,
-				TableName: tableName,
-				Fields:    []FieldInfo{},
-				Relations: []RelationInfo{},
+		if extendedType, ok := top.(*ast.ExtendedType); ok {
+			typeName := extendedType.Name.Name
+			// Find the base model
+			if baseModel, exists := modelMap[typeName]; exists {
+				// Merge extended fields into the base model
+				for _, field := range extendedType.Fields {
+					fieldInfo := generateFieldInfo(field, typeName)
+					baseModel.Fields = append(baseModel.Fields, fieldInfo)
+				}
 			}
-
-			for _, field := range model.Fields {
-				fieldInfo := generateFieldInfo(&field, model.Name.Name)
-				modelInfo.Fields = append(modelInfo.Fields, fieldInfo)
-			}
-
-			models = append(models, modelInfo)
-			modelMap[model.Name.Name] = &models[len(models)-1]
+			// If base model doesn't exist, extended type is orphaned (schema error)
+			// but we'll skip it gracefully rather than creating a duplicate
 		}
 	}
 
@@ -72,7 +88,7 @@ func GenerateModelsFromAST(schemaAST *ast.SchemaAst) []ModelInfo {
 	// Composite types are already parsed and validated, but code generation
 	// would need to be added to generate Go structs for them
 	for _, top := range schemaAST.Tops {
-		if compositeType := top.AsCompositeType(); compositeType != nil {
+		if compositeType, ok := top.(*ast.CompositeType); ok {
 			// Foundation: Composite types can be used as field types
 			// Full implementation would generate Go structs for composite types
 			_ = compositeType // Mark as used for now
@@ -84,16 +100,14 @@ func GenerateModelsFromAST(schemaAST *ast.SchemaAst) []ModelInfo {
 	astModelMap := make(map[string]*ast.Model)
 	astFieldMap := make(map[string]map[string]*ast.Field) // modelName -> fieldName -> Field
 
-	for _, top := range schemaAST.Tops {
-		if astModel := top.AsModel(); astModel != nil {
-			astModelMap[astModel.Name.Name] = astModel
-			// Build field index for this model
-			fieldMap := make(map[string]*ast.Field)
-			for i := range astModel.Fields {
-				fieldMap[astModel.Fields[i].Name.Name] = &astModel.Fields[i]
-			}
-			astFieldMap[astModel.Name.Name] = fieldMap
+	for _, astModel := range astModels {
+		astModelMap[astModel.Name.Name] = astModel
+		// Build field index for this model
+		fieldMap := make(map[string]*ast.Field)
+		for _, field := range astModel.Fields {
+			fieldMap[field.Name.Name] = field
 		}
+		astFieldMap[astModel.Name.Name] = fieldMap
 	}
 
 	// Build field name index for each model (for O(1) lookups)
@@ -201,6 +215,8 @@ func GenerateModelsFromAST(schemaAST *ast.SchemaAst) []ModelInfo {
 							// One-to-many: foreign key should be on related model
 							expectedFK := toSnakeCase(model.Name) + "_id"
 							for fieldName, checkASTField := range relatedASTFields {
+								// Check AST field attributes properly potentially
+								// V2 AST doesn't have hasAttribute helper directly here unless we use our package one
 								if toSnakeCase(fieldName) == expectedFK &&
 									!hasAttribute(checkASTField, "id") {
 									relation.ForeignKey = checkASTField.Name.Name
@@ -220,14 +236,34 @@ func GenerateModelsFromAST(schemaAST *ast.SchemaAst) []ModelInfo {
 		}
 	}
 
+	// Third pass: Fix IsRelation for enum-typed fields
+	// Some fields were marked as relations because their type starts with capital letter
+	// but they're actually enum types, not model types
+	for i := range models {
+		model := &models[i]
+		for j := range model.Fields {
+			field := &model.Fields[j]
+			// If marked as relation, verify the type is actually a model
+			if field.IsRelation && field.RelationTo != "" {
+				// Check if RelationTo refers to an actual model
+				if _, exists := modelMap[field.RelationTo]; !exists {
+					// Not a model - must be an enum or other type
+					field.IsRelation = false
+					field.RelationTo = ""
+					field.IsList = false
+				}
+			}
+		}
+	}
+
 	return models
 }
 
 func generateFieldInfo(field *ast.Field, modelName string) FieldInfo {
 	fieldName := field.Name.Name
 	typeName := ""
-	if field.FieldType.Type != nil {
-		typeName = field.FieldType.Type.Name()
+	if field.Type != nil {
+		typeName = field.Type.Name
 	}
 
 	// Check if this is a relation field (type is a model name, not a scalar)
@@ -247,22 +283,20 @@ func generateFieldInfo(field *ast.Field, modelName string) FieldInfo {
 		relationTo = typeName
 	}
 
-	goType := mapPrismaTypeToGo(&field.FieldType)
+	goType := mapPrismaTypeToGo(field.Type)
 
 	// Check for optional/list fields using Arity
-	switch field.Arity {
-	case ast.Optional:
-		if !isRelation {
-			goType = "*" + goType
-		} else {
-			// For relations, optional means pointer to the model
-			goType = "*" + goType
-		}
-	case ast.List:
+	// V2 AST FieldArity is an int with methods
+	if field.Arity.IsList() {
 		goType = "[]" + goType
 		if isRelation {
 			isList = true
 		}
+	} else if isRelation {
+		// All single relations must be pointers to prevent recursive struct definitions
+		goType = "*" + goType
+	} else if field.Arity.IsOptional() {
+		goType = "*" + goType
 	}
 
 	tags := generateFieldTags(field, isRelation)
@@ -283,11 +317,11 @@ func generateFieldInfo(field *ast.Field, modelName string) FieldInfo {
 }
 
 func mapPrismaTypeToGo(fieldType *ast.FieldType) string {
-	if fieldType.Type == nil {
+	if fieldType == nil {
 		return "interface{}"
 	}
 
-	typeName := fieldType.Type.Name()
+	typeName := fieldType.Name
 
 	switch typeName {
 	case "Int":
@@ -375,22 +409,25 @@ func toSnakeCase(s string) string {
 // or falls back to snake_case of the model name
 func extractTableNameFromModel(model *ast.Model) string {
 	// Check for @@map attribute
-	for _, attr := range model.Attributes {
+	// In V2 AST, attributes are in BlockAttributes
+	for _, attr := range model.BlockAttributes {
 		if attr.Name.Name == "map" {
 			// Check for named argument "name"
-			for _, arg := range attr.Arguments.Arguments {
-				if arg.Name != nil && arg.Name.Name == "name" {
-					if strLit, ok := arg.Value.(ast.StringLiteral); ok {
-						return strLit.Value
+			if attr.Arguments != nil {
+				for _, arg := range attr.Arguments.Arguments {
+					if arg.Name != nil && arg.Name.Name == "name" {
+						if strLit, ok := arg.Value.AsStringValue(); ok {
+							return strLit.GetValue()
+						}
 					}
 				}
-			}
-			// Check for unnamed first argument (positional)
-			if len(attr.Arguments.Arguments) > 0 {
-				firstArg := attr.Arguments.Arguments[0]
-				if firstArg.Name == nil {
-					if strLit, ok := firstArg.Value.(ast.StringLiteral); ok {
-						return strLit.Value
+				// Check for unnamed first argument (positional)
+				if len(attr.Arguments.Arguments) > 0 {
+					firstArg := attr.Arguments.Arguments[0]
+					if firstArg.Name == nil {
+						if strLit, ok := firstArg.Value.AsStringValue(); ok {
+							return strLit.GetValue()
+						}
 					}
 				}
 			}

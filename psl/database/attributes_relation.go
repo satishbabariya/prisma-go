@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/satishbabariya/prisma-go/psl/diagnostics"
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // HandleRelation handles @relation on a relation field.
@@ -25,7 +25,9 @@ func HandleRelation(
 
 	// Handle "fields" argument
 	if fieldsExpr := ctx.VisitOptionalArg("fields"); fieldsExpr != nil {
-		fields, err := resolveFieldArrayWithoutArgs(fieldsExpr, attr.Span, modelID, ctx)
+		pos := attr.Pos
+		span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(attr.GetName()), diagnostics.FileIDZero)
+		fields, err := resolveFieldArrayWithoutArgs(fieldsExpr, span, modelID, ctx)
 		if err == errFieldResolutionAlreadyDealtWith {
 			// Error already handled
 		} else if err != nil {
@@ -41,7 +43,9 @@ func HandleRelation(
 	if int(rfid) < len(ctx.types.RelationFields) {
 		rf := &ctx.types.RelationFields[rfid]
 		if referencesExpr := ctx.VisitOptionalArg("references"); referencesExpr != nil {
-			references, err := resolveFieldArrayWithoutArgs(referencesExpr, attr.Span, rf.ReferencedModel, ctx)
+			pos := attr.Pos
+			span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(attr.GetName()), diagnostics.FileIDZero)
+			references, err := resolveFieldArrayWithoutArgs(referencesExpr, span, rf.ReferencedModel, ctx)
 			if err == errFieldResolutionAlreadyDealtWith {
 				// Error already handled
 			} else if err != nil {
@@ -112,13 +116,13 @@ func HandleRelation(
 // resolveFieldArrayWithoutArgs resolves an array of field names to ScalarFieldIds.
 // This is simpler than resolveFieldArrayWithArgs as it doesn't handle field arguments.
 func resolveFieldArrayWithoutArgs(
-	values ast.Expression,
+	values v2ast.Expression,
 	attributeSpan diagnostics.Span,
 	modelID ModelId,
 	ctx *Context,
 ) ([]ScalarFieldId, error) {
 	// Coerce to array of constants
-	arrayExpr, ok := values.(ast.ArrayLiteral)
+	arrayExpr, ok := values.(*v2ast.ArrayExpression)
 	if !ok {
 		ctx.PushError(diagnostics.NewValueParserError(
 			"array",
@@ -138,6 +142,9 @@ func resolveFieldArrayWithoutArgs(
 	}
 
 	for _, elem := range arrayExpr.Elements {
+		if elem == nil {
+			continue
+		}
 		fieldName, ok := CoerceConstant(elem, ctx.diagnostics)
 		if !ok {
 			continue
@@ -175,7 +182,7 @@ func resolveFieldArrayWithoutArgs(
 			ctx.PushError(diagnostics.NewModelValidationError(
 				"The relation definition refers to the field "+fieldName+" multiple times.",
 				"model",
-				astModel.Name.Name,
+				astModel.GetName(),
 				attributeSpan,
 			))
 			return nil, errFieldResolutionAlreadyDealtWith
@@ -209,7 +216,7 @@ func resolveFieldArrayWithoutArgs(
 }
 
 // parseReferentialAction parses a referential action from an expression.
-func parseReferentialAction(expr ast.Expression, ctx *Context) *ReferentialAction {
+func parseReferentialAction(expr v2ast.Expression, ctx *Context) *ReferentialAction {
 	actionName, ok := CoerceConstant(expr, ctx.diagnostics)
 	if !ok {
 		return nil
@@ -238,9 +245,7 @@ func parseReferentialAction(expr ast.Expression, ctx *Context) *ReferentialActio
 }
 
 // getExpressionSpan extracts the span from an expression.
-func getExpressionSpan(expr ast.Expression) diagnostics.Span {
-	if spanExpr, ok := expr.(interface{ Span() diagnostics.Span }); ok {
-		return spanExpr.Span()
-	}
-	return diagnostics.EmptySpan()
+func getExpressionSpan(expr v2ast.Expression) diagnostics.Span {
+	pos := expr.Span()
+	return diagnostics.NewSpan(pos.Offset, pos.Offset+10, diagnostics.FileIDZero)
 }

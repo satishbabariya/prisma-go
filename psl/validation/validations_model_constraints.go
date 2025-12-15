@@ -166,7 +166,7 @@ func validateModelShardKeyConstraints(model *database.ModelWalker, ctx *Validati
 					ctx.PushError(diagnostics.NewAttributeValidationError(
 						"Shard key cannot be the same as the primary key.",
 						shardKey.AttributeName(),
-						attr.Span,
+						diagnostics.NewSpan(attr.Pos.Offset, attr.Pos.Offset+len(attr.String()), model.FileID()),
 					))
 				}
 			}
@@ -181,7 +181,7 @@ func validateModelShardKeyConstraints(model *database.ModelWalker, ctx *Validati
 				ctx.PushError(diagnostics.NewAttributeValidationError(
 					"Fields that are marked as shard keys must be required.",
 					shardKey.AttributeName(),
-					attr.Span,
+					diagnostics.NewSpan(attr.Pos.Offset, attr.Pos.Offset+len(attr.String()), model.FileID()),
 				))
 			}
 			break // Only report once

@@ -8,6 +8,7 @@ import (
 
 	"github.com/satishbabariya/prisma-go/migrate/introspect"
 	psl "github.com/satishbabariya/prisma-go/psl"
+	ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // extractConnectionInfo extracts provider and connection string from schema
@@ -24,7 +25,7 @@ func extractConnectionInfoWithShadow(schema *psl.SchemaAst) (string, string, str
 	shadowConnStr := ""
 
 	for _, top := range schema.Tops {
-		if source := top.AsSource(); source != nil {
+		if source, ok := top.(*ast.SourceConfig); ok {
 			for _, prop := range source.Properties {
 				if prop.Name.Name == "provider" {
 					if prop.Value != nil {
@@ -36,9 +37,9 @@ func extractConnectionInfoWithShadow(schema *psl.SchemaAst) (string, string, str
 				if prop.Name.Name == "url" {
 					if prop.Value != nil {
 						// Handle env("DATABASE_URL") function call
-						if fnCall := prop.Value.AsFunction(); fnCall != nil && fnCall.Name.Name == "env" {
-							if len(fnCall.Arguments) > 0 {
-								if strLit, _ := fnCall.Arguments[0].AsStringValue(); strLit != nil {
+						if fnCall, ok := prop.Value.AsFunction(); ok && fnCall.Name == "env" {
+							if fnCall.Arguments != nil && len(fnCall.Arguments.Arguments) > 0 {
+								if strLit, _ := fnCall.Arguments.Arguments[0].Value.AsStringValue(); strLit != nil {
 									envVar := strLit.Value
 									// Try to get from environment or .env files first
 									connStr = getDatabaseURLFromEnv()
@@ -57,9 +58,9 @@ func extractConnectionInfoWithShadow(schema *psl.SchemaAst) (string, string, str
 				if prop.Name.Name == "shadowDatabaseUrl" {
 					if prop.Value != nil {
 						// Handle shadow database URL
-						if fnCall := prop.Value.AsFunction(); fnCall != nil && fnCall.Name.Name == "env" {
-							if len(fnCall.Arguments) > 0 {
-								if strLit, _ := fnCall.Arguments[0].AsStringValue(); strLit != nil {
+						if fnCall, ok := prop.Value.AsFunction(); ok && fnCall.Name == "env" {
+							if fnCall.Arguments != nil && len(fnCall.Arguments.Arguments) > 0 {
+								if strLit, _ := fnCall.Arguments.Arguments[0].Value.AsStringValue(); strLit != nil {
 									envVar := strLit.Value
 									shadowConnStr = os.Getenv(envVar)
 								}

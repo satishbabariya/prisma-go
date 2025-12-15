@@ -24,7 +24,7 @@ func validateCompositeTypesSupport(ctx *ValidationContext) {
 			}
 			ctx.PushError(diagnostics.NewValidationError(
 				fmt.Sprintf("Composite types are not supported on %s.", connectorName),
-				astCT.Span(),
+				diagnostics.NewSpan(astCT.Pos.Offset, astCT.Pos.Offset+len(astCT.Name.Name), diagnostics.FileIDZero),
 			))
 		}
 	}
@@ -38,7 +38,7 @@ func validateCompositeTypeMoreThanOneField(ct *database.CompositeTypeWalker, ctx
 		if astCT != nil {
 			ctx.PushError(diagnostics.NewValidationError(
 				"A type must have at least one field defined.",
-				astCT.Span(),
+				diagnostics.NewSpan(astCT.Pos.Offset, astCT.Pos.Offset+len(astCT.Name.Name), diagnostics.FileIDZero),
 			))
 		}
 	}
@@ -85,7 +85,7 @@ func validateCompositeTypeCycles(ctx *ValidationContext) {
 		for _, field := range fields {
 			fieldToCT[field] = ct
 			astField := field.AstField()
-			if astField != nil && !astField.FieldType.IsOptional() && !astField.FieldType.IsArray() {
+			if astField != nil && !astField.Arity.IsOptional() && !astField.Arity.IsList() {
 				fieldsToTraverse = append(fieldsToTraverse, fieldToTraverse{
 					field:     field,
 					visited:   []string{ct.Name()},
@@ -174,7 +174,7 @@ func validateCompositeTypeCycles(ctx *ValidationContext) {
 		fields := ct.Fields()
 		for _, field := range fields {
 			astField := field.AstField()
-			if astField != nil && !astField.FieldType.IsOptional() && !astField.FieldType.IsArray() {
+			if astField != nil && !astField.Arity.IsOptional() && !astField.Arity.IsList() {
 				fieldsToTraverse = append(fieldsToTraverse, fieldToTraverse{
 					field:     field,
 					visited:   newVisited,

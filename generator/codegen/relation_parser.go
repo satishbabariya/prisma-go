@@ -5,13 +5,17 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // parseRelationAttribute parses @relation attribute to extract fields and references
 func parseRelationAttribute(field *ast.Field) (fields []string, references []string, err error) {
 	for _, attr := range field.Attributes {
 		if attr.Name.Name != "relation" {
+			continue
+		}
+
+		if attr.Arguments == nil {
 			continue
 		}
 
@@ -24,19 +28,29 @@ func parseRelationAttribute(field *ast.Field) (fields []string, references []str
 			argName := arg.Name.Name
 			if argName == "fields" {
 				// Parse array of field names
-				if arrayExpr := arg.Value.AsArray(); arrayExpr != nil {
+				if arrayExpr, ok := arg.Value.AsArray(); ok {
 					for _, elem := range arrayExpr.Elements {
-						if ident, ok := elem.(ast.Identifier); ok {
-							fields = append(fields, ident.Name)
+						if ident, ok := elem.(*ast.ConstantValue); ok {
+							// In V2 AST constant values can be identifiers
+							fields = append(fields, ident.Value)
+						} else if path, ok := elem.(*ast.PathValue); ok {
+							fields = append(fields, path.String())
+						} else if str, ok := elem.(*ast.StringValue); ok {
+							// Sometimes redundant quotes?
+							fields = append(fields, str.GetValue())
 						}
 					}
 				}
 			} else if argName == "references" {
 				// Parse array of field names
-				if arrayExpr := arg.Value.AsArray(); arrayExpr != nil {
+				if arrayExpr, ok := arg.Value.AsArray(); ok {
 					for _, elem := range arrayExpr.Elements {
-						if ident, ok := elem.(ast.Identifier); ok {
-							references = append(references, ident.Name)
+						if ident, ok := elem.(*ast.ConstantValue); ok {
+							references = append(references, ident.Value)
+						} else if path, ok := elem.(*ast.PathValue); ok {
+							references = append(references, path.String())
+						} else if str, ok := elem.(*ast.StringValue); ok {
+							references = append(references, str.GetValue())
 						}
 					}
 				}
@@ -64,8 +78,8 @@ func findForeignKeyFromRelation(model *ast.Model, relationField *ast.Field) (str
 	// Fallback: try to infer from field name pattern
 	// For many-to-one: look for field ending in "Id" or "ID"
 	relationTo := ""
-	if relationField.FieldType.Type != nil {
-		relationTo = relationField.FieldType.Type.Name()
+	if relationField.Type != nil {
+		relationTo = relationField.Type.Name
 	}
 
 	if relationTo != "" {
@@ -79,7 +93,7 @@ func findForeignKeyFromRelation(model *ast.Model, relationField *ast.Field) (str
 		for _, field := range model.Fields {
 			fieldNameLower := strings.ToLower(field.Name.Name)
 			for _, pattern := range expectedFKPatterns {
-				if fieldNameLower == pattern && !hasAttribute(&field, "id") {
+				if fieldNameLower == pattern && !hasAttribute(field, "id") {
 					return field.Name.Name, "id", nil
 				}
 			}

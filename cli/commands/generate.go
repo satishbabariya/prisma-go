@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/pterm/pterm"
@@ -14,7 +15,7 @@ import (
 	"github.com/satishbabariya/prisma-go/cli/internal/watch"
 	"github.com/satishbabariya/prisma-go/generator"
 	"github.com/satishbabariya/prisma-go/internal/debug"
-	psl "github.com/satishbabariya/prisma-go/psl"
+	parser "github.com/satishbabariya/prisma-go/psl/parsing/v2"
 )
 
 var generateCmd = &cobra.Command{
@@ -79,14 +80,13 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 
 	// Parse schema
 	debug.Debug("Parsing schema")
-	sourceFile := psl.NewSourceFile(schemaPath, string(content))
-	ast, diags := psl.ParseSchemaFromFile(sourceFile)
+	ast, err := parser.ParseSchema(schemaPath, strings.NewReader(string(content)))
 
-	if diags.HasErrors() {
+	if err != nil {
 		spinner.Stop()
-		debug.Error("Schema parsing failed", "errorCount", len(diags.Errors()))
+		debug.Error("Schema parsing failed", "error", err)
 		ui.PrintError("Schema parsing failed:")
-		fmt.Fprintf(os.Stderr, "\n%s\n", diags.ToPrettyString(schemaPath, string(content)))
+		fmt.Fprintf(os.Stderr, "\n%s\n", err) // Error from V2 parser should be descriptive enough
 		return fmt.Errorf("cannot generate from invalid schema")
 	}
 	debug.Debug("Schema parsed successfully", "topLevelCount", len(ast.Tops))
@@ -100,38 +100,39 @@ func runGenerate(cmd *cobra.Command, args []string) error {
 	debug.Debug("Extracting configuration from AST", "schemaDir", schemaDir)
 
 	// Extract provider from datasource
-	for _, top := range ast.Tops {
-		if datasource := top.AsSource(); datasource != nil {
-			debug.Debug("Found datasource block")
-			for _, prop := range datasource.Properties {
-				if prop.Name.Name == "provider" {
-					if prop.Value != nil {
-						if value, _ := prop.Value.AsStringValue(); value != nil {
-							provider = value.Value
-							debug.Debug("Extracted provider", "provider", provider)
-						}
-					}
-				}
-			}
-		}
-		if gen := top.AsGenerator(); gen != nil {
-			debug.Debug("Found generator block")
-			for _, prop := range gen.Properties {
-				if prop.Name.Name == "output" {
-					if prop.Value != nil {
-						if value, _ := prop.Value.AsStringValue(); value != nil {
-							outputDir = value.Value
-							// Resolve relative paths relative to schema file directory
-							if !filepath.IsAbs(outputDir) {
-								outputDir = filepath.Join(schemaDir, outputDir)
-							}
-							debug.Debug("Extracted output directory", "outputDir", outputDir)
-						}
+	// Use V2 AST helper methods
+	for _, datasource := range ast.Sources() {
+		debug.Debug("Found datasource block")
+		for _, prop := range datasource.Properties {
+			if prop.Name.Name == "provider" {
+				if prop.Value != nil {
+					if value, ok := prop.Value.AsStringValue(); ok {
+						provider = value.GetValue()
+						debug.Debug("Extracted provider", "provider", provider)
 					}
 				}
 			}
 		}
 	}
+
+	for _, gen := range ast.Generators() {
+		debug.Debug("Found generator block")
+		for _, prop := range gen.Properties {
+			if prop.Name.Name == "output" {
+				if prop.Value != nil {
+					if value, ok := prop.Value.AsStringValue(); ok {
+						outputDir = value.GetValue()
+						// Resolve relative paths relative to schema file directory
+						if !filepath.IsAbs(outputDir) {
+							outputDir = filepath.Join(schemaDir, outputDir)
+						}
+						debug.Debug("Extracted output directory", "outputDir", outputDir)
+					}
+				}
+			}
+		}
+	}
+
 	debug.Debug("Configuration extracted", "provider", provider, "outputDir", outputDir)
 
 	spinner.UpdateText("Parsing schema...")
@@ -211,13 +212,12 @@ func runGenerateWatch(schemaPath string, generateInitially bool) error {
 
 		// Parse schema
 		debug.Debug("Parsing schema in watch mode")
-		sourceFile := psl.NewSourceFile(schemaPath, string(content))
-		ast, diags := psl.ParseSchemaFromFile(sourceFile)
+		ast, err := parser.ParseSchema(schemaPath, strings.NewReader(string(content)))
 
-		if diags.HasErrors() {
-			debug.Error("Schema parsing failed in watch mode", "errorCount", len(diags.Errors()))
+		if err != nil {
+			debug.Error("Schema parsing failed in watch mode", "error", err)
 			ui.PrintError("Schema parsing failed:")
-			fmt.Fprintf(os.Stderr, "\n%s\n", diags.ToPrettyString(schemaPath, string(content)))
+			fmt.Fprintf(os.Stderr, "\n%s\n", err)
 			return fmt.Errorf("cannot generate from invalid schema")
 		}
 		debug.Debug("Schema parsed successfully in watch mode")
@@ -230,28 +230,27 @@ func runGenerateWatch(schemaPath string, generateInitially bool) error {
 		schemaDir := filepath.Dir(schemaPath)
 
 		// Extract provider from datasource
-		for _, top := range ast.Tops {
-			if datasource := top.AsSource(); datasource != nil {
-				for _, prop := range datasource.Properties {
-					if prop.Name.Name == "provider" {
-						if prop.Value != nil {
-							if value, _ := prop.Value.AsStringValue(); value != nil {
-								provider = value.Value
-							}
+		for _, datasource := range ast.Sources() {
+			for _, prop := range datasource.Properties {
+				if prop.Name.Name == "provider" {
+					if prop.Value != nil {
+						if value, ok := prop.Value.AsStringValue(); ok {
+							provider = value.GetValue()
 						}
 					}
 				}
 			}
-			if gen := top.AsGenerator(); gen != nil {
-				for _, prop := range gen.Properties {
-					if prop.Name.Name == "output" {
-						if prop.Value != nil {
-							if value, _ := prop.Value.AsStringValue(); value != nil {
-								outputDir = value.Value
-								// Resolve relative paths relative to schema file directory
-								if !filepath.IsAbs(outputDir) {
-									outputDir = filepath.Join(schemaDir, outputDir)
-								}
+		}
+
+		for _, gen := range ast.Generators() {
+			for _, prop := range gen.Properties {
+				if prop.Name.Name == "output" {
+					if prop.Value != nil {
+						if value, ok := prop.Value.AsStringValue(); ok {
+							outputDir = value.GetValue()
+							// Resolve relative paths relative to schema file directory
+							if !filepath.IsAbs(outputDir) {
+								outputDir = filepath.Join(schemaDir, outputDir)
 							}
 						}
 					}

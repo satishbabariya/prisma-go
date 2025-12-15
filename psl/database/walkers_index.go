@@ -3,7 +3,7 @@ package database
 
 import (
 	"github.com/satishbabariya/prisma-go/psl/diagnostics"
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // IndexWalker provides access to an index (@@index, @@unique, or @@fulltext).
@@ -107,8 +107,8 @@ func (w *IndexWalker) AttributeName() string {
 	}
 }
 
-// AstAttribute returns the AST attribute for the index.
-func (w *IndexWalker) AstAttribute() *ast.Attribute {
+// AstAttribute returns the AST block attribute for the index.
+func (w *IndexWalker) AstAttribute() *v2ast.BlockAttribute {
 	// Find the attribute in the model's attributes
 	model := w.db.WalkModel(w.modelID)
 	if model == nil {
@@ -120,13 +120,16 @@ func (w *IndexWalker) AstAttribute() *ast.Attribute {
 		return nil
 	}
 
-	// Look through all attributes to find the matching one
-	for _, attr := range astModel.Attributes {
-		attrName := attr.Name.Name
+	// Look through all block attributes to find the matching one
+	for _, attr := range astModel.BlockAttributes {
+		if attr == nil {
+			continue
+		}
+		attrName := attr.GetName()
 		if (attrName == "index" && w.IsNormal()) ||
 			(attrName == "unique" && w.IsUnique()) ||
 			(attrName == "fulltext" && w.IsFulltext()) {
-			return &attr
+			return attr
 		}
 	}
 
@@ -182,8 +185,16 @@ func (w *IndexFieldWalker) ScalarFieldType() ScalarFieldType {
 // SpanForArgument returns the span for a specific argument name in the index attribute.
 func (w *IndexWalker) SpanForArgument(argumentName string) *diagnostics.Span {
 	attr := w.AstAttribute()
-	if attr == nil {
+	if attr == nil || attr.Arguments == nil {
 		return nil
 	}
-	return attr.SpanForArgument(argumentName)
+	// Find the argument by name
+	for _, arg := range attr.Arguments.Arguments {
+		if arg != nil && arg.Name != nil && arg.Name.Name == argumentName {
+			pos := arg.Pos
+			span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(argumentName), diagnostics.FileIDZero)
+			return &span
+		}
+	}
+	return nil
 }

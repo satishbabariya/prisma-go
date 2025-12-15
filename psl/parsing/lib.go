@@ -9,6 +9,7 @@ import (
 	"github.com/satishbabariya/prisma-go/psl/diagnostics"
 	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
 	v2 "github.com/satishbabariya/prisma-go/psl/parsing/v2"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // StringLiteralValue transforms the input string into a valid PSL string literal.
@@ -81,4 +82,33 @@ func ParseSchema(input string) (*ast.SchemaAst, diagnostics.Diagnostics) {
 func ParseSchemaFromSourceFile(file core.SourceFile) (*ast.SchemaAst, diagnostics.Diagnostics) {
 	debug.Debug("Parsing schema from source file", "path", file.Path, "dataLength", len(file.Data))
 	return ParseSchema(file.Data)
+}
+
+// ParseSchemaV2 parses a Prisma schema string into a v2 AST.
+// This returns the v2 AST directly without conversion to legacy AST.
+func ParseSchemaV2(input string) (*v2ast.SchemaAst, diagnostics.Diagnostics) {
+	debug.Debug("Starting v2 schema parsing", "inputLength", len(input))
+	diags := diagnostics.NewDiagnostics()
+
+	debug.Debug("Parsing with v2 parser")
+	v2Schema, err := v2.ParseSchemaString("schema.prisma", input)
+	if err != nil {
+		debug.Error("Parser v2 error", "error", err)
+		// Report parser error
+		span := diagnostics.NewSpan(0, len(input), diagnostics.FileIDZero)
+		diags.PushError(diagnostics.NewDatamodelError(
+			fmt.Sprintf("Parser error: %v", err),
+			span,
+		))
+		return &v2ast.SchemaAst{Tops: []v2ast.Top{}}, diags
+	}
+
+	debug.Debug("v2 AST parsing completed", "topLevelCount", len(v2Schema.Tops))
+	return v2Schema, diags
+}
+
+// ParseSchemaFromSourceFileV2 parses a Prisma schema from a source file into v2 AST.
+func ParseSchemaFromSourceFileV2(file core.SourceFile) (*v2ast.SchemaAst, diagnostics.Diagnostics) {
+	debug.Debug("Parsing schema from source file (v2)", "path", file.Path, "dataLength", len(file.Data))
+	return ParseSchemaV2(file.Data)
 }

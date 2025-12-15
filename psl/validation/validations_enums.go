@@ -47,7 +47,7 @@ func validateEnumHasValues(enum *database.EnumWalker, ctx *ValidationContext) {
 		if astEnum != nil {
 			ctx.PushError(diagnostics.NewValidationError(
 				fmt.Sprintf("Enum '%s' must have at least one value.", enum.Name()),
-				astEnum.Span(),
+				diagnostics.NewSpan(astEnum.Pos.Offset, astEnum.Pos.Offset+len(astEnum.Name.Name), enum.FileID()),
 			))
 		} else {
 			ctx.PushError(diagnostics.NewValidationError(
@@ -65,7 +65,7 @@ func validateEnumConnectorSupport(enum *database.EnumWalker, ctx *ValidationCont
 		if astEnum != nil {
 			ctx.PushError(diagnostics.NewValidationError(
 				fmt.Sprintf("You defined the enum `%s`. But the current connector does not support enums.", enum.Name()),
-				astEnum.Span(),
+				diagnostics.NewSpan(astEnum.Pos.Offset, astEnum.Pos.Offset+len(astEnum.Name.Name), enum.FileID()),
 			))
 		} else {
 			ctx.PushError(diagnostics.NewValidationError(
@@ -101,7 +101,7 @@ func validateEnumSchemaAttribute(enum *database.EnumWalker, ctx *ValidationConte
 				if astEnum != nil {
 					ctx.PushError(diagnostics.NewValidationError(
 						fmt.Sprintf("Enum '%s' schema '%s' is not defined in datasource schemas.", enum.Name(), schemaName),
-						astEnum.Span(),
+						diagnostics.NewSpan(astEnum.Pos.Offset, astEnum.Pos.Offset+len(astEnum.Name.Name), enum.FileID()),
 					))
 				} else {
 					ctx.PushError(diagnostics.NewValidationError(
@@ -115,7 +115,7 @@ func validateEnumSchemaAttribute(enum *database.EnumWalker, ctx *ValidationConte
 			if astEnum != nil {
 				ctx.PushError(diagnostics.NewValidationError(
 					fmt.Sprintf("Enum '%s' has @@schema attribute but connector does not support multi-schema.", enum.Name()),
-					astEnum.Span(),
+					diagnostics.NewSpan(astEnum.Pos.Offset, astEnum.Pos.Offset+len(astEnum.Name.Name), enum.FileID()),
 				))
 			} else {
 				ctx.PushError(diagnostics.NewValidationError(

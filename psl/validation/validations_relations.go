@@ -177,7 +177,7 @@ func validateRelationReferencesUniqueFields(relation *database.RelationWalker, c
 	ctx.PushError(diagnostics.NewAttributeValidationError(
 		message,
 		"@relation",
-		astField.Span(),
+		diagnostics.NewSpan(astField.Pos.Offset, astField.Pos.Offset+len(astField.Name.Name), forwardField.Model().FileID()),
 	))
 }
 
@@ -288,7 +288,7 @@ func validateReferencingFieldsInCorrectOrder(relation *database.InlineRelationWa
 			referencedModel.Name(),
 			fieldNamesStr,
 		),
-		astField.Span(),
+		diagnostics.NewSpan(astField.Pos.Offset, astField.Pos.Offset+len(astField.Name.Name), forwardField.Model().FileID()),
 	))
 }
 
@@ -328,7 +328,7 @@ func validateRelationSameLength(relation *database.RelationWalker, ctx *Validati
 
 		ctx.PushError(diagnostics.NewValidationError(
 			"You must specify the same number of fields in `fields` and `references`.",
-			astField.Span(),
+			diagnostics.NewSpan(astField.Pos.Offset, astField.Pos.Offset+len(astField.Name.Name), forwardField.Model().FileID()),
 		))
 	}
 }
@@ -360,7 +360,7 @@ func validateRelationArity(relation *database.RelationWalker, ctx *ValidationCon
 	}
 
 	// If the relation field is required, all referencing fields must also be required
-	if !astField.FieldType.IsOptional() {
+	if !astField.Arity.IsOptional() {
 		referencingFields := forwardField.ReferencingFields()
 		if len(referencingFields) == 0 {
 			return
@@ -372,7 +372,7 @@ func validateRelationArity(relation *database.RelationWalker, ctx *ValidationCon
 		for i, field := range referencingFields {
 			fieldNames[i] = field.Name()
 			fieldAst := field.AstField()
-			if fieldAst != nil && fieldAst.FieldType.IsOptional() {
+			if fieldAst != nil && fieldAst.Arity.IsOptional() {
 				hasOptionalField = true
 			}
 		}
@@ -392,17 +392,17 @@ func validateRelationArity(relation *database.RelationWalker, ctx *ValidationCon
 					forwardField.Name(),
 					fieldNamesStr,
 				),
-				astField.Span(),
+				diagnostics.NewSpan(astField.Pos.Offset, astField.Pos.Offset+len(astField.Name.Name), forwardField.Model().FileID()),
 			))
 		}
 	}
 
 	// Check if this is a one-to-one relation
 	if inline.IsOneToOne() {
-		if astField.FieldType.IsArray() {
+		if astField.Arity.IsList() {
 			ctx.PushError(diagnostics.NewValidationError(
 				"One-to-one relation field cannot be a list.",
-				astField.Span(),
+				diagnostics.NewSpan(astField.Pos.Offset, astField.Pos.Offset+len(astField.Name.Name), forwardField.Model().FileID()),
 			))
 		}
 	}

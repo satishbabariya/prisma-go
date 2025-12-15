@@ -3,6 +3,7 @@ package validation
 
 import (
 	"github.com/satishbabariya/prisma-go/psl/core"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 
 	"github.com/satishbabariya/prisma-go/psl/formatting"
 	"github.com/satishbabariya/prisma-go/psl/parsing"
@@ -158,7 +159,7 @@ func Validate(
 	db := database.NewSingleFile(file, &diags, extensionTypes)
 
 	// Parse the schema
-	ast, parseDiags := parsing.ParseSchemaFromSourceFile(file)
+	ast, parseDiags := parsing.ParseSchemaFromSourceFileV2(file)
 	// Merge diagnostics
 	for _, err := range parseDiags.Errors() {
 		diags.PushError(err)
@@ -170,9 +171,11 @@ func Validate(
 	// Basic validation: check for required datasource
 	hasDatasource := false
 	for _, top := range ast.Tops {
-		if top != nil && top.AsSource() != nil {
-			hasDatasource = true
-			break
+		if top != nil {
+			if _, ok := top.(*v2ast.SourceConfig); ok {
+				hasDatasource = true
+				break
+			}
 		}
 	}
 
@@ -212,7 +215,7 @@ func ParseSchemaWithoutValidation(
 	db := database.NewSingleFile(file, &diags, extensionTypes)
 
 	// Parse the schema
-	ast, parseDiags := parsing.ParseSchemaFromSourceFile(file)
+	ast, parseDiags := parsing.ParseSchemaFromSourceFileV2(file)
 	// Merge diagnostics
 	for _, err := range parseDiags.Errors() {
 		diags.PushError(err)
@@ -267,7 +270,7 @@ func ValidateMultiFile(
 
 	// Extract configuration from all ASTs
 	for _, file := range files {
-		ast, parseDiags := parsing.ParseSchemaFromSourceFile(file)
+		ast, parseDiags := parsing.ParseSchemaFromSourceFileV2(file)
 		// Merge diagnostics
 		for _, err := range parseDiags.Errors() {
 			diags.PushError(err)

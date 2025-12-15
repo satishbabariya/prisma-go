@@ -3,7 +3,7 @@ package database
 
 import (
 	"github.com/satishbabariya/prisma-go/psl/diagnostics"
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // ModelWalker provides access to a model declaration in the Prisma schema.
@@ -14,7 +14,11 @@ type ModelWalker struct {
 
 // Name returns the name of the model.
 func (w *ModelWalker) Name() string {
-	return w.AstModel().Name.Name
+	model := w.AstModel()
+	if model == nil {
+		return ""
+	}
+	return model.GetName()
 }
 
 // FileID returns the ID of the file containing the model.
@@ -23,7 +27,7 @@ func (w *ModelWalker) FileID() diagnostics.FileID {
 }
 
 // AstModel returns the AST node for the model.
-func (w *ModelWalker) AstModel() *ast.Model {
+func (w *ModelWalker) AstModel() *v2ast.Model {
 	file := w.db.asts.Get(w.id.FileID)
 	if file == nil {
 		return nil
@@ -31,7 +35,7 @@ func (w *ModelWalker) AstModel() *ast.Model {
 
 	modelCount := 0
 	for _, top := range file.AST.Tops {
-		if model := top.AsModel(); model != nil {
+		if model, ok := top.(*v2ast.Model); ok {
 			if uint32(modelCount) == w.id.ID {
 				return model
 			}
@@ -245,5 +249,5 @@ func (w *ModelWalker) IsView() bool {
 	if astModel == nil {
 		return false
 	}
-	return astModel.IsView
+	return astModel.IsView()
 }

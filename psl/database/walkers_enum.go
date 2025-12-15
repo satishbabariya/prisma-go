@@ -3,7 +3,7 @@ package database
 
 import (
 	"github.com/satishbabariya/prisma-go/psl/diagnostics"
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // EnumWalker provides access to an enum declaration in the Prisma schema.
@@ -18,7 +18,7 @@ func (w *EnumWalker) Name() string {
 	if astEnum == nil {
 		return ""
 	}
-	return astEnum.Name.Name
+	return astEnum.GetName()
 }
 
 // FileID returns the ID of the file containing the enum.
@@ -27,7 +27,7 @@ func (w *EnumWalker) FileID() diagnostics.FileID {
 }
 
 // AstEnum returns the AST node for the enum.
-func (w *EnumWalker) AstEnum() *ast.Enum {
+func (w *EnumWalker) AstEnum() *v2ast.Enum {
 	file := w.db.asts.Get(w.id.FileID)
 	if file == nil {
 		return nil
@@ -35,7 +35,7 @@ func (w *EnumWalker) AstEnum() *ast.Enum {
 
 	enumCount := 0
 	for _, top := range file.AST.Tops {
-		if enum := top.AsEnum(); enum != nil {
+		if enum, ok := top.(*v2ast.Enum); ok {
 			if uint32(enumCount) == w.id.ID {
 				return enum
 			}
@@ -110,7 +110,11 @@ func (w *EnumValueWalker) Name() string {
 	if astEnum == nil || int(w.valueID) >= len(astEnum.Values) {
 		return ""
 	}
-	return astEnum.Values[w.valueID].Name.Name
+	value := astEnum.Values[w.valueID]
+	if value == nil {
+		return ""
+	}
+	return value.GetName()
 }
 
 // DatabaseName returns the database name of the enum value if @map is present.

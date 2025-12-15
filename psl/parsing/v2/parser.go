@@ -26,6 +26,7 @@ type TopLevelItem struct {
 	CompositeType *ast.CompositeType   `| @@`
 	Datasource    *ast.SourceConfig    `| @@`
 	Generator     *ast.GeneratorConfig `| @@`
+	ExtendedType  *ast.ExtendedType    `| @@`
 }
 
 // ToTop converts the item to the Top interface.
@@ -41,6 +42,8 @@ func (t *TopLevelItem) ToTop() ast.Top {
 		return t.Datasource
 	case t.Generator != nil:
 		return t.Generator
+	case t.ExtendedType != nil:
+		return t.ExtendedType
 	default:
 		return nil
 	}
@@ -49,7 +52,7 @@ func (t *TopLevelItem) ToTop() ast.Top {
 // parser is the Participle parser instance.
 var parser = participle.MustBuild[RawSchema](
 	participle.Lexer(PrismaLexer),
-	participle.Elide("Whitespace", "Newline", "Comment", "MultiLineComment"),
+	participle.Elide("Whitespace", "Newline", "Comment", "MultiLineComment", "DocComment"),
 	participle.Unquote("String"),
 	participle.UseLookahead(10),
 	participle.Union[ast.Expression](

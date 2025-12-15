@@ -8,7 +8,7 @@ import (
 	"github.com/satishbabariya/prisma-go/psl/core"
 	"github.com/satishbabariya/prisma-go/psl/diagnostics"
 	"github.com/satishbabariya/prisma-go/psl/parsing"
-	"github.com/satishbabariya/prisma-go/psl/parsing/ast"
+	v2ast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 )
 
 // ParserDatabase is a container for a Schema AST, together with information
@@ -33,7 +33,7 @@ func NewFiles(files []core.SourceFile, diags *diagnostics.Diagnostics) Files {
 	entries := make([]FileEntry, len(files))
 	for i, source := range files {
 		fileID := diagnostics.FileID(i)
-		ast, parseDiags := parsing.ParseSchemaFromSourceFile(source)
+		ast, parseDiags := parsing.ParseSchemaFromSourceFileV2(source)
 
 		// Merge diagnostics
 		for _, err := range parseDiags.Errors() {
@@ -91,7 +91,7 @@ type FileEntry struct {
 	FileID diagnostics.FileID
 	Name   string
 	Source core.SourceFile
-	AST    ast.SchemaAst
+	AST    v2ast.SchemaAst
 }
 
 // ExtensionTypes defines the interface for extension types.
@@ -234,27 +234,30 @@ func (pd *ParserDatabase) validateBasic(diags *diagnostics.Diagnostics) {
 			var name string
 			var span diagnostics.Span
 
-			switch {
-			case top.AsModel() != nil:
-				model := top.AsModel()
-				name = model.Name.Name
-				span = model.Name.Span()
+			switch t := top.(type) {
+			case *v2ast.Model:
+				name = t.GetName()
+				// Convert lexer.Position to diagnostics.Span
+				pos := t.TopPos()
+				span = diagnostics.NewSpan(pos.Offset, pos.Offset+len(t.GetName()), diagnostics.FileIDZero)
 
 				// Validate model fields
-				pd.validateModel(model, diags)
-			case top.AsEnum() != nil:
-				enum := top.AsEnum()
-				name = enum.Name.Name
-				span = enum.Name.Span()
+				pd.validateModel(t, diags)
+			case *v2ast.Enum:
+				name = t.GetName()
+				pos := t.TopPos()
+				span = diagnostics.NewSpan(pos.Offset, pos.Offset+len(t.GetName()), diagnostics.FileIDZero)
 
 				// Validate enum values
-				pd.validateEnum(enum, diags)
-			case top.AsSource() != nil:
-				name = top.AsSource().Name.Name
-				span = top.AsSource().Name.Span()
-			case top.AsGenerator() != nil:
-				name = top.AsGenerator().Name.Name
-				span = top.AsGenerator().Name.Span()
+				pd.validateEnum(t, diags)
+			case *v2ast.SourceConfig:
+				name = t.GetName()
+				pos := t.TopPos()
+				span = diagnostics.NewSpan(pos.Offset, pos.Offset+len(t.GetName()), diagnostics.FileIDZero)
+			case *v2ast.GeneratorConfig:
+				name = t.GetName()
+				pos := t.TopPos()
+				span = diagnostics.NewSpan(pos.Offset, pos.Offset+len(t.GetName()), diagnostics.FileIDZero)
 			}
 
 			if name != "" {
@@ -271,65 +274,84 @@ func (pd *ParserDatabase) validateBasic(diags *diagnostics.Diagnostics) {
 }
 
 // validateModel performs validation on a model.
-func (pd *ParserDatabase) validateModel(model *ast.Model, diags *diagnostics.Diagnostics) {
+func (pd *ParserDatabase) validateModel(model *v2ast.Model, diags *diagnostics.Diagnostics) {
 	fieldNames := make(map[string]bool)
 	hasIdField := false
 
 	for _, field := range model.Fields {
+		if field == nil {
+			continue
+		}
+		fieldName := field.GetName()
+		
 		// Check for duplicate field names
-		if fieldNames[field.Name.Name] {
+		if fieldNames[fieldName] {
+			pos := field.Pos
+			span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(fieldName), diagnostics.FileIDZero)
 			diags.PushError(diagnostics.NewDuplicateFieldError(
-				model.Name.Name,
-				field.Name.Name,
+				model.GetName(),
+				fieldName,
 				"model",
-				field.Name.Span(),
+				span,
 			))
 		}
-		fieldNames[field.Name.Name] = true
+		fieldNames[fieldName] = true
 
 		// Validate field type
-		if field.FieldType.TypeName() == "" {
+		typeName := field.GetTypeName()
+		if typeName == "" {
+			pos := field.Pos
+			span := diagnostics.NewSpan(pos.Offset, pos.Offset+10, diagnostics.FileIDZero)
 			diags.PushError(diagnostics.NewFieldValidationError(
 				"Field type cannot be empty",
 				"model",
-				model.Name.Name,
-				field.Name.Name,
-				field.FieldType.Span(),
+				model.GetName(),
+				fieldName,
+				span,
 			))
 		}
 
 		// Check for @id attribute
 		for _, attr := range field.Attributes {
-			if attr.Name.Name == "id" {
+			if attr != nil && attr.GetName() == "id" {
 				hasIdField = true
 			}
 		}
 
 		// Models should have at least one @id field
 		if !hasIdField && len(model.Fields) > 0 {
+			pos := model.TopPos()
+			span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(model.GetName()), diagnostics.FileIDZero)
 			diags.PushError(diagnostics.NewModelValidationError(
 				"Model must have at least one field with @id attribute",
 				"model",
-				model.Name.Name,
-				model.Span(),
+				model.GetName(),
+				span,
 			))
 		}
 	}
 }
 
 // validateEnum performs validation on an enum.
-func (pd *ParserDatabase) validateEnum(enum *ast.Enum, diags *diagnostics.Diagnostics) {
+func (pd *ParserDatabase) validateEnum(enum *v2ast.Enum, diags *diagnostics.Diagnostics) {
 	valueNames := make(map[string]bool)
 
 	for _, value := range enum.Values {
+		if value == nil {
+			continue
+		}
+		valueName := value.GetName()
+		
 		// Check for duplicate enum values
-		if valueNames[value.Name.Name] {
+		if valueNames[valueName] {
+			pos := value.Pos
+			span := diagnostics.NewSpan(pos.Offset, pos.Offset+len(valueName), diagnostics.FileIDZero)
 			diags.PushError(diagnostics.NewValidationError(
-				fmt.Sprintf("Duplicate enum value: %s", value.Name.Name),
-				value.Name.Span(),
+				fmt.Sprintf("Duplicate enum value: %s", valueName),
+				span,
 			))
 		}
-		valueNames[value.Name.Name] = true
+		valueNames[valueName] = true
 	}
 }
 
@@ -343,7 +365,7 @@ func NewSingleFile(
 }
 
 // Ast returns the AST for the given file ID.
-func (pd *ParserDatabase) Ast(fileID diagnostics.FileID) *ast.SchemaAst {
+func (pd *ParserDatabase) Ast(fileID diagnostics.FileID) *v2ast.SchemaAst {
 	for _, file := range pd.asts.files {
 		if file.FileID == fileID {
 			return &file.AST
@@ -353,7 +375,7 @@ func (pd *ParserDatabase) Ast(fileID diagnostics.FileID) *ast.SchemaAst {
 }
 
 // AST returns the AST for the given file ID (exported version).
-func (pd *ParserDatabase) AST(fileID diagnostics.FileID) *ast.SchemaAst {
+func (pd *ParserDatabase) AST(fileID diagnostics.FileID) *v2ast.SchemaAst {
 	return pd.Ast(fileID)
 }
 
@@ -428,7 +450,7 @@ type FileSource struct {
 
 // getModelFromID is a helper method to get a model from its ID.
 // This is used by walkers.
-func (pd *ParserDatabase) getModelFromID(modelID ModelId) *ast.Model {
+func (pd *ParserDatabase) getModelFromID(modelID ModelId) *v2ast.Model {
 	file := pd.asts.Get(modelID.FileID)
 	if file == nil {
 		return nil
@@ -436,7 +458,7 @@ func (pd *ParserDatabase) getModelFromID(modelID ModelId) *ast.Model {
 
 	modelCount := 0
 	for _, top := range file.AST.Tops {
-		if model := top.AsModel(); model != nil {
+		if model, ok := top.(*v2ast.Model); ok {
 			if uint32(modelCount) == modelID.ID {
 				return model
 			}
@@ -453,8 +475,8 @@ func (pd *ParserDatabase) GetString(id StringId) string {
 }
 
 // Datasources returns all datasource blocks from all ASTs in the schema.
-func (pd *ParserDatabase) Datasources() []*ast.SourceConfig {
-	var datasources []*ast.SourceConfig
+func (pd *ParserDatabase) Datasources() []*v2ast.SourceConfig {
+	var datasources []*v2ast.SourceConfig
 	for _, file := range pd.asts.files {
 		sources := file.AST.Sources()
 		datasources = append(datasources, sources...)
@@ -463,8 +485,8 @@ func (pd *ParserDatabase) Datasources() []*ast.SourceConfig {
 }
 
 // Generators returns all generator blocks from all ASTs in the schema.
-func (pd *ParserDatabase) Generators() []*ast.GeneratorConfig {
-	var generators []*ast.GeneratorConfig
+func (pd *ParserDatabase) Generators() []*v2ast.GeneratorConfig {
+	var generators []*v2ast.GeneratorConfig
 	for _, file := range pd.asts.files {
 		gens := file.AST.Generators()
 		generators = append(generators, gens...)
@@ -473,8 +495,8 @@ func (pd *ParserDatabase) Generators() []*ast.GeneratorConfig {
 }
 
 // IterASTs returns all parsed ASTs.
-func (pd *ParserDatabase) IterASTs() []*ast.SchemaAst {
-	asts := make([]*ast.SchemaAst, len(pd.asts.files))
+func (pd *ParserDatabase) IterASTs() []*v2ast.SchemaAst {
+	asts := make([]*v2ast.SchemaAst, len(pd.asts.files))
 	for i, file := range pd.asts.files {
 		asts[i] = &file.AST
 	}
