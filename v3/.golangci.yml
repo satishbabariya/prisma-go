@@ -1,0 +1,58 @@
+linters:
+  enable:
+    - govet
+    - errcheck
+    - staticcheck
+    - unused
+    - gosimple
+    - structcheck
+    - varcheck
+    - ineffassign
+    - deadcode
+    - typecheck
+    - gosec
+    - gofmt
+    - goimports
+    - misspell
+    - revive
+    - unparam
+    - unconvert
+    - prealloc
+    - exportloopref
+    - gocritic
+    - gocyclo
+    - dupl
+
+linters-settings:
+  gocyclo:
+    min-complexity: 15
+  govet:
+    check-shadowing: true
+  revive:
+    rules:
+      - name: var-naming
+        severity: warning
+        disabled: false
+      - name: exported
+        severity: warning
+        disabled: false
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gocyclo
+        - errcheck
+        - dupl
+        - gosec
+    - path: test/
+      linters:
+        - gocyclo
+        - errcheck
+        - dupl
+        - gosec
+
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
