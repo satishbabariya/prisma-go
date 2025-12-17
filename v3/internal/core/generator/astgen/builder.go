@@ -57,8 +57,35 @@ func (b *Builder) BuildFile() *ast.File {
 		}
 	}
 
+	// Build input type structs (CreateInput, UpdateInput)
+	inputGen := NewInputTypesGenerator(b.ir)
+	inputDecls := inputGen.BuildInputTypes()
+	file.Decls = append(file.Decls, inputDecls...)
+
+	// Build Where builder types and methods
+	whereGen := NewWhereBuilderGenerator(b.ir)
+	whereDecls := whereGen.BuildWhereTypes()
+	file.Decls = append(file.Decls, whereDecls...)
+	conditionMethods := whereGen.BuildConditionMethods()
+	for _, method := range conditionMethods {
+		file.Decls = append(file.Decls, method)
+	}
+
+	// Build Include builder types and methods for relation loading
+	includeGen := NewIncludeBuilderGenerator(b.ir)
+	includeDecls := includeGen.BuildIncludeTypes()
+	file.Decls = append(file.Decls, includeDecls...)
+	includeRelDecls := includeGen.BuildIncludeRelationTypes()
+	file.Decls = append(file.Decls, includeRelDecls...)
+	includeMethods := includeGen.BuildIncludeMethods()
+	for _, method := range includeMethods {
+		file.Decls = append(file.Decls, method)
+	}
+
 	// Add required imports
 	b.imports["context"] = true
+	b.imports["github.com/satishbabariya/prisma-go/v3/internal/service"] = true
+	b.imports["github.com/satishbabariya/prisma-go/v3/internal/core/query/domain"] = true
 
 	// Add imports at the beginning
 	if len(b.imports) > 0 {
@@ -76,10 +103,15 @@ func (b *Builder) BuildModelStruct(model ir.Model) *ast.GenDecl {
 	}
 
 	// Build fields
+	// Build fields
 	for _, field := range model.Fields {
-		// Skip relation fields for now
+		// Handle relation fields
 		if field.Relation != nil {
-			continue
+			// For non-array relations (OneToOne, ManyToOne), ensure we use a pointer
+			// to avoid invalid recursive types in Go structs
+			if !field.IsArray && !strings.HasPrefix(field.Type.GoType, "*") {
+				field.Type.GoType = "*" + field.Type.GoType
+			}
 		}
 
 		astField := b.buildStructField(field)

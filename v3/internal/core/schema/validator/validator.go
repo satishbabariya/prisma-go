@@ -23,9 +23,23 @@ func (v *Validator) Validate(ctx context.Context, schema *domain.Schema) error {
 		return fmt.Errorf("schema must have at least one datasource")
 	}
 
+	// Create model map for lookups
+	modelMap := make(map[string]*domain.Model)
+	for i := range schema.Models {
+		model := &schema.Models[i]
+		modelMap[model.Name] = model
+	}
+
+	// Create enum map
+	enumMap := make(map[string]*domain.Enum)
+	for i := range schema.Enums {
+		enum := &schema.Enums[i]
+		enumMap[enum.Name] = enum
+	}
+
 	// Validate models
 	for _, model := range schema.Models {
-		if err := v.ValidateModel(ctx, &model); err != nil {
+		if err := v.validateModelWithContext(ctx, &model, modelMap, enumMap); err != nil {
 			return fmt.Errorf("model %s: %w", model.Name, err)
 		}
 	}
@@ -40,8 +54,13 @@ func (v *Validator) Validate(ctx context.Context, schema *domain.Schema) error {
 	return nil
 }
 
-// ValidateModel validates a single model.
+// ValidateModel validates a single model (shallow).
 func (v *Validator) ValidateModel(ctx context.Context, model *domain.Model) error {
+	return v.validateModelWithContext(ctx, model, nil, nil)
+}
+
+// validateModelWithContext validates a model with context.
+func (v *Validator) validateModelWithContext(ctx context.Context, model *domain.Model, modelMap map[string]*domain.Model, enumMap map[string]*domain.Enum) error {
 	if model.Name == "" {
 		return fmt.Errorf("model name cannot be empty")
 	}
@@ -53,7 +72,7 @@ func (v *Validator) ValidateModel(ctx context.Context, model *domain.Model) erro
 	// Check for at least one unique identifier
 	hasID := false
 	for _, field := range model.Fields {
-		if err := v.ValidateField(ctx, &field); err != nil {
+		if err := v.validateFieldWithContext(ctx, &field, modelMap, enumMap); err != nil {
 			return fmt.Errorf("field %s: %w", field.Name, err)
 		}
 
@@ -72,14 +91,29 @@ func (v *Validator) ValidateModel(ctx context.Context, model *domain.Model) erro
 	return nil
 }
 
-// ValidateField validates a single field.
+// ValidateField validates a single field (shallow).
 func (v *Validator) ValidateField(ctx context.Context, field *domain.Field) error {
+	return v.validateFieldWithContext(ctx, field, nil, nil)
+}
+
+// validateFieldWithContext validates a field with context.
+func (v *Validator) validateFieldWithContext(ctx context.Context, field *domain.Field, modelMap map[string]*domain.Model, enumMap map[string]*domain.Enum) error {
 	if field.Name == "" {
 		return fmt.Errorf("field name cannot be empty")
 	}
 
 	if field.Type.Name == "" {
 		return fmt.Errorf("field type cannot be empty")
+	}
+
+	// Validate type validity if maps are provided
+	if modelMap != nil && enumMap != nil && !field.Type.IsBuiltin {
+		// Must be a model or enum
+		if _, isModel := modelMap[field.Type.Name]; !isModel {
+			if _, isEnum := enumMap[field.Type.Name]; !isEnum {
+				return fmt.Errorf("unknown type %s", field.Type.Name)
+			}
+		}
 	}
 
 	return nil

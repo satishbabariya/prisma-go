@@ -12,6 +12,16 @@ import (
 func (g *QueryBuilderGenerator) buildCreateMany(model ir.Model) *ast.FuncDecl {
 	return &ast.FuncDecl{
 		Name: ast.NewIdent("CreateMany" + model.Name),
+		Recv: &ast.FieldList{
+			List: []*ast.Field{
+				{
+					Names: []*ast.Ident{ast.NewIdent("client")},
+					Type: &ast.StarExpr{
+						X: ast.NewIdent("Client"),
+					},
+				},
+			},
+		},
 		Type: &ast.FuncType{
 			Params: &ast.FieldList{
 				List: []*ast.Field{
@@ -26,10 +36,8 @@ func (g *QueryBuilderGenerator) buildCreateMany(model ir.Model) *ast.FuncDecl {
 						Names: []*ast.Ident{ast.NewIdent("data")},
 						Type: &ast.ArrayType{
 							Elt: &ast.MapType{
-								Key: ast.NewIdent("string"),
-								Value: &ast.InterfaceType{
-									Methods: &ast.FieldList{},
-								},
+								Key:   ast.NewIdent("string"),
+								Value: &ast.InterfaceType{Methods: &ast.FieldList{}},
 							},
 						},
 					},
@@ -39,7 +47,10 @@ func (g *QueryBuilderGenerator) buildCreateMany(model ir.Model) *ast.FuncDecl {
 				List: []*ast.Field{
 					{
 						Type: &ast.ArrayType{
-							Elt: ast.NewIdent(model.Name),
+							Elt: &ast.MapType{
+								Key:   ast.NewIdent("string"),
+								Value: &ast.InterfaceType{Methods: &ast.FieldList{}},
+							},
 						},
 					},
 					{
@@ -55,7 +66,10 @@ func (g *QueryBuilderGenerator) buildCreateMany(model ir.Model) *ast.FuncDecl {
 					Results: []ast.Expr{
 						&ast.CallExpr{
 							Fun: &ast.SelectorExpr{
-								X:   ast.NewIdent("queryService"),
+								X: &ast.SelectorExpr{
+									X:   ast.NewIdent("client"),
+									Sel: ast.NewIdent("queryService"),
+								},
 								Sel: ast.NewIdent("CreateMany"),
 							},
 							Args: []ast.Expr{
@@ -78,6 +92,16 @@ func (g *QueryBuilderGenerator) buildCreateMany(model ir.Model) *ast.FuncDecl {
 func (g *QueryBuilderGenerator) buildUpsert(model ir.Model) *ast.FuncDecl {
 	return &ast.FuncDecl{
 		Name: ast.NewIdent("Upsert" + model.Name),
+		Recv: &ast.FieldList{
+			List: []*ast.Field{
+				{
+					Names: []*ast.Ident{ast.NewIdent("client")},
+					Type: &ast.StarExpr{
+						X: ast.NewIdent("Client"),
+					},
+				},
+			},
+		},
 		Type: &ast.FuncType{
 			Params: &ast.FieldList{
 				List: []*ast.Field{
@@ -91,19 +115,15 @@ func (g *QueryBuilderGenerator) buildUpsert(model ir.Model) *ast.FuncDecl {
 					{
 						Names: []*ast.Ident{ast.NewIdent("data")},
 						Type: &ast.MapType{
-							Key: ast.NewIdent("string"),
-							Value: &ast.InterfaceType{
-								Methods: &ast.FieldList{},
-							},
+							Key:   ast.NewIdent("string"),
+							Value: &ast.InterfaceType{Methods: &ast.FieldList{}},
 						},
 					},
 					{
 						Names: []*ast.Ident{ast.NewIdent("updateData")},
 						Type: &ast.MapType{
-							Key: ast.NewIdent("string"),
-							Value: &ast.InterfaceType{
-								Methods: &ast.FieldList{},
-							},
+							Key:   ast.NewIdent("string"),
+							Value: &ast.InterfaceType{Methods: &ast.FieldList{}},
 						},
 					},
 					{
@@ -117,8 +137,9 @@ func (g *QueryBuilderGenerator) buildUpsert(model ir.Model) *ast.FuncDecl {
 			Results: &ast.FieldList{
 				List: []*ast.Field{
 					{
-						Type: &ast.StarExpr{
-							X: ast.NewIdent(model.Name),
+						Type: &ast.MapType{
+							Key:   ast.NewIdent("string"),
+							Value: &ast.InterfaceType{Methods: &ast.FieldList{}},
 						},
 					},
 					{
@@ -134,7 +155,10 @@ func (g *QueryBuilderGenerator) buildUpsert(model ir.Model) *ast.FuncDecl {
 					Results: []ast.Expr{
 						&ast.CallExpr{
 							Fun: &ast.SelectorExpr{
-								X:   ast.NewIdent("queryService"),
+								X: &ast.SelectorExpr{
+									X:   ast.NewIdent("client"),
+									Sel: ast.NewIdent("queryService"),
+								},
 								Sel: ast.NewIdent("Upsert"),
 							},
 							Args: []ast.Expr{

@@ -270,9 +270,249 @@ func (i *DatabaseIntrospector) getTableIndexes(ctx context.Context, tableName st
 
 // getTableConstraints gets all constraints for a table.
 func (i *DatabaseIntrospector) getTableConstraints(ctx context.Context, tableName string) ([]domain.Constraint, error) {
-	// For now, return empty constraints
-	// Full implementation would query foreign keys, check constraints, etc.
-	return []domain.Constraint{}, nil
+	var constraints []domain.Constraint
+
+	// Get foreign key constraints
+	fkConstraints, err := i.getForeignKeyConstraints(ctx, tableName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get foreign key constraints: %w", err)
+	}
+	constraints = append(constraints, fkConstraints...)
+
+	// Get primary key constraints
+	pkConstraints, err := i.getPrimaryKeyConstraints(ctx, tableName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get primary key constraints: %w", err)
+	}
+	constraints = append(constraints, pkConstraints...)
+
+	return constraints, nil
+}
+
+// getForeignKeyConstraints gets foreign key constraints for a table.
+func (i *DatabaseIntrospector) getForeignKeyConstraints(ctx context.Context, tableName string) ([]domain.Constraint, error) {
+	var query string
+	switch i.db.GetDialect() {
+	case database.PostgreSQL:
+		query = `
+			SELECT
+				tc.constraint_name,
+				kcu.column_name,
+				ccu.table_name AS referenced_table,
+				ccu.column_name AS referenced_column,
+				rc.delete_rule,
+				rc.update_rule
+			FROM information_schema.table_constraints tc
+			JOIN information_schema.key_column_usage kcu
+				ON tc.constraint_name = kcu.constraint_name
+				AND tc.table_schema = kcu.table_schema
+			JOIN information_schema.constraint_column_usage ccu
+				ON tc.constraint_name = ccu.constraint_name
+			LEFT JOIN information_schema.referential_constraints rc
+				ON tc.constraint_name = rc.constraint_name
+			WHERE tc.constraint_type = 'FOREIGN KEY'
+				AND tc.table_name = $1
+				AND tc.table_schema = 'public'
+			ORDER BY tc.constraint_name, kcu.ordinal_position
+		`
+	case database.MySQL:
+		query = `
+			SELECT
+				kcu.constraint_name,
+				kcu.column_name,
+				kcu.referenced_table_name,
+				kcu.referenced_column_name,
+				rc.delete_rule,
+				rc.update_rule
+			FROM information_schema.key_column_usage kcu
+			JOIN information_schema.referential_constraints rc
+				ON kcu.constraint_name = rc.constraint_name
+				AND kcu.table_schema = rc.constraint_schema
+			WHERE kcu.table_name = ?
+				AND kcu.table_schema = DATABASE()
+				AND kcu.referenced_table_name IS NOT NULL
+			ORDER BY kcu.constraint_name, kcu.ordinal_position
+		`
+	case database.SQLite:
+		// SQLite uses PRAGMA foreign_key_list
+		query = fmt.Sprintf("PRAGMA foreign_key_list(%s)", tableName)
+	default:
+		return nil, fmt.Errorf("unsupported database dialect: %s", i.db.GetDialect())
+	}
+
+	var args []interface{}
+	if i.db.GetDialect() != database.SQLite {
+		args = append(args, tableName)
+	}
+
+	rows, err := i.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query foreign key constraints: %w", err)
+	}
+	defer rows.Close()
+
+	constraintMap := make(map[string]*domain.Constraint)
+	for rows.Next() {
+		if i.db.GetDialect() == database.SQLite {
+			// SQLite PRAGMA returns: id, seq, table, from, to, on_update, on_delete, match
+			var id, seq int
+			var refTable, fromCol, toCol, onUpdate, onDelete, match string
+			if err := rows.Scan(&id, &seq, &refTable, &fromCol, &toCol, &onUpdate, &onDelete, &match); err != nil {
+				return nil, fmt.Errorf("failed to scan foreign key (SQLite): %w", err)
+			}
+
+			constraintName := fmt.Sprintf("fk_%s_%d", tableName, id)
+			if c, exists := constraintMap[constraintName]; exists {
+				c.Columns = append(c.Columns, fromCol)
+				c.ReferencedColumns = append(c.ReferencedColumns, toCol)
+			} else {
+				constraintMap[constraintName] = &domain.Constraint{
+					Name:              constraintName,
+					Type:              domain.ForeignKey,
+					Columns:           []string{fromCol},
+					ReferencedTable:   refTable,
+					ReferencedColumns: []string{toCol},
+					OnDelete:          parseReferentialAction(onDelete),
+					OnUpdate:          parseReferentialAction(onUpdate),
+				}
+			}
+		} else {
+			var constraintName, columnName, refTable, refColumn string
+			var deleteRule, updateRule sql.NullString
+			if err := rows.Scan(&constraintName, &columnName, &refTable, &refColumn, &deleteRule, &updateRule); err != nil {
+				return nil, fmt.Errorf("failed to scan foreign key: %w", err)
+			}
+
+			if c, exists := constraintMap[constraintName]; exists {
+				c.Columns = append(c.Columns, columnName)
+				c.ReferencedColumns = append(c.ReferencedColumns, refColumn)
+			} else {
+				constraintMap[constraintName] = &domain.Constraint{
+					Name:              constraintName,
+					Type:              domain.ForeignKey,
+					Columns:           []string{columnName},
+					ReferencedTable:   refTable,
+					ReferencedColumns: []string{refColumn},
+					OnDelete:          parseReferentialAction(deleteRule.String),
+					OnUpdate:          parseReferentialAction(updateRule.String),
+				}
+			}
+		}
+	}
+
+	var constraints []domain.Constraint
+	for _, c := range constraintMap {
+		constraints = append(constraints, *c)
+	}
+
+	return constraints, nil
+}
+
+// getPrimaryKeyConstraints gets primary key constraints for a table.
+func (i *DatabaseIntrospector) getPrimaryKeyConstraints(ctx context.Context, tableName string) ([]domain.Constraint, error) {
+	var query string
+	switch i.db.GetDialect() {
+	case database.PostgreSQL:
+		query = `
+			SELECT
+				tc.constraint_name,
+				kcu.column_name
+			FROM information_schema.table_constraints tc
+			JOIN information_schema.key_column_usage kcu
+				ON tc.constraint_name = kcu.constraint_name
+				AND tc.table_schema = kcu.table_schema
+			WHERE tc.constraint_type = 'PRIMARY KEY'
+				AND tc.table_name = $1
+				AND tc.table_schema = 'public'
+			ORDER BY kcu.ordinal_position
+		`
+	case database.MySQL:
+		query = `
+			SELECT
+				tc.constraint_name,
+				kcu.column_name
+			FROM information_schema.table_constraints tc
+			JOIN information_schema.key_column_usage kcu
+				ON tc.constraint_name = kcu.constraint_name
+				AND tc.table_schema = kcu.table_schema
+			WHERE tc.constraint_type = 'PRIMARY KEY'
+				AND tc.table_name = ?
+				AND tc.table_schema = DATABASE()
+			ORDER BY kcu.ordinal_position
+		`
+	case database.SQLite:
+		// SQLite primary keys are retrieved via table_info (pk column)
+		// We'll use PRAGMA to get this info
+		query = fmt.Sprintf("PRAGMA table_info(%s)", tableName)
+	default:
+		return nil, fmt.Errorf("unsupported database dialect: %s", i.db.GetDialect())
+	}
+
+	var args []interface{}
+	if i.db.GetDialect() != database.SQLite {
+		args = append(args, tableName)
+	}
+
+	rows, err := i.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query primary key constraints: %w", err)
+	}
+	defer rows.Close()
+
+	var pkColumns []string
+	var constraintName string
+
+	for rows.Next() {
+		if i.db.GetDialect() == database.SQLite {
+			// SQLite PRAGMA table_info returns: cid, name, type, notnull, dflt_value, pk
+			var cid, notnull, pk int
+			var name, colType string
+			var dfltValue sql.NullString
+			if err := rows.Scan(&cid, &name, &colType, &notnull, &dfltValue, &pk); err != nil {
+				return nil, fmt.Errorf("failed to scan primary key (SQLite): %w", err)
+			}
+			if pk > 0 {
+				pkColumns = append(pkColumns, name)
+			}
+			constraintName = fmt.Sprintf("%s_pkey", tableName)
+		} else {
+			var colName string
+			if err := rows.Scan(&constraintName, &colName); err != nil {
+				return nil, fmt.Errorf("failed to scan primary key: %w", err)
+			}
+			pkColumns = append(pkColumns, colName)
+		}
+	}
+
+	if len(pkColumns) == 0 {
+		return []domain.Constraint{}, nil
+	}
+
+	return []domain.Constraint{
+		{
+			Name:    constraintName,
+			Type:    domain.PrimaryKey,
+			Columns: pkColumns,
+		},
+	}, nil
+}
+
+// parseReferentialAction converts a string to ReferentialAction.
+func parseReferentialAction(action string) domain.ReferentialAction {
+	switch action {
+	case "CASCADE":
+		return domain.Cascade
+	case "SET NULL":
+		return domain.SetNull
+	case "SET DEFAULT":
+		return domain.SetDefault
+	case "RESTRICT":
+		return domain.Restrict
+	case "NO ACTION":
+		return domain.NoAction
+	default:
+		return domain.NoAction
+	}
 }
 
 // Ensure DatabaseIntrospector implements Introspector interface.

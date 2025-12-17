@@ -26,12 +26,39 @@ func (c *SQLCompiler) Compile(ctx context.Context, query *domain.Query) (*domain
 	// Generate SQL based on operation
 	var sql domain.SQL
 	var err error
+	var sqlStr string
+	var args []interface{}
 
 	switch query.Operation {
 	case domain.FindMany, domain.FindFirst, domain.FindUnique:
 		sql, err = c.compileSelect(query)
+	case domain.Create:
+		sqlStr, args, err = c.CompileCreate(query)
+		if err == nil {
+			sql = domain.SQL{Query: sqlStr, Args: args, Dialect: c.dialect}
+		}
+	case domain.CreateMany:
+		sqlStr, args, err = c.CompileCreateMany(query)
+		if err == nil {
+			sql = domain.SQL{Query: sqlStr, Args: args, Dialect: c.dialect}
+		}
+	case domain.Update:
+		sqlStr, args, err = c.CompileUpdate(query)
+		if err == nil {
+			sql = domain.SQL{Query: sqlStr, Args: args, Dialect: c.dialect}
+		}
+	case domain.UpdateMany:
+		sqlStr, args, err = c.CompileUpdate(query) // UpdateMany uses same logic
+		if err == nil {
+			sql = domain.SQL{Query: sqlStr, Args: args, Dialect: c.dialect}
+		}
 	case domain.Delete, domain.DeleteMany:
 		sql, err = c.compileDelete(query)
+	case domain.Upsert:
+		sqlStr, args, err = c.CompileUpsert(query)
+		if err == nil {
+			sql = domain.SQL{Query: sqlStr, Args: args, Dialect: c.dialect}
+		}
 	case domain.Aggregate:
 		sql, err = c.compileAggregate(query)
 	default:

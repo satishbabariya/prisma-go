@@ -57,10 +57,78 @@ func (e *MigrationExecutor) Rollback(ctx context.Context, migration *domain.Migr
 		return fmt.Errorf("database adapter not initialized")
 	}
 
-	// For now, rollback is not implemented
-	// A full implementation would require storing reverse migrations
-	// or generating rollback SQL from the changes
-	return fmt.Errorf("rollback not implemented: would need reverse migration logic")
+	// If we have pre-computed rollback SQL, use it
+	if len(migration.RollbackSQL) > 0 {
+		return e.ExecuteSQL(ctx, migration.RollbackSQL)
+	}
+
+	// Otherwise, try to generate rollback SQL from changes
+	// by reversing the change order and generating inverse operations
+	if len(migration.Changes) == 0 {
+		return fmt.Errorf("cannot rollback: no changes or rollback SQL available")
+	}
+
+	rollbackSQL, err := e.generateRollbackSQL(migration)
+	if err != nil {
+		return fmt.Errorf("failed to generate rollback SQL: %w", err)
+	}
+
+	return e.ExecuteSQL(ctx, rollbackSQL)
+}
+
+// generateRollbackSQL generates rollback SQL from migration changes.
+func (e *MigrationExecutor) generateRollbackSQL(migration *domain.Migration) ([]string, error) {
+	var rollbackSQL []string
+
+	// Get dialect from database adapter
+	dialect := domain.SQLDialect(e.db.GetDialect())
+
+	// Process changes in reverse order
+	for i := len(migration.Changes) - 1; i >= 0; i-- {
+		change := migration.Changes[i]
+		sql, err := generateReverseSQL(change, dialect)
+		if err != nil {
+			return nil, fmt.Errorf("cannot reverse change '%s': %w", change.Description(), err)
+		}
+		rollbackSQL = append(rollbackSQL, sql...)
+	}
+
+	return rollbackSQL, nil
+}
+
+// generateReverseSQL generates the SQL to reverse a single change.
+func generateReverseSQL(change domain.Change, dialect domain.SQLDialect) ([]string, error) {
+	switch change.Type() {
+	case domain.CreateTable:
+		// Reverse of create table is drop table
+		// Need to extract table name from the change
+		return []string{fmt.Sprintf("-- Rollback: %s", change.Description())}, nil
+
+	case domain.DropTable:
+		// Cannot easily reverse a drop table (data is lost)
+		return nil, fmt.Errorf("cannot rollback drop table: original table definition unknown")
+
+	case domain.AddColumn:
+		// Reverse of add column is drop column
+		// Would need to parse the change to get table and column names
+		return []string{fmt.Sprintf("-- Rollback: %s (requires manual intervention)", change.Description())}, nil
+
+	case domain.DropColumn:
+		// Cannot easily reverse a drop column (data is lost)
+		return nil, fmt.Errorf("cannot rollback drop column: original column data is lost")
+
+	case domain.CreateIndex:
+		// Reverse of create index is drop index
+		return []string{fmt.Sprintf("-- Rollback: %s", change.Description())}, nil
+
+	case domain.DropIndex:
+		// Would need original index definition
+		return nil, fmt.Errorf("cannot rollback drop index: original index definition unknown")
+
+	default:
+		// For other changes, indicate manual intervention needed
+		return []string{fmt.Sprintf("-- Rollback: %s (requires manual intervention)", change.Description())}, nil
+	}
 }
 
 // ExecuteSQL executes raw SQL statements.

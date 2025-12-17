@@ -8,14 +8,15 @@ import (
 
 // Migration represents a migration aggregate root.
 type Migration struct {
-	ID        string
-	Name      string
-	CreatedAt time.Time
-	AppliedAt *time.Time
-	Changes   []Change
-	SQL       []string
-	Checksum  string
-	Status    MigrationStatus
+	ID          string
+	Name        string
+	CreatedAt   time.Time
+	AppliedAt   *time.Time
+	Changes     []Change
+	SQL         []string
+	RollbackSQL []string // SQL statements to reverse the migration
+	Checksum    string
+	Status      MigrationStatus
 }
 
 // MigrationStatus represents the status of a migration.
