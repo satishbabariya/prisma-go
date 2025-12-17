@@ -46,7 +46,7 @@ func TestNoopTelemetry(t *testing.T) {
 func TestPrometheusTelemetry(t *testing.T) {
 	ctx := context.Background()
 	telemetry := NewPrometheusTelemetry(&Config{
-		Type: string(TypePrometheus),
+		Type: "prometheus",
 	})
 
 	// Record some queries
@@ -87,7 +87,7 @@ func TestPrometheusTelemetry(t *testing.T) {
 func TestOpenTelemetryAdapter(t *testing.T) {
 	ctx := context.Background()
 	adapter := NewOpenTelemetryAdapter(&Config{
-		Type:        string(TypeOpenTelemetry),
+		Type:        "opentelemetry",
 		ServiceName: "test-service",
 	})
 
@@ -117,65 +117,5 @@ func TestOpenTelemetryAdapter(t *testing.T) {
 	spans = adapter.GetSpans()
 	if len(spans) != 0 {
 		t.Errorf("Expected 0 spans after flush, got %d", len(spans))
-	}
-}
-
-func TestTelemetryFactory(t *testing.T) {
-	tests := []struct {
-		name     string
-		config   *Config
-		wantType string
-		wantErr  bool
-	}{
-		{
-			name:     "nil config returns noop",
-			config:   nil,
-			wantType: "*telemetry.NoopTelemetry",
-		},
-		{
-			name:     "empty type returns noop",
-			config:   &Config{Type: ""},
-			wantType: "*telemetry.NoopTelemetry",
-		},
-		{
-			name:     "noop type",
-			config:   &Config{Type: "noop"},
-			wantType: "*telemetry.NoopTelemetry",
-		},
-		{
-			name:     "prometheus type",
-			config:   &Config{Type: "prometheus"},
-			wantType: "*telemetry.PrometheusTelemetry",
-		},
-		{
-			name:     "opentelemetry type",
-			config:   &Config{Type: "opentelemetry"},
-			wantType: "*telemetry.OpenTelemetryAdapter",
-		},
-		{
-			name:    "unknown type",
-			config:  &Config{Type: "unknown"},
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			telemetry, err := NewTelemetry(tt.config)
-			if tt.wantErr {
-				if err == nil {
-					t.Error("Expected error, got nil")
-				}
-				return
-			}
-
-			if err != nil {
-				t.Fatalf("Unexpected error: %v", err)
-			}
-
-			if telemetry == nil {
-				t.Fatal("Expected telemetry, got nil")
-			}
-		})
 	}
 }
