@@ -175,10 +175,10 @@ func (e *QueryExecutor) ExecuteMutation(ctx context.Context, query *domain.Compi
 	// Get rows affected
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get rows affected: %w", err)
+		return 0, fmt.Errorf("failed to get rows affected: %w", err)
 	}
 
-	return result, nil
+	return rowsAffected, nil
 }
 
 // ExecuteNestedWrites executes nested write operations in a transaction.
@@ -228,4 +228,3 @@ func (e *QueryExecutor) ScanInto(rows *sql.Rows, dest interface{}) error {
 
 // Ensure QueryExecutor implements QueryExecutor interface.
 var _ domain.QueryExecutor = (*QueryExecutor)(nil)
-```
