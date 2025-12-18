@@ -54,6 +54,20 @@ func (b *QueryBuilder) FindUnique() *QueryBuilder {
 	return b
 }
 
+// FindFirstOrThrow sets the operation to FindFirst and throws an error if no record is found.
+func (b *QueryBuilder) FindFirstOrThrow() *QueryBuilder {
+	b.query.Operation = domain.FindFirst
+	b.query.ThrowIfNotFound = true
+	return b
+}
+
+// FindUniqueOrThrow sets the operation to FindUnique and throws an error if no record is found.
+func (b *QueryBuilder) FindUniqueOrThrow() *QueryBuilder {
+	b.query.Operation = domain.FindUnique
+	b.query.ThrowIfNotFound = true
+	return b
+}
+
 // Delete marks the query as a DELETE operation.
 func (b *QueryBuilder) Delete() *QueryBuilder {
 	b.query.Operation = domain.Delete
@@ -168,6 +182,131 @@ func (b *QueryBuilder) Skip(skip int) *QueryBuilder {
 // Take sets the number of records to take.
 func (b *QueryBuilder) Take(take int) *QueryBuilder {
 	b.query.Pagination.Take = &take
+	return b
+}
+
+// GroupByFields sets fields to group by.
+func (b *QueryBuilder) GroupByFields(fields ...string) *QueryBuilder {
+	b.query.Operation = domain.GroupBy
+	b.query.GroupBy = fields
+	return b
+}
+
+// Having sets the having clause for group by.
+func (b *QueryBuilder) Having(conditions ...domain.Condition) *QueryBuilder {
+	b.query.Having.Conditions = append(b.query.Having.Conditions, conditions...)
+	b.query.Having.Operator = domain.AND
+	return b
+}
+
+// Distinct sets the fields for distinct selection.
+func (b *QueryBuilder) Distinct(fields ...string) *QueryBuilder {
+	b.query.Distinct = fields
+	return b
+}
+
+// Cursor sets cursor-based pagination.
+func (b *QueryBuilder) Cursor(field string, value interface{}) *QueryBuilder {
+	b.query.Cursor = &domain.Cursor{
+		Field: field,
+		Value: value,
+	}
+	return b
+}
+
+// NestedCreate adds a nested create operation for a relation.
+func (b *QueryBuilder) NestedCreate(relation string, data map[string]interface{}) *QueryBuilder {
+	b.query.NestedWrites = append(b.query.NestedWrites, domain.NestedWrite{
+		Relation:  relation,
+		Operation: domain.NestedCreate,
+		Data:      data,
+	})
+	return b
+}
+
+// NestedCreateMany adds a nested create many operation for a relation.
+func (b *QueryBuilder) NestedCreateMany(relation string, data []map[string]interface{}) *QueryBuilder {
+	for _, d := range data {
+		b.query.NestedWrites = append(b.query.NestedWrites, domain.NestedWrite{
+			Relation:  relation,
+			Operation: domain.NestedCreateMany,
+			Data:      d,
+		})
+	}
+	return b
+}
+
+// NestedConnect adds a nested connect operation for a relation.
+func (b *QueryBuilder) NestedConnect(relation string, where ...domain.Condition) *QueryBuilder {
+	b.query.NestedWrites = append(b.query.NestedWrites, domain.NestedWrite{
+		Relation:  relation,
+		Operation: domain.NestedConnect,
+		Where:     where,
+	})
+	return b
+}
+
+// NestedConnectOrCreate adds a nested connect or create operation for a relation.
+func (b *QueryBuilder) NestedConnectOrCreate(relation string, where []domain.Condition, create map[string]interface{}) *QueryBuilder {
+	b.query.NestedWrites = append(b.query.NestedWrites, domain.NestedWrite{
+		Relation:  relation,
+		Operation: domain.NestedConnectOrCreate,
+		Where:     where,
+		Data:      create,
+	})
+	return b
+}
+
+// NestedDisconnect adds a nested disconnect operation for a relation.
+func (b *QueryBuilder) NestedDisconnect(relation string, where ...domain.Condition) *QueryBuilder {
+	b.query.NestedWrites = append(b.query.NestedWrites, domain.NestedWrite{
+		Relation:  relation,
+		Operation: domain.NestedDisconnect,
+		Where:     where,
+	})
+	return b
+}
+
+// NestedSet replaces all related records for a relation.
+func (b *QueryBuilder) NestedSet(relation string, where []domain.Condition) *QueryBuilder {
+	b.query.NestedWrites = append(b.query.NestedWrites, domain.NestedWrite{
+		Relation:  relation,
+		Operation: domain.NestedSet,
+		Where:     where,
+	})
+	return b
+}
+
+// NestedUpdate adds a nested update operation for a relation.
+func (b *QueryBuilder) NestedUpdate(relation string, where []domain.Condition, data map[string]interface{}) *QueryBuilder {
+	b.query.NestedWrites = append(b.query.NestedWrites, domain.NestedWrite{
+		Relation:  relation,
+		Operation: domain.NestedUpdate,
+		Where:     where,
+		Data:      data,
+	})
+	return b
+}
+
+// NestedDelete adds a nested delete operation for a relation.
+func (b *QueryBuilder) NestedDelete(relation string, where ...domain.Condition) *QueryBuilder {
+	b.query.NestedWrites = append(b.query.NestedWrites, domain.NestedWrite{
+		Relation:  relation,
+		Operation: domain.NestedDelete,
+		Where:     where,
+	})
+	return b
+}
+
+// NestedUpsert adds a nested upsert operation for a relation.
+func (b *QueryBuilder) NestedUpsert(relation string, where []domain.Condition, create map[string]interface{}, update map[string]interface{}) *QueryBuilder {
+	b.query.NestedWrites = append(b.query.NestedWrites, domain.NestedWrite{
+		Relation:   relation,
+		Operation:  domain.NestedUpsert,
+		Where:      where,
+		Data:       create,
+		UpdateData: update,
+	})
 	return b
 }
 

@@ -31,6 +31,12 @@ func (g *QueryBuilderGenerator) BuildQueryMethods(model ir.Model) []*ast.FuncDec
 	// Generate FindUnique method
 	methods = append(methods, g.buildFindUnique(model))
 
+	// Generate FindFirstOrThrow method
+	methods = append(methods, g.buildFindFirstOrThrow(model))
+
+	// Generate FindUniqueOrThrow method
+	methods = append(methods, g.buildFindUniqueOrThrow(model))
+
 	// Generate Count method
 	methods = append(methods, g.buildCount(model))
 

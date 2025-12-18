@@ -21,6 +21,7 @@ func NewMigrateCommand(c *container.Container) *cobra.Command {
 	cmd.AddCommand(newMigrateDevCommand(c))
 	cmd.AddCommand(newMigrateDeployCommand(c))
 	cmd.AddCommand(newMigrateStatusCommand(c))
+	cmd.AddCommand(newMigrateResetCommand(c))
 
 	return cmd
 }
@@ -167,5 +168,83 @@ func runMigrateStatus(c *container.Container) error {
 		}
 	}
 
+	return nil
+}
+
+func newMigrateResetCommand(c *container.Container) *cobra.Command {
+	var force bool
+	var skipSeed bool
+
+	cmd := &cobra.Command{
+		Use:   "reset",
+		Short: "Reset the database",
+		Long: `Reset the database by dropping all data, rolling back all migrations,
+and then re-applying all migrations. This is a destructive operation.
+
+Use with caution - all data will be lost!`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runMigrateReset(c, force, skipSeed)
+		},
+	}
+
+	cmd.Flags().BoolVar(&force, "force", false, "Skip confirmation prompt")
+	cmd.Flags().BoolVar(&skipSeed, "skip-seed", false, "Skip running seed after reset")
+
+	return cmd
+}
+
+func runMigrateReset(c *container.Container, force, skipSeed bool) error {
+	if !force {
+		fmt.Println("⚠️  Warning: This will delete ALL data in the database!")
+		fmt.Println("Run with --force to confirm.")
+		return fmt.Errorf("reset cancelled - use --force to confirm")
+	}
+
+	fmt.Println("🔄 Resetting database...")
+
+	migrationService := c.MigrationService()
+	if migrationService == nil {
+		return fmt.Errorf("migration service not initialized")
+	}
+
+	// Get current migration status
+	status, err := migrationService.GetMigrationStatus(context.Background())
+	if err != nil {
+		return fmt.Errorf("failed to get migration status: %w", err)
+	}
+
+	// Rollback all applied migrations in reverse order
+	fmt.Printf("Rolling back %d applied migrations...\n", len(status.Applied))
+	for i := len(status.Applied) - 1; i >= 0; i-- {
+		migration := status.Applied[i]
+		fmt.Printf("  Rolling back: %s\n", migration.ID)
+		if err := migrationService.RollbackMigration(context.Background(), migration.ID); err != nil {
+			return fmt.Errorf("failed to rollback migration %s: %w", migration.ID, err)
+		}
+	}
+
+	fmt.Println("✅ All migrations rolled back")
+
+	// Re-apply all migrations
+	fmt.Println("\n🚀 Re-applying all migrations...")
+	allMigrations, err := migrationService.GetMigrationStatus(context.Background())
+	if err != nil {
+		return fmt.Errorf("failed to get migrations: %w", err)
+	}
+
+	for _, migration := range allMigrations.Pending {
+		fmt.Printf("  Applying: %s\n", migration.ID)
+		if err := migrationService.ApplyMigration(context.Background(), migration.ID); err != nil {
+			return fmt.Errorf("failed to apply migration %s: %w", migration.ID, err)
+		}
+	}
+
+	fmt.Printf("✅ Applied %d migrations\n", len(allMigrations.Pending))
+
+	if !skipSeed {
+		fmt.Println("\n💡 Run your seed script to populate initial data")
+	}
+
+	fmt.Println("\n✅ Database reset complete!")
 	return nil
 }

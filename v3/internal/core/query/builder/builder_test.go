@@ -187,3 +187,66 @@ func TestQueryBuilder_ChainedOperations(t *testing.T) {
 	assert.NotNil(t, query.Pagination.Skip)
 	assert.NotNil(t, query.Pagination.Take)
 }
+
+func TestQueryBuilder_NestedCreate(t *testing.T) {
+	data := map[string]interface{}{
+		"title":   "My Post",
+		"content": "Post content",
+	}
+
+	b := builder.NewQueryBuilder("users").
+		Create(map[string]interface{}{"name": "John"}).
+		NestedCreate("posts", data)
+
+	query := b.GetQuery()
+
+	require.Len(t, query.NestedWrites, 1)
+	assert.Equal(t, "posts", query.NestedWrites[0].Relation)
+	assert.Equal(t, domain.NestedCreate, query.NestedWrites[0].Operation)
+	assert.Equal(t, data, query.NestedWrites[0].Data)
+}
+
+func TestQueryBuilder_NestedConnect(t *testing.T) {
+	b := builder.NewQueryBuilder("users").
+		Create(map[string]interface{}{"name": "John"}).
+		NestedConnect("posts", domain.Condition{Field: "id", Operator: domain.Equals, Value: 1})
+
+	query := b.GetQuery()
+
+	require.Len(t, query.NestedWrites, 1)
+	assert.Equal(t, "posts", query.NestedWrites[0].Relation)
+	assert.Equal(t, domain.NestedConnect, query.NestedWrites[0].Operation)
+	require.Len(t, query.NestedWrites[0].Where, 1)
+	assert.Equal(t, "id", query.NestedWrites[0].Where[0].Field)
+}
+
+func TestQueryBuilder_NestedUpdate(t *testing.T) {
+	where := []domain.Condition{
+		{Field: "id", Operator: domain.Equals, Value: 1},
+	}
+	data := map[string]interface{}{"title": "Updated Title"}
+
+	b := builder.NewQueryBuilder("users").
+		Update(map[string]interface{}{"name": "John Updated"}).
+		NestedUpdate("posts", where, data)
+
+	query := b.GetQuery()
+
+	require.Len(t, query.NestedWrites, 1)
+	assert.Equal(t, "posts", query.NestedWrites[0].Relation)
+	assert.Equal(t, domain.NestedUpdate, query.NestedWrites[0].Operation)
+	assert.Equal(t, data, query.NestedWrites[0].Data)
+	assert.Len(t, query.NestedWrites[0].Where, 1)
+}
+
+func TestQueryBuilder_NestedDelete(t *testing.T) {
+	b := builder.NewQueryBuilder("users").
+		Delete().
+		NestedDelete("posts", domain.Condition{Field: "id", Operator: domain.Equals, Value: 1})
+
+	query := b.GetQuery()
+
+	require.Len(t, query.NestedWrites, 1)
+	assert.Equal(t, "posts", query.NestedWrites[0].Relation)
+	assert.Equal(t, domain.NestedDelete, query.NestedWrites[0].Operation)
+}

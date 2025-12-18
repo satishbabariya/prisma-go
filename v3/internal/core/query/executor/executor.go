@@ -9,6 +9,7 @@ import (
 	"github.com/satishbabariya/prisma-go/v3/internal/adapters/database"
 	"github.com/satishbabariya/prisma-go/v3/internal/core/query/domain"
 	"github.com/satishbabariya/prisma-go/v3/internal/core/query/mapper"
+	"github.com/satishbabariya/prisma-go/v3/pkg/client"
 )
 
 // QueryExecutor implements the domain.QueryExecutor interface.
@@ -78,6 +79,11 @@ func (e *QueryExecutor) Execute(ctx context.Context, query *domain.CompiledQuery
 		return nil, fmt.Errorf("error iterating rows: %w", err)
 	}
 
+	// Check if ThrowIfNotFound is set and no results were found
+	if query.OriginalQuery != nil && query.OriginalQuery.ThrowIfNotFound && len(results) == 0 {
+		return nil, client.NewNotFoundError(query.Mapping.Model)
+	}
+
 	return results, nil
 }
 
@@ -145,6 +151,11 @@ func (e *QueryExecutor) ExecuteInto(ctx context.Context, query *domain.CompiledQ
 		return fmt.Errorf("error iterating rows: %w", err)
 	}
 
+	// Check if ThrowIfNotFound is set and no results were found
+	if query.OriginalQuery != nil && query.OriginalQuery.ThrowIfNotFound && len(mapResults) == 0 {
+		return client.NewNotFoundError(query.Mapping.Model)
+	}
+
 	// Map results to struct using the mapper
 	return e.mapper.MapToStructSlice(mapResults, dest)
 }
@@ -164,10 +175,48 @@ func (e *QueryExecutor) ExecuteMutation(ctx context.Context, query *domain.Compi
 	// Get rows affected
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		return 0, fmt.Errorf("failed to get rows affected: %w", err)
+		return nil, fmt.Errorf("failed to get rows affected: %w", err)
 	}
 
-	return rowsAffected, nil
+	return result, nil
+}
+
+// ExecuteNestedWrites executes nested write operations in a transaction.
+// All statements must succeed or all will be rolled back.
+func (e *QueryExecutor) ExecuteNestedWrites(ctx context.Context, statements []domain.SQL) error {
+	if e.db == nil {
+		return fmt.Errorf("database adapter not initialized")
+	}
+
+	// Begin transaction
+	tx, err := e.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	// Ensure rollback on error
+	defer func() {
+		if err != nil {
+			if rbErr := tx.Rollback(); rbErr != nil {
+				err = fmt.Errorf("transaction failed and rollback failed: %w (rollback error: %v)", err, rbErr)
+			}
+		}
+	}()
+
+	// Execute all statements
+	for i, stmt := range statements {
+		_, err = tx.Execute(ctx, stmt.Query, stmt.Args...)
+		if err != nil {
+			return fmt.Errorf("failed to execute nested write statement %d: %w", i, err)
+		}
+	}
+
+	// Commit transaction
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
 }
 
 // ScanInto scans a single row into a struct (helper for future use).
@@ -179,3 +228,4 @@ func (e *QueryExecutor) ScanInto(rows *sql.Rows, dest interface{}) error {
 
 // Ensure QueryExecutor implements QueryExecutor interface.
 var _ domain.QueryExecutor = (*QueryExecutor)(nil)
+```

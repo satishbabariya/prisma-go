@@ -52,6 +52,26 @@ func (s *QueryService) FindFirst(ctx context.Context, model string, opts ...Quer
 	return s.executeQuery(ctx, b.GetQuery())
 }
 
+// FindFirstOrThrow executes a find first query and returns an error if no record is found.
+func (s *QueryService) FindFirstOrThrow(ctx context.Context, model string, opts ...QueryOption) (interface{}, error) {
+	result, err := s.FindFirst(ctx, model, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if result is nil or empty
+	if result == nil {
+		return nil, &NotFoundError{Model: model, Operation: "findFirst"}
+	}
+
+	// Check if result is empty slice
+	if rows, ok := result.([]map[string]interface{}); ok && len(rows) == 0 {
+		return nil, &NotFoundError{Model: model, Operation: "findFirst"}
+	}
+
+	return result, nil
+}
+
 // FindUnique executes a find unique query.
 func (s *QueryService) FindUnique(ctx context.Context, model string, opts ...QueryOption) (interface{}, error) {
 	b := builder.NewQueryBuilder(model).FindUnique()
@@ -61,6 +81,36 @@ func (s *QueryService) FindUnique(ctx context.Context, model string, opts ...Que
 	}
 
 	return s.executeQuery(ctx, b.GetQuery())
+}
+
+// FindUniqueOrThrow executes a find unique query and returns an error if no record is found.
+func (s *QueryService) FindUniqueOrThrow(ctx context.Context, model string, opts ...QueryOption) (interface{}, error) {
+	result, err := s.FindUnique(ctx, model, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if result is nil or empty
+	if result == nil {
+		return nil, &NotFoundError{Model: model, Operation: "findUnique"}
+	}
+
+	// Check if result is empty slice
+	if rows, ok := result.([]map[string]interface{}); ok && len(rows) == 0 {
+		return nil, &NotFoundError{Model: model, Operation: "findUnique"}
+	}
+
+	return result, nil
+}
+
+// NotFoundError is returned when a record is not found in OrThrow methods.
+type NotFoundError struct {
+	Model     string
+	Operation string
+}
+
+func (e *NotFoundError) Error() string {
+	return fmt.Sprintf("no %s record was found for %s", e.Model, e.Operation)
 }
 
 // FindManyInto executes a find many query and maps to structs.
@@ -77,6 +127,28 @@ func (s *QueryService) FindManyInto(ctx context.Context, model string, dest inte
 // FindFirstInto executes a find first query and maps to a struct.
 func (s *QueryService) FindFirstInto(ctx context.Context, model string, dest interface{}, opts ...QueryOption) error {
 	b := builder.NewQueryBuilder(model).FindFirst()
+
+	for _, opt := range opts {
+		opt(b)
+	}
+
+	return s.executeQueryInto(ctx, b.GetQuery(), dest)
+}
+
+// FindFirstIntoOrThrow executes a find first query, maps to a struct, and throws an error if no record is found.
+func (s *QueryService) FindFirstIntoOrThrow(ctx context.Context, model string, dest interface{}, opts ...QueryOption) error {
+	b := builder.NewQueryBuilder(model).FindFirstOrThrow()
+
+	for _, opt := range opts {
+		opt(b)
+	}
+
+	return s.executeQueryInto(ctx, b.GetQuery(), dest)
+}
+
+// FindUniqueIntoOrThrow executes a find unique query, maps to a struct, and throws an error if no record is found.
+func (s *QueryService) FindUniqueIntoOrThrow(ctx context.Context, model string, dest interface{}, opts ...QueryOption) error {
+	b := builder.NewQueryBuilder(model).FindUniqueOrThrow()
 
 	for _, opt := range opts {
 		opt(b)
@@ -426,6 +498,34 @@ func WithTake(take int) QueryOption {
 	}
 }
 
+// WithCursor sets cursor-based pagination.
+func WithCursor(field string, value interface{}) QueryOption {
+	return func(b *builder.QueryBuilder) {
+		b.Cursor(field, value)
+	}
+}
+
+// WithDistinct sets fields for distinct selection.
+func WithDistinct(fields ...string) QueryOption {
+	return func(b *builder.QueryBuilder) {
+		b.Distinct(fields...)
+	}
+}
+
+// WithGroupBy sets fields to group by.
+func WithGroupBy(fields ...string) QueryOption {
+	return func(b *builder.QueryBuilder) {
+		b.GroupByFields(fields...)
+	}
+}
+
+// WithHaving sets the having clause for group by.
+func WithHaving(conditions ...domain.Condition) QueryOption {
+	return func(b *builder.QueryBuilder) {
+		b.Having(conditions...)
+	}
+}
+
 // Transaction executes a function within a database transaction.
 // If the function returns an error, the transaction is rolled back.
 // Otherwise, the transaction is committed.
@@ -434,4 +534,61 @@ func (s *QueryService) Transaction(ctx context.Context, fn func(*QueryService) e
 	// Full transaction support requires access to the database adapter
 	// This is a placeholder that will be enhanced when wired into container
 	return fn(s)
+}
+
+// GroupBy executes a group by query with aggregations.
+func (s *QueryService) GroupBy(ctx context.Context, model string, groupFields []string, aggregations []domain.Aggregation, opts ...QueryOption) ([]map[string]interface{}, error) {
+	b := builder.NewQueryBuilder(model).GroupByFields(groupFields...)
+	b.SetAggregations(aggregations)
+
+	for _, opt := range opts {
+		opt(b)
+	}
+
+	result, err := s.executeQuery(ctx, b.GetQuery())
+	if err != nil {
+		return nil, err
+	}
+
+	// Cast result to map slice
+	if rows, ok := result.([]map[string]interface{}); ok {
+		return rows, nil
+	}
+
+	return nil, fmt.Errorf("unexpected result type: %T", result)
+}
+
+// QueryRaw executes a raw SQL query and returns results.
+func (s *QueryService) QueryRaw(ctx context.Context, sql string, args ...interface{}) ([]map[string]interface{}, error) {
+	compiled := &domain.CompiledQuery{
+		SQL: domain.SQL{
+			Query:   sql,
+			Args:    args,
+			Dialect: domain.PostgreSQL,
+		},
+	}
+
+	result, err := s.executor.Execute(ctx, compiled)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute raw query: %w", err)
+	}
+
+	if rows, ok := result.([]map[string]interface{}); ok {
+		return rows, nil
+	}
+
+	return nil, fmt.Errorf("unexpected result type: %T", result)
+}
+
+// ExecuteRaw executes a raw SQL statement (INSERT, UPDATE, DELETE).
+func (s *QueryService) ExecuteRaw(ctx context.Context, sql string, args ...interface{}) (int64, error) {
+	compiled := &domain.CompiledQuery{
+		SQL: domain.SQL{
+			Query:   sql,
+			Args:    args,
+			Dialect: domain.PostgreSQL,
+		},
+	}
+
+	return s.executor.ExecuteMutation(ctx, compiled)
 }

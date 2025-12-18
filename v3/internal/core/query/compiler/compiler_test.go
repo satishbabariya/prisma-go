@@ -55,6 +55,42 @@ func TestCompiler_WhereClause_PostgreSQL(t *testing.T) {
 			wantSQL:   "email LIKE $1",
 			wantArgs:  1,
 		},
+		{
+			name:      "contains case insensitive",
+			condition: domain.Condition{Field: "email", Operator: domain.Contains, Value: "test", Mode: domain.ModeInsensitive},
+			wantSQL:   "LOWER(email) LIKE LOWER($1)",
+			wantArgs:  1,
+		},
+		{
+			name:      "isNull true",
+			condition: domain.Condition{Field: "deleted_at", Operator: domain.IsNull, Value: true},
+			wantSQL:   "deleted_at IS NULL",
+			wantArgs:  0,
+		},
+		{
+			name:      "isNull false",
+			condition: domain.Condition{Field: "deleted_at", Operator: domain.IsNull, Value: false},
+			wantSQL:   "deleted_at IS NOT NULL",
+			wantArgs:  0,
+		},
+		{
+			name:      "isEmpty true",
+			condition: domain.Condition{Field: "tags", Operator: domain.IsEmpty, Value: true},
+			wantSQL:   "COALESCE(array_length(tags, 1), 0) = 0",
+			wantArgs:  0,
+		},
+		{
+			name:      "has array element",
+			condition: domain.Condition{Field: "tags", Operator: domain.Has, Value: "featured"},
+			wantSQL:   "tags @> ARRAY[$1]",
+			wantArgs:  1,
+		},
+		{
+			name:      "fulltext search",
+			condition: domain.Condition{Field: "content", Operator: domain.Search, Value: "golang"},
+			wantSQL:   "to_tsvector(content) @@ to_tsquery($1)",
+			wantArgs:  1,
+		},
 	}
 
 	for _, tt := range tests {
