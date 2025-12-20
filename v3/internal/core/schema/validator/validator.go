@@ -1,19 +1,28 @@
-// Package validator implements schema validation.
+// Package validator implements comprehensive schema validation rules.
 package validator
 
 import (
 	"context"
 	"fmt"
+	"regexp"
 
 	"github.com/satishbabariya/prisma-go/v3/internal/core/schema/domain"
 )
 
-// Validator implements the SchemaValidator interface.
-type Validator struct{}
+// Validator implements SchemaValidator interface.
+type Validator struct {
+	builtinTypes map[string]bool
+}
 
 // NewValidator creates a new schema validator.
 func NewValidator() *Validator {
-	return &Validator{}
+	return &Validator{
+		builtinTypes: map[string]bool{
+			"String": true, "Int": true, "BigInt": true, "Float": true,
+			"Decimal": true, "Boolean": true, "DateTime": true, "Json": true,
+			"Bytes": true,
+		},
+	}
 }
 
 // Validate validates the entire schema.
@@ -130,6 +139,43 @@ func (v *Validator) ValidateRelation(ctx context.Context, relation *domain.Relat
 	}
 
 	return nil
+}
+
+// Helper methods
+
+func (v *Validator) validateModelName(name string) error {
+	if name == "" {
+		return fmt.Errorf("model name cannot be empty")
+	}
+
+	// Must start with uppercase letter and be PascalCase
+	if !regexp.MustCompile(`^[A-Z][a-zA-Z0-9]*$`).MatchString(name) {
+		return fmt.Errorf("invalid model name: %s (must be PascalCase)", name)
+	}
+
+	return nil
+}
+
+func (v *Validator) validateFieldName(name string) error {
+	if name == "" {
+		return fmt.Errorf("field name cannot be empty")
+	}
+
+	// Must start with lowercase letter and be camelCase
+	if !regexp.MustCompile(`^[a-z][a-zA-Z0-9]*$`).MatchString(name) {
+		return fmt.Errorf("invalid field name: %s (must be camelCase)", name)
+	}
+
+	return nil
+}
+
+func (v *Validator) hasAttribute(field *domain.Field, attrName string) bool {
+	for _, attr := range field.Attributes {
+		if attr.Name == attrName {
+			return true
+		}
+	}
+	return false
 }
 
 // Ensure Validator implements SchemaValidator interface.

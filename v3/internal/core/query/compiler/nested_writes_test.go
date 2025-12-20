@@ -1,7 +1,6 @@
 package compiler
 
 import (
-	"context"
 	"testing"
 
 	"github.com/satishbabariya/prisma-go/v3/internal/core/query/domain"
@@ -11,7 +10,6 @@ import (
 
 func TestCompileNestedWrites(t *testing.T) {
 	compiler := NewSQLCompiler(domain.PostgreSQL)
-	ctx := context.Background()
 
 	t.Run("NestedCreate", func(t *testing.T) {
 		nestedWrites := []domain.NestedWrite{
@@ -134,7 +132,7 @@ func TestCompileNestedWrites(t *testing.T) {
 				Relation:  "posts",
 				Operation: domain.NestedSet,
 				Where: []domain.Condition{
-					{Field: "id", Operator: domain.In, Value: []int{10, 20, 30}},
+					{Field: "id", Operator: domain.In, Value: []interface{}{10, 20, 30}},
 				},
 			},
 		}

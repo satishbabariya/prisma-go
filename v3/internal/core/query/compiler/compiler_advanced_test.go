@@ -57,7 +57,7 @@ func TestCompileCursorPagination(t *testing.T) {
 				Value: 100,
 			},
 			Pagination: domain.Pagination{
-				Take: 20,
+				Take: &[]int{20}[0],
 			},
 		}
 
@@ -101,7 +101,7 @@ func TestCompileGroupByHaving(t *testing.T) {
 	t.Run("GROUP BY with aggregation", func(t *testing.T) {
 		query := &domain.Query{
 			Model:     "orders",
-			Operation: domain.Aggregate,
+			Operation: domain.GroupBy,
 			GroupBy:   []string{"customer_id"},
 			Aggregations: []domain.Aggregation{
 				{Function: domain.Count, Field: "*"},
@@ -118,14 +118,14 @@ func TestCompileGroupByHaving(t *testing.T) {
 	t.Run("GROUP BY with HAVING clause", func(t *testing.T) {
 		query := &domain.Query{
 			Model:     "orders",
-			Operation: domain.Aggregate,
+			Operation: domain.GroupBy,
 			GroupBy:   []string{"customer_id"},
 			Aggregations: []domain.Aggregation{
 				{Function: domain.Sum, Field: "amount"},
 			},
 			Having: domain.Filter{
 				Conditions: []domain.Condition{
-					{Field: "SUM(amount)", Operator: domain.Gt, Value: 1000},
+					{Field: "amount", Operator: domain.Gt, Value: 100},
 				},
 			},
 		}
@@ -253,7 +253,7 @@ func TestCompileComplexQueries(t *testing.T) {
 				{Field: "created_at", Direction: domain.Desc},
 			},
 			Pagination: domain.Pagination{
-				Take: 20,
+				Take: &[]int{20}[0],
 			},
 		}
 

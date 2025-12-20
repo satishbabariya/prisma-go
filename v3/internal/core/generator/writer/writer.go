@@ -10,6 +10,7 @@ import (
 	"io"
 
 	"github.com/satishbabariya/prisma-go/v3/internal/core/generator/ir"
+	"github.com/satishbabariya/prisma-go/v3/internal/core/generator/template"
 )
 
 // Writer writes AST nodes to Go code.
@@ -19,19 +20,39 @@ type Writer interface {
 
 // Pipeline executes multiple writers in sequence.
 type Pipeline struct {
-	stages []Writer
+	stages         []Writer
+	templateEngine *template.Engine
 }
 
 // NewPipeline creates a new pipeline.
-func NewPipeline(stages ...Writer) *Pipeline {
-	return &Pipeline{stages: stages}
+func NewPipeline(templateEngine *template.Engine, stages ...Writer) *Pipeline {
+	return &Pipeline{
+		stages:         stages,
+		templateEngine: templateEngine,
+	}
 }
 
 // Execute executes the pipeline.
 func (p *Pipeline) Execute(ir *ir.IR) ([]byte, error) {
 	var buf bytes.Buffer
 
-	// For now, return empty - will be implemented with specific writers
+	// If template engine is available, use it to render all templates
+	if p.templateEngine != nil {
+		files, err := p.templateEngine.RenderAll(ir)
+		if err != nil {
+			return nil, fmt.Errorf("template rendering failed: %w", err)
+		}
+
+		// Combine all files into one output for now
+		for filename, content := range files {
+			buf.WriteString("// --- " + filename + " ---\n")
+			buf.Write(content)
+			buf.WriteString("\n\n")
+		}
+		return buf.Bytes(), nil
+	}
+
+	// Fallback to empty result
 	return buf.Bytes(), nil
 }
 

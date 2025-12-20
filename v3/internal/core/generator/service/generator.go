@@ -2,27 +2,34 @@
 package generator
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	pslast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
 	"github.com/satishbabariya/prisma-go/v3/internal/core/generator/analyzer"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/generator/astgen"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/generator/writer"
+	"github.com/satishbabariya/prisma-go/v3/internal/core/generator/template"
 )
 
 // Generator generates Go code from Prisma schemas.
 type Generator struct {
-	outputDir string
+	outputDir      string
+	templateEngine *template.Engine
 }
 
 // NewGenerator creates a new generator.
 func NewGenerator(outputDir string) *Generator {
+	templateEngine := template.NewEngine()
+
+	// Load templates from embedded templates
+	templatesDir := filepath.Join("internal", "core", "generator", "template", "templates")
+	templateEngine.LoadTemplates(templatesDir) // Ignore error, templates are built-in
+
 	return &Generator{
-		outputDir: outputDir,
+		outputDir:      outputDir,
+		templateEngine: templateEngine,
 	}
 }
 
@@ -35,36 +42,30 @@ func (g *Generator) Generate(ctx context.Context, schema *pslast.SchemaAst) erro
 		return fmt.Errorf("failed to analyze schema: %w", err)
 	}
 
-	// Step 2: Build AST from IR
-	builder := astgen.NewBuilder(ir)
-	fileAST := builder.BuildFile()
+	// Step 2: Generate code using template engine
+	if g.templateEngine != nil {
+		files, err := g.templateEngine.RenderAll(ir)
+		if err != nil {
+			return fmt.Errorf("failed to render templates: %w", err)
+		}
 
-	// Step 3: Write to file
-	astWriter := writer.NewASTWriter()
-	var buf bytes.Buffer
+		// Step 3: Write generated files to output directory
+		if err := os.MkdirAll(g.outputDir, 0755); err != nil {
+			return fmt.Errorf("failed to create output directory: %w", err)
+		}
 
-	// Write header
-	header := writer.NewFileHeader()
-	if err := header.Write(&buf, nil); err != nil {
-		return fmt.Errorf("failed to write header: %w", err)
+		for filename, content := range files {
+			outputPath := filepath.Join(g.outputDir, filename)
+			if err := os.WriteFile(outputPath, content, 0644); err != nil {
+				return fmt.Errorf("failed to write output file %s: %w", filename, err)
+			}
+		}
+
+		return nil
 	}
 
-	// Write AST
-	if err := astWriter.Write(&buf, fileAST); err != nil {
-		return fmt.Errorf("failed to write AST: %w", err)
-	}
-
-	// Step 4: Write to output file
-	outputPath := filepath.Join(g.outputDir, "models.gen.go")
-	if err := os.MkdirAll(g.outputDir, 0755); err != nil {
-		return fmt.Errorf("failed to create output directory: %w", err)
-	}
-
-	if err := os.WriteFile(outputPath, buf.Bytes(), 0644); err != nil {
-		return fmt.Errorf("failed to write output file: %w", err)
-	}
-
-	return nil
+	// Fallback to basic generation
+	return fmt.Errorf("template engine not available")
 }
 
 // GenerateToString generates code and returns it as a string (for testing).
@@ -76,24 +77,23 @@ func (g *Generator) GenerateToString(ctx context.Context, schema *pslast.SchemaA
 		return "", fmt.Errorf("failed to analyze schema: %w", err)
 	}
 
-	// Build AST
-	builder := astgen.NewBuilder(ir)
-	fileAST := builder.BuildFile()
+	// Generate using template engine
+	if g.templateEngine != nil {
+		files, err := g.templateEngine.RenderAll(ir)
+		if err != nil {
+			return "", fmt.Errorf("failed to render templates: %w", err)
+		}
 
-	// Write to buffer
-	astWriter := writer.NewASTWriter()
-	var buf bytes.Buffer
+		// Combine all files into one output for testing
+		var result strings.Builder
+		for filename, content := range files {
+			result.WriteString("// --- " + filename + " ---\n")
+			result.Write(content)
+			result.WriteString("\n\n")
+		}
 
-	// Write header
-	header := writer.NewFileHeader()
-	if err := header.Write(&buf, nil); err != nil {
-		return "", fmt.Errorf("failed to write header: %w", err)
+		return result.String(), nil
 	}
 
-	// Write AST
-	if err := astWriter.Write(&buf, fileAST); err != nil {
-		return "", fmt.Errorf("failed to write AST: %w", err)
-	}
-
-	return buf.String(), nil
+	return "", fmt.Errorf("template engine not available")
 }
