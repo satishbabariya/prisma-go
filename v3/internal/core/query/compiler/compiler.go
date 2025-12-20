@@ -1,4 +1,4 @@
-// Package compiler implements SQL compilation from queries.
+// Package compiler provides SQL query compilation.
 package compiler
 
 import (
@@ -7,18 +7,26 @@ import (
 	"strings"
 
 	"github.com/satishbabariya/prisma-go/v3/internal/core/query/domain"
+	"github.com/satishbabariya/prisma-go/v3/internal/core/schema"
 )
 
-// SQLCompiler implements the domain.QueryCompiler interface.
+// SQLCompiler compiles domain queries to SQL.
 type SQLCompiler struct {
-	dialect domain.SQLDialect
+	dialect  domain.SQLDialect
+	registry *schema.MetadataRegistry // Schema metadata for relation resolution
 }
 
 // NewSQLCompiler creates a new SQL compiler.
 func NewSQLCompiler(dialect domain.SQLDialect) *SQLCompiler {
 	return &SQLCompiler{
-		dialect: dialect,
+		dialect:  dialect,
+		registry: nil, // Will be set via SetRegistry when schema is available
 	}
+}
+
+// SetRegistry sets the schema metadata registry for relation resolution.
+func (c *SQLCompiler) SetRegistry(registry *schema.MetadataRegistry) {
+	c.registry = registry
 }
 
 // Compile compiles a query to an executable form.
@@ -96,6 +104,19 @@ func (c *SQLCompiler) compileSelect(query *domain.Query) (domain.SQL, error) {
 	var args []interface{}
 	argIndex := 1
 
+	// Build relation JOINs if requested
+	var joins []RelationJoin
+	var err error
+	if len(query.Relations) > 0 {
+		// Get registry from compiler context (would be set during initialization)
+		// For now, relation loading requires explicit registry setup
+		// This will be nil until integrated with full schema loading
+		joins, err = c.buildRelationJoins(query.Model, query.Model, query.Relations, c.registry)
+		if err != nil {
+			return domain.SQL{}, fmt.Errorf("failed to build relation joins: %w", err)
+		}
+	}
+
 	// SELECT clause
 	sqlBuilder.WriteString("SELECT ")
 
@@ -111,34 +132,51 @@ func (c *SQLCompiler) compileSelect(query *domain.Query) (domain.SQL, error) {
 		sqlBuilder.WriteString(") ")
 	}
 
+	// Build column list
+	var columns []string
 	if len(query.Selection.Fields) > 0 {
-		for i, field := range query.Selection.Fields {
-			if i > 0 {
-				sqlBuilder.WriteString(", ")
-			}
-			sqlBuilder.WriteString(field)
+		// Select specific fields from base table
+		for _, field := range query.Selection.Fields {
+			columns = append(columns, fmt.Sprintf("%s.%s", query.Model, field))
 		}
 	} else {
-		sqlBuilder.WriteString("*")
+		// Select all from base table
+		columns = append(columns, fmt.Sprintf("%s.*", query.Model))
 	}
+
+	// Add columns from joined relations
+	if len(joins) > 0 {
+		joinColumns := getJoinColumns(joins)
+		columns = append(columns, joinColumns...)
+	}
+
+	sqlBuilder.WriteString(strings.Join(columns, ", "))
 
 	// FROM clause
 	sqlBuilder.WriteString(" FROM ")
 	sqlBuilder.WriteString(query.Model)
 
+	// Add JOIN clauses
+	if len(joins) > 0 {
+		joinSQL := generateJoinSQL(joins)
+		sqlBuilder.WriteString(joinSQL)
+	}
+
 	// WHERE clause
-	if len(query.Filter.Conditions) > 0 || query.Cursor != nil {
+	if len(query.Filter.Conditions) > 0 || len(query.Filter.NestedFilters) > 0 || query.Cursor != nil {
 		var whereClauses []string
 		var whereArgs []interface{}
 
-		// Add regular filter conditions
-		if len(query.Filter.Conditions) > 0 {
+		// Add regular filter conditions (including nested)
+		if len(query.Filter.Conditions) > 0 || len(query.Filter.NestedFilters) > 0 {
 			whereClause, args, err := c.buildWhereClause(query.Filter, &argIndex)
 			if err != nil {
 				return domain.SQL{}, err
 			}
-			whereClauses = append(whereClauses, whereClause)
-			whereArgs = append(whereArgs, args...)
+			if whereClause != "" {
+				whereClauses = append(whereClauses, whereClause)
+				whereArgs = append(whereArgs, args...)
+			}
 		}
 
 		// Add cursor condition for cursor-based pagination
@@ -149,9 +187,11 @@ func (c *SQLCompiler) compileSelect(query *domain.Query) (domain.SQL, error) {
 			whereArgs = append(whereArgs, query.Cursor.Value)
 		}
 
-		sqlBuilder.WriteString(" WHERE ")
-		sqlBuilder.WriteString(strings.Join(whereClauses, " AND "))
-		args = append(args, whereArgs...)
+		if len(whereClauses) > 0 {
+			sqlBuilder.WriteString(" WHERE ")
+			sqlBuilder.WriteString(strings.Join(whereClauses, " AND "))
+			args = append(args, whereArgs...)
+		}
 	}
 
 	// ORDER BY clause
@@ -190,30 +230,56 @@ func (c *SQLCompiler) compileSelect(query *domain.Query) (domain.SQL, error) {
 	}, nil
 }
 
-// buildWhereClause builds the WHERE clause.
+// buildWhereClause builds the WHERE clause with support for nested filters.
+// Handles both direct conditions and nested filter groups recursively.
 func (c *SQLCompiler) buildWhereClause(filter domain.Filter, argIndex *int) (string, []interface{}, error) {
-	if len(filter.Conditions) == 0 {
+	if len(filter.Conditions) == 0 && len(filter.NestedFilters) == 0 {
 		return "", nil, nil
 	}
 
-	var clauses []string
+	var parts []string
 	var args []interface{}
 
+	// Process direct conditions
 	for _, condition := range filter.Conditions {
 		clause, condArgs, err := c.buildCondition(condition, argIndex)
 		if err != nil {
 			return "", nil, err
 		}
-		clauses = append(clauses, clause)
+		parts = append(parts, clause)
 		args = append(args, condArgs...)
 	}
 
+	// Process nested filters recursively
+	for _, nestedFilter := range filter.NestedFilters {
+		nestedClause, nestedArgs, err := c.buildWhereClause(nestedFilter, argIndex)
+		if err != nil {
+			return "", nil, err
+		}
+		// Wrap nested clause in parentheses for proper precedence
+		if nestedClause != "" {
+			parts = append(parts, "("+nestedClause+")")
+			args = append(args, nestedArgs...)
+		}
+	}
+
+	if len(parts) == 0 {
+		return "", nil, nil
+	}
+
+	// Determine the operator to join parts
 	operator := " AND "
 	if filter.Operator == domain.OR {
 		operator = " OR "
+	} else if filter.Operator == domain.NOT {
+		// For NOT, we wrap each part with NOT and join with AND
+		for i, part := range parts {
+			parts[i] = "NOT (" + part + ")"
+		}
+		operator = " AND "
 	}
 
-	return strings.Join(clauses, operator), args, nil
+	return strings.Join(parts, operator), args, nil
 }
 
 // buildCondition builds a single condition.

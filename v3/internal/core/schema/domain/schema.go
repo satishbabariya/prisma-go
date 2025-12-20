@@ -103,6 +103,8 @@ const (
 	OneToOne RelationType = "OneToOne"
 	// OneToMany represents a one-to-many relation.
 	OneToMany RelationType = "OneToMany"
+	// ManyToOne represents a many-to-one relation.
+	ManyToOne RelationType = "ManyToOne"
 	// ManyToMany represents a many-to-many relation.
 	ManyToMany RelationType = "ManyToMany"
 )

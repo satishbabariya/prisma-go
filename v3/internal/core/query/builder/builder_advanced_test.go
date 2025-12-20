@@ -189,7 +189,8 @@ func TestComplexQueries(t *testing.T) {
 		assert.Equal(t, []string{"category"}, query.Distinct)
 		assert.Equal(t, 50, query.Cursor.Value)
 		assert.Len(t, query.Filter.Conditions, 1)
-		assert.Equal(t, 20, query.Pagination.Take)
+		assert.NotNil(t, query.Pagination.Take)
+		assert.Equal(t, 20, *query.Pagination.Take)
 	})
 }
 
@@ -211,9 +212,9 @@ func TestNestedWriteBuilders(t *testing.T) {
 	t.Run("NestedConnect", func(t *testing.T) {
 		qb := NewQueryBuilder("users").
 			Update(map[string]interface{}{"name": "Updated"}).
-			NestedConnect("profile", []domain.Condition{
-				{Field: "id", Operator: domain.Equals, Value: 1},
-			})
+			NestedConnect("profile",
+				domain.Condition{Field: "id", Operator: domain.Equals, Value: 1},
+			)
 
 		query := qb.GetQuery()
 
@@ -224,9 +225,9 @@ func TestNestedWriteBuilders(t *testing.T) {
 	t.Run("NestedDisconnect", func(t *testing.T) {
 		qb := NewQueryBuilder("users").
 			Update(map[string]interface{}{"status": "inactive"}).
-			NestedDisconnect("posts", []domain.Condition{
-				{Field: "draft", Operator: domain.Equals, Value: true},
-			})
+			NestedDisconnect("posts",
+				domain.Condition{Field: "draft", Operator: domain.Equals, Value: true},
+			)
 
 		query := qb.GetQuery()
 

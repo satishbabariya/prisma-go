@@ -1,128 +1,77 @@
-// Package validator implements comprehensive schema validation rules.
+// Package validator provides schema validation for Prisma schemas.
 package validator
 
 import (
 	"context"
 	"fmt"
-	"regexp"
+	"strings"
 
 	"github.com/satishbabariya/prisma-go/v3/internal/core/schema/domain"
 )
 
-// Validator implements SchemaValidator interface.
+// Validator implements schema validation.
 type Validator struct {
-	builtinTypes map[string]bool
+	schema *domain.Schema
+	errors []string
 }
 
 // NewValidator creates a new schema validator.
 func NewValidator() *Validator {
 	return &Validator{
-		builtinTypes: map[string]bool{
-			"String": true, "Int": true, "BigInt": true, "Float": true,
-			"Decimal": true, "Boolean": true, "DateTime": true, "Json": true,
-			"Bytes": true,
-		},
+		errors: make([]string, 0),
 	}
 }
 
 // Validate validates the entire schema.
 func (v *Validator) Validate(ctx context.Context, schema *domain.Schema) error {
+	v.schema = schema
+	v.errors = make([]string, 0)
+
 	// Validate datasources
 	if len(schema.Datasources) == 0 {
-		return fmt.Errorf("schema must have at least one datasource")
+		v.addError("schema must have at least one datasource")
 	}
 
-	// Create model map for lookups
-	modelMap := make(map[string]*domain.Model)
-	for i := range schema.Models {
-		model := &schema.Models[i]
-		modelMap[model.Name] = model
-	}
-
-	// Create enum map
-	enumMap := make(map[string]*domain.Enum)
-	for i := range schema.Enums {
-		enum := &schema.Enums[i]
-		enumMap[enum.Name] = enum
+	for _, ds := range schema.Datasources {
+		v.validateDatasource(ds)
 	}
 
 	// Validate models
 	for _, model := range schema.Models {
-		if err := v.validateModelWithContext(ctx, &model, modelMap, enumMap); err != nil {
-			return fmt.Errorf("model %s: %w", model.Name, err)
-		}
+		v.validateModel(model)
 	}
 
 	// Validate enums
 	for _, enum := range schema.Enums {
-		if len(enum.Values) == 0 {
-			return fmt.Errorf("enum %s must have at least one value", enum.Name)
-		}
+		v.validateEnum(enum)
+	}
+
+	if len(v.errors) > 0 {
+		return fmt.Errorf("schema validation failed:\n  - %s", strings.Join(v.errors, "\n  - "))
 	}
 
 	return nil
 }
 
-// ValidateModel validates a single model (shallow).
+// ValidateModel validates a single model.
 func (v *Validator) ValidateModel(ctx context.Context, model *domain.Model) error {
-	return v.validateModelWithContext(ctx, model, nil, nil)
-}
+	v.errors = make([]string, 0)
+	v.validateModel(*model)
 
-// validateModelWithContext validates a model with context.
-func (v *Validator) validateModelWithContext(ctx context.Context, model *domain.Model, modelMap map[string]*domain.Model, enumMap map[string]*domain.Enum) error {
-	if model.Name == "" {
-		return fmt.Errorf("model name cannot be empty")
-	}
-
-	if len(model.Fields) == 0 {
-		return fmt.Errorf("model must have at least one field")
-	}
-
-	// Check for at least one unique identifier
-	hasID := false
-	for _, field := range model.Fields {
-		if err := v.validateFieldWithContext(ctx, &field, modelMap, enumMap); err != nil {
-			return fmt.Errorf("field %s: %w", field.Name, err)
-		}
-
-		// Check if field has @id attribute
-		for _, attr := range field.Attributes {
-			if attr.Name == "id" {
-				hasID = true
-			}
-		}
-	}
-
-	if !hasID {
-		return fmt.Errorf("model must have at least one @id field")
+	if len(v.errors) > 0 {
+		return fmt.Errorf("model %s validation failed:\n  - %s", model.Name, strings.Join(v.errors, "\n  - "))
 	}
 
 	return nil
 }
 
-// ValidateField validates a single field (shallow).
+// ValidateField validates a single field.
 func (v *Validator) ValidateField(ctx context.Context, field *domain.Field) error {
-	return v.validateFieldWithContext(ctx, field, nil, nil)
-}
+	v.errors = make([]string, 0)
+	v.validateField(*field, "unknown")
 
-// validateFieldWithContext validates a field with context.
-func (v *Validator) validateFieldWithContext(ctx context.Context, field *domain.Field, modelMap map[string]*domain.Model, enumMap map[string]*domain.Enum) error {
-	if field.Name == "" {
-		return fmt.Errorf("field name cannot be empty")
-	}
-
-	if field.Type.Name == "" {
-		return fmt.Errorf("field type cannot be empty")
-	}
-
-	// Validate type validity if maps are provided
-	if modelMap != nil && enumMap != nil && !field.Type.IsBuiltin {
-		// Must be a model or enum
-		if _, isModel := modelMap[field.Type.Name]; !isModel {
-			if _, isEnum := enumMap[field.Type.Name]; !isEnum {
-				return fmt.Errorf("unknown type %s", field.Type.Name)
-			}
-		}
+	if len(v.errors) > 0 {
+		return fmt.Errorf("field %s validation failed:\n  - %s", field.Name, strings.Join(v.errors, "\n  - "))
 	}
 
 	return nil
@@ -138,44 +87,227 @@ func (v *Validator) ValidateRelation(ctx context.Context, relation *domain.Relat
 		return fmt.Errorf("relation must specify a relation type")
 	}
 
+	// Validate referential actions
+	if relation.OnDelete != "" && !v.isValidReferentialAction(relation.OnDelete) {
+		return fmt.Errorf("invalid onDelete action: %s", relation.OnDelete)
+	}
+
+	if relation.OnUpdate != "" && !v.isValidReferentialAction(relation.OnUpdate) {
+		return fmt.Errorf("invalid onUpdate action: %s", relation.OnUpdate)
+	}
+
 	return nil
+}
+
+// Internal validation methods
+
+func (v *Validator) validateDatasource(ds domain.Datasource) {
+	if ds.Name == "" {
+		v.addError("datasource must have a name")
+	}
+
+	if ds.Provider == "" {
+		v.addError(fmt.Sprintf("datasource %s must have a provider", ds.Name))
+	}
+
+	// Validate provider
+	validProviders := map[string]bool{
+		"postgresql":  true,
+		"mysql":       true,
+		"sqlite":      true,
+		"sqlserver":   true,
+		"mongodb":     true,
+		"cockroachdb": true,
+	}
+
+	if !validProviders[ds.Provider] {
+		v.addError(fmt.Sprintf("datasource %s has invalid provider: %s", ds.Name, ds.Provider))
+	}
+
+	if ds.URL == "" {
+		v.addError(fmt.Sprintf("datasource %s must have a URL", ds.Name))
+	}
+}
+
+func (v *Validator) validateModel(model domain.Model) {
+	if model.Name == "" {
+		v.addError("model must have a name")
+		return
+	}
+
+	// Model name must be PascalCase
+	if !v.isPascalCase(model.Name) {
+		v.addError(fmt.Sprintf("model %s must be in PascalCase", model.Name))
+	}
+
+	if len(model.Fields) == 0 {
+		v.addError(fmt.Sprintf("model %s must have at least one field", model.Name))
+		return
+	}
+
+	// Must have at least one ID field
+	hasID := false
+	uniqueFields := make(map[string]bool)
+
+	for _, field := range model.Fields {
+		v.validateField(field, model.Name)
+
+		// Check for @id attribute
+		for _, attr := range field.Attributes {
+			if attr.Name == "id" {
+				hasID = true
+			}
+		}
+
+		// Track unique field names
+		if uniqueFields[field.Name] {
+			v.addError(fmt.Sprintf("model %s has duplicate field: %s", model.Name, field.Name))
+		}
+		uniqueFields[field.Name] = true
+	}
+
+	if !hasID {
+		v.addError(fmt.Sprintf("model %s must have an @id field", model.Name))
+	}
+
+	// Validate indexes
+	for i, index := range model.Indexes {
+		if len(index.Fields) == 0 {
+			v.addError(fmt.Sprintf("model %s index %d has no fields", model.Name, i))
+		}
+
+		// Check that indexed fields exist
+		for _, fieldName := range index.Fields {
+			found := false
+			for _, field := range model.Fields {
+				if field.Name == fieldName {
+					found = true
+					break
+				}
+			}
+			if !found {
+				v.addError(fmt.Sprintf("model %s index references unknown field: %s", model.Name, fieldName))
+			}
+		}
+	}
+}
+
+func (v *Validator) validateField(field domain.Field, modelName string) {
+	if field.Name == "" {
+		v.addError(fmt.Sprintf("field in model %s must have a name", modelName))
+		return
+	}
+
+	// Field name must be camelCase
+	if !v.isCamelCase(field.Name) {
+		v.addError(fmt.Sprintf("field %s in model %s should be camelCase", field.Name, modelName))
+	}
+
+	// Validate field type
+	if field.Type.Name == "" {
+		v.addError(fmt.Sprintf("field %s in model %s must have a type", field.Name, modelName))
+	}
+
+	// List fields cannot have default values
+	if field.IsList && field.DefaultValue != nil {
+		v.addError(fmt.Sprintf("field %s in model %s: list fields cannot have default values", field.Name, modelName))
+	}
+
+	// Validate conflicting attributes
+	hasDefault := false
+	hasUpdatedAt := false
+
+	for _, attr := range field.Attributes {
+		if attr.Name == "default" {
+			hasDefault = true
+		}
+		if attr.Name == "updatedAt" {
+			hasUpdatedAt = true
+		}
+	}
+
+	if hasDefault && hasUpdatedAt {
+		v.addError(fmt.Sprintf("field %s in model %s cannot have both @default and @updatedAt", field.Name, modelName))
+	}
+
+	// If field is required and has no default, that's ok
+	// If field is optional and required, that's a problem
+	if !field.IsRequired && field.DefaultValue == nil {
+		// Optional field without default is fine
+	}
+}
+
+func (v *Validator) validateEnum(enum domain.Enum) {
+	if enum.Name == "" {
+		v.addError("enum must have a name")
+		return
+	}
+
+	// Enum name must be PascalCase
+	if !v.isPascalCase(enum.Name) {
+		v.addError(fmt.Sprintf("enum %s must be in PascalCase", enum.Name))
+	}
+
+	if len(enum.Values) == 0 {
+		v.addError(fmt.Sprintf("enum %s must have at least one value", enum.Name))
+		return
+	}
+
+	// Check for duplicate values
+	valueSet := make(map[string]bool)
+	for _, value := range enum.Values {
+		if valueSet[value] {
+			v.addError(fmt.Sprintf("enum %s has duplicate value: %s", enum.Name, value))
+		}
+		valueSet[value] = true
+
+		// Enum values should be UPPER_CASE
+		if !v.isUpperSnakeCase(value) {
+			v.addError(fmt.Sprintf("enum %s value %s should be UPPER_SNAKE_CASE", enum.Name, value))
+		}
+	}
 }
 
 // Helper methods
 
-func (v *Validator) validateModelName(name string) error {
-	if name == "" {
-		return fmt.Errorf("model name cannot be empty")
-	}
-
-	// Must start with uppercase letter and be PascalCase
-	if !regexp.MustCompile(`^[A-Z][a-zA-Z0-9]*$`).MatchString(name) {
-		return fmt.Errorf("invalid model name: %s (must be PascalCase)", name)
-	}
-
-	return nil
+func (v *Validator) addError(msg string) {
+	v.errors = append(v.errors, msg)
 }
 
-func (v *Validator) validateFieldName(name string) error {
-	if name == "" {
-		return fmt.Errorf("field name cannot be empty")
+func (v *Validator) isPascalCase(s string) bool {
+	if len(s) == 0 {
+		return false
 	}
-
-	// Must start with lowercase letter and be camelCase
-	if !regexp.MustCompile(`^[a-z][a-zA-Z0-9]*$`).MatchString(name) {
-		return fmt.Errorf("invalid field name: %s (must be camelCase)", name)
-	}
-
-	return nil
+	// Must start with uppercase letter
+	return s[0] >= 'A' && s[0] <= 'Z'
 }
 
-func (v *Validator) hasAttribute(field *domain.Field, attrName string) bool {
-	for _, attr := range field.Attributes {
-		if attr.Name == attrName {
-			return true
+func (v *Validator) isCamelCase(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	// Must start with lowercase letter
+	return s[0] >= 'a' && s[0] <= 'z'
+}
+
+func (v *Validator) isUpperSnakeCase(s string) bool {
+	for _, ch := range s {
+		if !(ch >= 'A' && ch <= 'Z' || ch == '_' || ch >= '0' && ch <= '9') {
+			return false
 		}
 	}
-	return false
+	return true
+}
+
+func (v *Validator) isValidReferentialAction(action domain.ReferentialAction) bool {
+	validActions := map[domain.ReferentialAction]bool{
+		domain.Cascade:    true,
+		domain.Restrict:   true,
+		domain.NoAction:   true,
+		domain.SetNull:    true,
+		domain.SetDefault: true,
+	}
+	return validActions[action]
 }
 
 // Ensure Validator implements SchemaValidator interface.

@@ -63,10 +63,22 @@ type Selection struct {
 	Include bool // true = include, false = select
 }
 
-// Filter represents query conditions.
+// Filter represents query conditions with support for nested logical combinations.
+// Filters can contain both direct conditions and nested filter groups.
+// Example: (status='active' AND role='admin') OR verified=true
+// Would be represented as:
+//
+//	Filter{
+//	  Operator: OR,
+//	  NestedFilters: [
+//	    Filter{Operator: AND, Conditions: [{status='active'}, {role='admin'}]},
+//	    Filter{Conditions: [{verified=true}]}
+//	  ]
+//	}
 type Filter struct {
-	Conditions []Condition
-	Operator   LogicalOperator
+	Conditions    []Condition     // Direct field conditions
+	NestedFilters []Filter        // Nested filter groups for complex logic
+	Operator      LogicalOperator // How to combine conditions/nested filters
 }
 
 // LogicalOperator represents logical operators for combining conditions.

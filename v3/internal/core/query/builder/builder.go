@@ -137,6 +137,13 @@ func (b *QueryBuilder) Or(conditions ...domain.Condition) *QueryBuilder {
 	return b
 }
 
+// Not negates conditions with NOT operator.
+func (b *QueryBuilder) Not(conditions ...domain.Condition) *QueryBuilder {
+	b.query.Filter.Operator = domain.NOT
+	b.query.Filter.Conditions = append(b.query.Filter.Conditions, conditions...)
+	return b
+}
+
 // Select specifies fields to select.
 func (b *QueryBuilder) Select(fields ...string) *QueryBuilder {
 	b.query.Selection.Fields = fields
