@@ -22,7 +22,7 @@ func NewAttributeParser() *AttributeParser {
 func (ap *AttributeParser) ParseFieldAttributes(pslField *pslast.Field) []domain.Attribute {
 	var attributes []domain.Attribute
 
-	for _, attr := range pslField.FieldAttributes {
+	for _, attr := range pslField.Attributes {
 		if attr == nil {
 			continue
 		}
@@ -62,7 +62,7 @@ func (ap *AttributeParser) parseAttribute(attr interface{}) *domain.Attribute {
 	var args []interface{}
 
 	switch a := attr.(type) {
-	case *pslast.FieldAttribute:
+	case *pslast.Attribute:
 		if a == nil {
 			return nil
 		}
@@ -120,7 +120,11 @@ func (ap *AttributeParser) parseArgumentValue(expr pslast.Expression) interface{
 	case *pslast.NumericValue:
 		return v.Value
 
-	case *pslast.BooleanValue:
+	case *pslast.ConstantValue:
+		// Handle boolean constants
+		if boolVal, ok := v.AsBooleanValue(); ok {
+			return boolVal
+		}
 		return v.Value
 
 	case *pslast.ArrayExpression:
@@ -137,12 +141,12 @@ func (ap *AttributeParser) parseArgumentValue(expr pslast.Expression) interface{
 
 // parseArrayValue parses array expressions.
 func (ap *AttributeParser) parseArrayValue(arr *pslast.ArrayExpression) []interface{} {
-	if arr == nil || len(arr.Values) == 0 {
+	if arr == nil || len(arr.Elements) == 0 {
 		return nil
 	}
 
-	result := make([]interface{}, 0, len(arr.Values))
-	for _, val := range arr.Values {
+	result := make([]interface{}, 0, len(arr.Elements))
+	for _, val := range arr.Elements {
 		if val != nil {
 			parsed := ap.parseArgumentValue(val)
 			if parsed != nil {
@@ -180,8 +184,8 @@ func (ap *AttributeParser) parseFunctionCall(fn *pslast.FunctionCall) map[string
 // ParseRelationAttribute parses @relation attribute and extracts relation metadata.
 func (ap *AttributeParser) ParseRelationAttribute(pslField *pslast.Field) *domain.Relation {
 	// Find @relation attribute
-	var relationAttr *pslast.FieldAttribute
-	for _, attr := range pslField.FieldAttributes {
+	var relationAttr *pslast.Attribute
+	for _, attr := range pslField.Attributes {
 		if attr != nil && attr.GetName() == "relation" {
 			relationAttr = attr
 			break
@@ -235,12 +239,12 @@ func (ap *AttributeParser) ParseRelationAttribute(pslField *pslast.Field) *domai
 // extractFieldNames extracts field names from an array expression.
 func (ap *AttributeParser) extractFieldNames(expr pslast.Expression) []string {
 	arrExpr, ok := expr.(*pslast.ArrayExpression)
-	if !ok || len(arrExpr.Values) == 0 {
+	if !ok || len(arrExpr.Elements) == 0 {
 		return nil
 	}
 
 	var fields []string
-	for _, val := range arrExpr.Values {
+	for _, val := range arrExpr.Elements {
 		// Field references in arrays are typically identifiers
 		if strVal := ap.extractIdentifier(val); strVal != "" {
 			fields = append(fields, strVal)
@@ -266,7 +270,7 @@ func (ap *AttributeParser) extractIdentifier(expr pslast.Expression) string {
 
 // GetDefaultValue extracts default value from field attributes.
 func (ap *AttributeParser) GetDefaultValue(pslField *pslast.Field) interface{} {
-	for _, attr := range pslField.FieldAttributes {
+	for _, attr := range pslField.Attributes {
 		if attr != nil && attr.GetName() == "default" {
 			if attr.Arguments != nil && len(attr.Arguments.Arguments) > 0 {
 				firstArg := attr.Arguments.Arguments[0]
@@ -281,7 +285,7 @@ func (ap *AttributeParser) GetDefaultValue(pslField *pslast.Field) interface{} {
 
 // IsUnique checks if field has @unique attribute.
 func (ap *AttributeParser) IsUnique(pslField *pslast.Field) bool {
-	for _, attr := range pslField.FieldAttributes {
+	for _, attr := range pslField.Attributes {
 		if attr != nil && attr.GetName() == "unique" {
 			return true
 		}
@@ -291,7 +295,7 @@ func (ap *AttributeParser) IsUnique(pslField *pslast.Field) bool {
 
 // IsID checks if field has @id attribute.
 func (ap *AttributeParser) IsID(pslField *pslast.Field) bool {
-	for _, attr := range pslField.FieldAttributes {
+	for _, attr := range pslField.Attributes {
 		if attr != nil && attr.GetName() == "id" {
 			return true
 		}
@@ -301,7 +305,7 @@ func (ap *AttributeParser) IsID(pslField *pslast.Field) bool {
 
 // IsUpdatedAt checks if field has @updatedAt attribute.
 func (ap *AttributeParser) IsUpdatedAt(pslField *pslast.Field) bool {
-	for _, attr := range pslField.FieldAttributes {
+	for _, attr := range pslField.Attributes {
 		if attr != nil && attr.GetName() == "updatedAt" {
 			return true
 		}
@@ -313,7 +317,7 @@ func (ap *AttributeParser) IsUpdatedAt(pslField *pslast.Field) bool {
 func (ap *AttributeParser) GetMappedName(attrs []interface{}) string {
 	for _, attr := range attrs {
 		switch a := attr.(type) {
-		case *pslast.FieldAttribute:
+		case *pslast.Attribute:
 			if a != nil && a.GetName() == "map" {
 				if a.Arguments != nil && len(a.Arguments.Arguments) > 0 {
 					if strVal, ok := a.Arguments.Arguments[0].Value.(*pslast.StringValue); ok {

@@ -49,6 +49,7 @@ func run() error {
 	// Add commands
 	rootCmd.AddCommand(commands.NewInitCommand())
 	rootCmd.AddCommand(commands.NewGenerateCommand(c))
+	rootCmd.AddCommand(commands.NewDBCommand()) // Add DB commands
 	rootCmd.AddCommand(commands.NewMigrateCommand(c))
 	rootCmd.AddCommand(commands.NewFormatCommand(c))
 	rootCmd.AddCommand(commands.NewValidateCommand(c))

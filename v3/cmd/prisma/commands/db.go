@@ -84,6 +84,7 @@ func NewDBCommand() *cobra.Command {
 
 	cmd.AddCommand(NewDBPushCommand())
 	cmd.AddCommand(NewDBPullCommand())
+	cmd.AddCommand(NewDBSeedCommand())
 	return cmd
 }
 
