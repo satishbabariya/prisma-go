@@ -1,22 +1,37 @@
 version: '3.8'
 
 services:
-  postgres:
+  postgres-test:
     image: postgres:15-alpine
-    container_name: prisma-go-test-db
     environment:
       POSTGRES_USER: prisma
       POSTGRES_PASSWORD: prisma
       POSTGRES_DB: prisma_test
     ports:
       - "5433:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U prisma"]
       interval: 5s
       timeout: 5s
       retries: 5
 
-volumes:
-  postgres_data:
+  mysql-test:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: prisma
+      MYSQL_DATABASE: prisma_test
+      MYSQL_USER: prisma
+      MYSQL_PASSWORD: prisma
+    ports:
+      - "3307:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  sqlite-test:
+    image: alpine:latest
+    command: sleep infinity
+    volumes:
+      - ./tests/integration/data:/data
