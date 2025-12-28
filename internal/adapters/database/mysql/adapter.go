@@ -8,7 +8,7 @@ import (
 	"time"
 
 	_ "github.com/go-sql-driver/mysql" // MySQL driver
-	"github.com/satishbabariya/prisma-go/v3/internal/adapters/database"
+	"github.com/satishbabariya/prisma-go/internal/adapters/database"
 )
 
 // MySQLAdapter implements the database.Adapter interface for MySQL.

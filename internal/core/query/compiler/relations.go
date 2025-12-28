@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/core/query/domain"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/schema"
-	schemadomain "github.com/satishbabariya/prisma-go/v3/internal/core/schema/domain"
+	"github.com/satishbabariya/prisma-go/internal/core/query/domain"
+	"github.com/satishbabariya/prisma-go/internal/core/schema"
+	schemadomain "github.com/satishbabariya/prisma-go/internal/core/schema/domain"
 )
 
 // RelationJoin represents a JOIN for a relation.

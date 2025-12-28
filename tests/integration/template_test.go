@@ -5,8 +5,8 @@ package test
 import (
 	"testing"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/core/generator/ir"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/generator/template"
+	"github.com/satishbabariya/prisma-go/internal/core/generator/ir"
+	"github.com/satishbabariya/prisma-go/internal/core/generator/template"
 )
 
 // TestTemplateGenerationEndToEnd tests complete template generation workflow

@@ -3,7 +3,7 @@ package commands
 import (
 	"fmt"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/core/migration/domain"
+	"github.com/satishbabariya/prisma-go/internal/core/migration/domain"
 )
 
 // addColumnChange implements domain.Change for ADD COLUMN.

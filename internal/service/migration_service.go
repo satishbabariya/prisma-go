@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	migrationdomain "github.com/satishbabariya/prisma-go/v3/internal/core/migration/domain"
-	"github.com/satishbabariya/prisma-go/v3/internal/repository"
+	migrationdomain "github.com/satishbabariya/prisma-go/internal/core/migration/domain"
+	"github.com/satishbabariya/prisma-go/internal/repository"
 )
 
 // MigrationService orchestrates migration operations.

@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/utils/container"
+	"github.com/satishbabariya/prisma-go/internal/utils/container"
 	"github.com/spf13/cobra"
 )
 

@@ -6,10 +6,10 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/adapters/database"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/query/domain"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/query/mapper"
-	"github.com/satishbabariya/prisma-go/v3/pkg/client"
+	"github.com/satishbabariya/prisma-go/internal/adapters/database"
+	"github.com/satishbabariya/prisma-go/internal/core/query/domain"
+	"github.com/satishbabariya/prisma-go/internal/core/query/mapper"
+	"github.com/satishbabariya/prisma-go/pkg/client"
 )
 
 // QueryExecutor implements the domain.QueryExecutor interface.

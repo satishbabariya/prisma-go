@@ -6,8 +6,8 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/adapters/database"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/migration/domain"
+	"github.com/satishbabariya/prisma-go/internal/adapters/database"
+	"github.com/satishbabariya/prisma-go/internal/core/migration/domain"
 )
 
 // HistoryRepositoryImpl implements the HistoryRepository interface using a database.

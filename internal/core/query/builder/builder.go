@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/core/query/domain"
+	"github.com/satishbabariya/prisma-go/internal/core/query/domain"
 )
 
 // QueryBuilder implements the domain.QueryBuilder interface.

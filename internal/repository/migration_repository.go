@@ -10,7 +10,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/core/migration/domain"
+	"github.com/satishbabariya/prisma-go/internal/core/migration/domain"
 )
 
 // MigrationRepositoryImpl implements the MigrationRepository interface.

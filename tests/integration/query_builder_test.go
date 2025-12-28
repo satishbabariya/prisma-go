@@ -8,10 +8,10 @@ import (
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/query/builder"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/query/compiler"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/query/domain"
-	"github.com/satishbabariya/prisma-go/v3/runtime"
+	"github.com/satishbabariya/prisma-go/internal/core/query/builder"
+	"github.com/satishbabariya/prisma-go/internal/core/query/compiler"
+	"github.com/satishbabariya/prisma-go/internal/core/query/domain"
+	"github.com/satishbabariya/prisma-go/runtime"
 )
 
 // TestQueryBuilderIntegration tests the complete query builder workflow

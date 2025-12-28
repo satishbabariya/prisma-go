@@ -7,7 +7,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/core/generator/ir"
+	"github.com/satishbabariya/prisma-go/internal/core/generator/ir"
 )
 
 // Engine renders templates using Go's text/template system.
@@ -197,7 +197,7 @@ func (e *Engine) generateClientCode(ir *ir.IR) string {
 	buf.WriteString("\t\"context\"\n")
 	buf.WriteString("\t\"database/sql\"\n")
 	buf.WriteString("\t\"fmt\"\n\n")
-	buf.WriteString("\t\"github.com/satishbabariya/prisma-go/v3/runtime\"\n")
+	buf.WriteString("\t\"github.com/satishbabariya/prisma-go/runtime\"\n")
 	buf.WriteString(")\n\n")
 
 	// Main Client

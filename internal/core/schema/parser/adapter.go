@@ -2,8 +2,8 @@
 package parser
 
 import (
+	"github.com/satishbabariya/prisma-go/internal/core/schema/domain"
 	"github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/schema/domain"
 )
 
 // ASTToDomain converts PSL AST to v3 domain model.

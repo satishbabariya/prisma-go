@@ -5,10 +5,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/core/query/builder"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/query/compiler"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/query/domain"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/query/executor"
+	"github.com/satishbabariya/prisma-go/internal/core/query/builder"
+	"github.com/satishbabariya/prisma-go/internal/core/query/compiler"
+	"github.com/satishbabariya/prisma-go/internal/core/query/domain"
+	"github.com/satishbabariya/prisma-go/internal/core/query/executor"
 )
 
 // QueryService orchestrates query execution.

@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/satishbabariya/prisma-go/internal/core/generator/analyzer"
+	"github.com/satishbabariya/prisma-go/internal/core/generator/template"
 	pslast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/generator/analyzer"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/generator/template"
 )
 
 // Generator generates Go code from Prisma schemas.

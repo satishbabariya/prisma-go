@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/core/schema/domain"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/schema/parser"
+	"github.com/satishbabariya/prisma-go/internal/core/schema/domain"
+	"github.com/satishbabariya/prisma-go/internal/core/schema/parser"
 )
 
 // SchemaRepositoryImpl implements the SchemaRepository interface.

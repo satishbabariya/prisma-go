@@ -5,8 +5,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/adapters/database"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/migration/domain"
+	"github.com/satishbabariya/prisma-go/internal/adapters/database"
+	"github.com/satishbabariya/prisma-go/internal/core/migration/domain"
 )
 
 // MigrationExecutor implements the Executor interface.

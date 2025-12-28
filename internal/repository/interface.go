@@ -4,9 +4,9 @@ package repository
 import (
 	"context"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/config"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/migration/domain"
-	schemadomain "github.com/satishbabariya/prisma-go/v3/internal/core/schema/domain"
+	"github.com/satishbabariya/prisma-go/internal/config"
+	"github.com/satishbabariya/prisma-go/internal/core/migration/domain"
+	schemadomain "github.com/satishbabariya/prisma-go/internal/core/schema/domain"
 )
 
 // MigrationRepository defines the interface for migration data access.

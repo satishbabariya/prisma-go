@@ -4,7 +4,7 @@ package astgen
 import (
 	"go/ast"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/core/generator/ir"
+	"github.com/satishbabariya/prisma-go/internal/core/generator/ir"
 )
 
 // buildFindFirstOrThrow generates a FindFirstOrThrow method that throws error if not found.

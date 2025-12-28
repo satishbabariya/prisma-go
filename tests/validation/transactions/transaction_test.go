@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/satishbabariya/prisma-go/v3/tests/validation"
+	"github.com/satishbabariya/prisma-go/tests/validation"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

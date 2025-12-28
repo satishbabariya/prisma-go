@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/core/schema/domain"
+	"github.com/satishbabariya/prisma-go/internal/core/schema/domain"
 )
 
 // MetadataRegistry stores queryable schema metadata for use by compilers and generators.

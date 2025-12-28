@@ -9,8 +9,8 @@ import (
 	"go/token"
 	"io"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/core/generator/ir"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/generator/template"
+	"github.com/satishbabariya/prisma-go/internal/core/generator/ir"
+	"github.com/satishbabariya/prisma-go/internal/core/generator/template"
 )
 
 // Writer writes AST nodes to Go code.

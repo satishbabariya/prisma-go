@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/config"
+	"github.com/satishbabariya/prisma-go/internal/config"
 )
 
 // ConfigRepositoryImpl implements the ConfigRepository interface.

@@ -5,7 +5,7 @@ import (
 	"go/ast"
 	"go/token"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/core/generator/ir"
+	"github.com/satishbabariya/prisma-go/internal/core/generator/ir"
 )
 
 // InputTypesGenerator generates Create/Update input structs.

@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/core/query/compiler"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/query/domain"
+	"github.com/satishbabariya/prisma-go/internal/core/query/compiler"
+	"github.com/satishbabariya/prisma-go/internal/core/query/domain"
 )
 
 // BenchmarkSimpleSelect tests simple SELECT query generation.

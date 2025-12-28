@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/core/schema/domain"
+	"github.com/satishbabariya/prisma-go/internal/core/schema/domain"
 )
 
 // Validator implements schema validation.

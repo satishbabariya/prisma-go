@@ -3,11 +3,11 @@ package introspection_test
 import (
 	"testing"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/core/introspection/domain"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/introspection/generator"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/introspection/inference"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/introspection/mapper"
-	schemadomain "github.com/satishbabariya/prisma-go/v3/internal/core/schema/domain"
+	"github.com/satishbabariya/prisma-go/internal/core/introspection/domain"
+	"github.com/satishbabariya/prisma-go/internal/core/introspection/generator"
+	"github.com/satishbabariya/prisma-go/internal/core/introspection/inference"
+	"github.com/satishbabariya/prisma-go/internal/core/introspection/mapper"
+	schemadomain "github.com/satishbabariya/prisma-go/internal/core/schema/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

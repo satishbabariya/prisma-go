@@ -6,7 +6,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/core/introspection/domain"
+	"github.com/satishbabariya/prisma-go/internal/core/introspection/domain"
 )
 
 // Introspector implements domain.Introspector for PostgreSQL.

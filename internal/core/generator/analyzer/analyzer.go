@@ -4,9 +4,9 @@ package analyzer
 import (
 	"fmt"
 
+	"github.com/satishbabariya/prisma-go/internal/core/generator/ir"
+	"github.com/satishbabariya/prisma-go/internal/core/generator/types"
 	pslast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/generator/ir"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/generator/types"
 )
 
 // SchemaAnalyzer analyzes PSL schemas.

@@ -11,12 +11,12 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-	"github.com/satishbabariya/prisma-go/v3/internal/adapters/database"
-	"github.com/satishbabariya/prisma-go/v3/internal/adapters/database/postgres"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/query/compiler"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/query/domain"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/query/executor"
-	"github.com/satishbabariya/prisma-go/v3/internal/service"
+	"github.com/satishbabariya/prisma-go/internal/adapters/database"
+	"github.com/satishbabariya/prisma-go/internal/adapters/database/postgres"
+	"github.com/satishbabariya/prisma-go/internal/core/query/compiler"
+	"github.com/satishbabariya/prisma-go/internal/core/query/domain"
+	"github.com/satishbabariya/prisma-go/internal/core/query/executor"
+	"github.com/satishbabariya/prisma-go/internal/service"
 )
 
 const (

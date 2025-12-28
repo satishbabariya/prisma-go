@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/core/query/builder"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/query/domain"
-	"github.com/satishbabariya/prisma-go/v3/internal/service"
+	"github.com/satishbabariya/prisma-go/internal/core/query/builder"
+	"github.com/satishbabariya/prisma-go/internal/core/query/domain"
+	"github.com/satishbabariya/prisma-go/internal/service"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

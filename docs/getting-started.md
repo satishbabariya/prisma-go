@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-go get github.com/satishbabariya/prisma-go/v3
+go get github.com/satishbabariya/prisma-go
 ```
 
 ## Quick Start

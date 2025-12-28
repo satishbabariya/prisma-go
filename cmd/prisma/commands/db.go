@@ -8,12 +8,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/satishbabariya/prisma-go/internal/adapters/database"
+	"github.com/satishbabariya/prisma-go/internal/adapters/database/postgres"
+	"github.com/satishbabariya/prisma-go/internal/core/migration/domain"
+	"github.com/satishbabariya/prisma-go/internal/core/migration/executor"
+	"github.com/satishbabariya/prisma-go/internal/core/migration/introspector"
 	pslparser "github.com/satishbabariya/prisma-go/psl/parsing/v2"
-	"github.com/satishbabariya/prisma-go/v3/internal/adapters/database"
-	"github.com/satishbabariya/prisma-go/v3/internal/adapters/database/postgres"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/migration/domain"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/migration/executor"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/migration/introspector"
 	"github.com/spf13/cobra"
 )
 

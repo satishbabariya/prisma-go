@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/core/schema/domain"
+	"github.com/satishbabariya/prisma-go/internal/core/schema/domain"
 )
 
 // Formatter implements the SchemaFormatter interface.

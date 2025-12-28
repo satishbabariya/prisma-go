@@ -7,8 +7,8 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/core/query/domain"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/schema"
+	"github.com/satishbabariya/prisma-go/internal/core/query/domain"
+	"github.com/satishbabariya/prisma-go/internal/core/schema"
 )
 
 // SQLCompiler compiles domain queries to SQL.

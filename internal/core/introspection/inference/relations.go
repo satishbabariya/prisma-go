@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/core/introspection/domain"
+	"github.com/satishbabariya/prisma-go/internal/core/introspection/domain"
 )
 
 // RelationInferrer infers Prisma relations from database foreign keys.

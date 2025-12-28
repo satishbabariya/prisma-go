@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/core/introspection/domain"
-	schemadomain "github.com/satishbabariya/prisma-go/v3/internal/core/schema/domain"
+	"github.com/satishbabariya/prisma-go/internal/core/introspection/domain"
+	schemadomain "github.com/satishbabariya/prisma-go/internal/core/schema/domain"
 )
 
 // SchemaGenerator generates Prisma schemas from introspected databases.

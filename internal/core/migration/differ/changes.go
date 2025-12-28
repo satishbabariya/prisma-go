@@ -4,7 +4,7 @@ package differ
 import (
 	"fmt"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/core/migration/domain"
+	"github.com/satishbabariya/prisma-go/internal/core/migration/domain"
 )
 
 // CreateTableChange represents creating a new table.

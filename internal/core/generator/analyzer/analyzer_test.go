@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/satishbabariya/prisma-go/internal/core/generator/ir"
 	pslparser "github.com/satishbabariya/prisma-go/psl/parsing/v2"
-	"github.com/satishbabariya/prisma-go/v3/internal/core/generator/ir"
 )
 
 func TestAnalyze_Relations(t *testing.T) {

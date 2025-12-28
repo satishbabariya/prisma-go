@@ -3,7 +3,7 @@ package builder
 import (
 	"testing"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/core/query/domain"
+	"github.com/satishbabariya/prisma-go/internal/core/query/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

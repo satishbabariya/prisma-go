@@ -8,7 +8,7 @@ import (
 	"time"
 
 	_ "github.com/lib/pq" // PostgreSQL driver
-	"github.com/satishbabariya/prisma-go/v3/internal/adapters/database"
+	"github.com/satishbabariya/prisma-go/internal/adapters/database"
 )
 
 // PostgresAdapter implements the database.Adapter interface for PostgreSQL.

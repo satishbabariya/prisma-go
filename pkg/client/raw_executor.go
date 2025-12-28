@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/adapters/database"
+	"github.com/satishbabariya/prisma-go/internal/adapters/database"
 )
 
 // RawExecutor implements the RawClient interface.

@@ -5,9 +5,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/core/migration/domain"
-	schemadomain "github.com/satishbabariya/prisma-go/v3/internal/core/schema/domain"
-	"github.com/satishbabariya/prisma-go/v3/internal/repository"
+	"github.com/satishbabariya/prisma-go/internal/core/migration/domain"
+	schemadomain "github.com/satishbabariya/prisma-go/internal/core/schema/domain"
+	"github.com/satishbabariya/prisma-go/internal/repository"
 )
 
 // IntrospectService handles database introspection operations.

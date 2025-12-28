@@ -4,7 +4,7 @@ package mapper
 import (
 	"strings"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/core/introspection/domain"
+	"github.com/satishbabariya/prisma-go/internal/core/introspection/domain"
 )
 
 // PostgreSQLTypeMapper maps PostgreSQL types to Prisma types.

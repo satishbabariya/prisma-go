@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/satishbabariya/prisma-go/v3/internal/core/migration/domain"
+	"github.com/satishbabariya/prisma-go/internal/core/migration/domain"
 )
 
 // MigrationPlanner implements the Planner interface.

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3" // SQLite driver
-	"github.com/satishbabariya/prisma-go/v3/internal/adapters/database"
+	"github.com/satishbabariya/prisma-go/internal/adapters/database"
 )
 
 // SQLiteAdapter implements the database.Adapter interface for SQLite.

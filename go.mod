@@ -1,4 +1,4 @@
-module github.com/satishbabariya/prisma-go/v3
+module github.com/satishbabariya/prisma-go
 
 go 1.24.1
 
