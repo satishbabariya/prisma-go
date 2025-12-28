@@ -29,10 +29,18 @@ func (r *HistoryRepositoryImpl) Record(ctx context.Context, migration *domain.Mi
 		return fmt.Errorf("failed to ensure migrations table: %w", err)
 	}
 
-	query := `
-		INSERT INTO _prisma_migrations (id, name, applied_at, checksum)
-		VALUES (?, ?, ?, ?)
-	`
+	var query string
+	if r.db.GetDialect() == database.PostgreSQL {
+		query = `
+			INSERT INTO _prisma_migrations (id, name, applied_at, checksum)
+			VALUES ($1, $2, $3, $4)
+		`
+	} else {
+		query = `
+			INSERT INTO _prisma_migrations (id, name, applied_at, checksum)
+			VALUES (?, ?, ?, ?)
+		`
+	}
 
 	_, err := r.db.Execute(ctx, query,
 		migration.ID,
