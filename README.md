@@ -74,36 +74,47 @@ This is essentially: **a native Go-based Prisma**.
 ```
 prisma-go/
 │
-├── psl/                 # PSL (Layer 1) - Schema language
-│   ├── parser           # Schema parser
-│   ├── validator        # Schema validator
-│   ├── database         # Database layer
-│   ├── formatting       # Schema formatter
-│   └── diagnostics      # Error reporting
+├── cmd/prisma/           # CLI tool
+│   └── commands/         # CLI commands (format, validate, generate, migrate, db)
 │
-├── migrate/             # Migration Engine (Layer 2)
-│   ├── introspect       # Database introspection
-│   ├── diff             # Schema comparison
-│   ├── planner          # Migration planning
-│   ├── executor         # Migration execution
-│   └── history          # Migration history
+├── internal/             # Internal packages
+│   ├── psl/              # PSL Parser (Layer 1)
+│   │   ├── ast/          # AST definitions
+│   │   ├── lexer.go      # Lexer
+│   │   └── parser.go     # Schema parser
+│   │
+│   ├── core/             # Core functionality
+│   │   ├── schema/       # Schema domain, validation, formatting
+│   │   ├── migration/    # Migration Engine (Layer 2)
+│   │   │   ├── diff/     # Schema comparison
+│   │   │   ├── executor/ # Migration execution
+│   │   │   └── history/  # Migration history
+│   │   │
+│   │   ├── query/        # Query Compiler (Layer 3)
+│   │   │   ├── builder/  # Query builder
+│   │   │   ├── compiler/ # Query compiler
+│   │   │   └── executor/ # Query executor
+│   │   │
+│   │   ├── generator/    # Code Generator (Layer 4)
+│   │   │   ├── analyzer/ # Schema analyzer
+│   │   │   ├── template/ # Code templates
+│   │   │   └── service/  # Generator service
+│   │   │
+│   │   └── introspection/ # Database introspection
+│   │
+│   ├── adapters/         # Database adapters
+│   └── service/          # Application services
 │
-├── query/               # Query Compiler (Layer 3)
-│   ├── ast              # Query AST
-│   ├── compiler         # Query compiler
-│   ├── sqlgen           # SQL generation per provider
-│   └── connectors       # Database connectors
+├── runtime/              # ORM runtime
+│   ├── client/           # Client runtime
+│   └── types/            # Runtime types
 │
-├── generator/           # Code Generator (Layer 4)
-│   ├── templates        # Code templates
-│   └── codegen          # Code generation logic
+├── pkg/                  # Public packages
+│   └── client/           # Client library
 │
-├── runtime/             # ORM runtime
-│   ├── client           # Client runtime
-│   └── types            # Runtime types
-│
-└── cli/                 # CLI tool
-    └── commands         # CLI commands
+└── tests/                # Test suites
+    ├── integration/      # Integration tests
+    └── validation/       # Validation tests
 ```
 
 ## 🎮 CLI Commands

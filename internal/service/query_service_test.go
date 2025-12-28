@@ -161,6 +161,6 @@ func TestErrorTypes(t *testing.T) {
 		msg := err.Error()
 		assert.Contains(t, msg, "users")
 		assert.Contains(t, msg, "findUnique")
-		assert.Contains(t, msg, "not found")
+		assert.Contains(t, msg, "was found")
 	})
 }

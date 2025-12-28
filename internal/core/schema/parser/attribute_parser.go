@@ -223,11 +223,15 @@ func (ap *AttributeParser) ParseRelationAttribute(pslField *pslast.Field) *domai
 			case "onDelete":
 				if strVal, ok := arg.Value.(*pslast.StringValue); ok {
 					relation.OnDelete = domain.ReferentialAction(strVal.Value)
+				} else if constVal, ok := arg.Value.(*pslast.ConstantValue); ok {
+					relation.OnDelete = domain.ReferentialAction(constVal.Value)
 				}
 
 			case "onUpdate":
 				if strVal, ok := arg.Value.(*pslast.StringValue); ok {
 					relation.OnUpdate = domain.ReferentialAction(strVal.Value)
+				} else if constVal, ok := arg.Value.(*pslast.ConstantValue); ok {
+					relation.OnUpdate = domain.ReferentialAction(constVal.Value)
 				}
 			}
 		}

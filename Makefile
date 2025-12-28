@@ -38,6 +38,12 @@ test-e2e:
 	@echo "Running E2E tests..."
 	@$(GO) test -v ./test/e2e/...
 
+# Run validation tests (requires Docker databases running)
+test-validation:
+	@echo "Running validation tests..."
+	@echo "Note: Run 'docker-compose -f docker-compose.test.yml up -d' first"
+	@RUN_VALIDATION_TESTS=true $(GO) test -p 1 -v ./tests/validation/...
+
 # Run benchmarks
 benchmark:
 	@echo "Running benchmarks..."

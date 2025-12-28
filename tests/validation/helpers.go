@@ -166,6 +166,7 @@ func SetupValidationSchema(dbURL string) error {
 
 var schemaSetupOnce sync.Once
 var schemaSetupErr error
+var dbMutex sync.Mutex // Mutex to prevent concurrent table operations
 
 // SetupTestContext creates a full test context with all dependencies
 func SetupTestContext(t *testing.T) (*TestContext, func()) {
@@ -238,6 +239,13 @@ func SetupTestContext(t *testing.T) (*TestContext, func()) {
 
 // CleanupTables truncates all test tables
 func CleanupTables(t *testing.T, db *sql.DB) {
+	dbMutex.Lock()
+	defer dbMutex.Unlock()
+	cleanupTablesLocked(t, db)
+}
+
+// cleanupTablesLocked performs the actual cleanup (caller must hold dbMutex)
+func cleanupTablesLocked(t *testing.T, db *sql.DB) {
 	_, err := db.Exec(`
 		TRUNCATE users, profiles, posts, tags, post_tags, comments, comment_likes 
 		RESTART IDENTITY CASCADE
@@ -247,8 +255,23 @@ func CleanupTables(t *testing.T, db *sql.DB) {
 	}
 }
 
+// CleanupAndSeed atomically cleans up and seeds the database (holds lock for both)
+func CleanupAndSeed(t *testing.T, db *sql.DB) {
+	dbMutex.Lock()
+	defer dbMutex.Unlock()
+	cleanupTablesLocked(t, db)
+	seedTestDataLocked(t, db)
+}
+
 // SeedTestData inserts standard test data
 func SeedTestData(t *testing.T, db *sql.DB) {
+	dbMutex.Lock()
+	defer dbMutex.Unlock()
+	seedTestDataLocked(t, db)
+}
+
+// seedTestDataLocked performs the actual seeding (caller must hold dbMutex)
+func seedTestDataLocked(t *testing.T, db *sql.DB) {
 	// Insert test users
 	_, err := db.Exec(`
 		INSERT INTO users (email, name, role, is_active, age, balance) VALUES

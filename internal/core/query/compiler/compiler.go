@@ -290,12 +290,22 @@ func (c *SQLCompiler) buildCondition(condition domain.Condition, argIndex *int) 
 
 	switch condition.Operator {
 	case domain.Equals:
-		clause = fmt.Sprintf("%s = %s", condition.Field, c.placeholder(argIndex))
-		args = append(args, condition.Value)
+		// Handle nil values specially - SQL requires IS NULL, not = NULL
+		if condition.Value == nil {
+			clause = fmt.Sprintf("%s IS NULL", condition.Field)
+		} else {
+			clause = fmt.Sprintf("%s = %s", condition.Field, c.placeholder(argIndex))
+			args = append(args, condition.Value)
+		}
 
 	case domain.NotEquals:
-		clause = fmt.Sprintf("%s != %s", condition.Field, c.placeholder(argIndex))
-		args = append(args, condition.Value)
+		// Handle nil values specially - SQL requires IS NOT NULL, not != NULL
+		if condition.Value == nil {
+			clause = fmt.Sprintf("%s IS NOT NULL", condition.Field)
+		} else {
+			clause = fmt.Sprintf("%s != %s", condition.Field, c.placeholder(argIndex))
+			args = append(args, condition.Value)
+		}
 
 	case domain.In:
 		// Handle various slice types via reflection
