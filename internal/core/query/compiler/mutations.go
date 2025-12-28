@@ -39,7 +39,7 @@ func (c *SQLCompiler) CompileUpdate(query *domain.Query) (string, []interface{},
 	)
 
 	// Add WHERE clause
-	whereSQL, whereArgs, err := c.buildWhereClause(query.Filter, &paramCount)
+	whereSQL, whereArgs, err := c.buildWhereClause(query.Model, query.Filter, &paramCount)
 	if err != nil {
 		return "", nil, err
 	}
@@ -61,7 +61,7 @@ func (c *SQLCompiler) CompileDelete(query *domain.Query) (string, []interface{},
 
 	paramCount := 1
 	// Add WHERE clause
-	whereSQL, args, err := c.buildWhereClause(query.Filter, &paramCount)
+	whereSQL, args, err := c.buildWhereClause(query.Model, query.Filter, &paramCount)
 	if err != nil {
 		return "", nil, err
 	}

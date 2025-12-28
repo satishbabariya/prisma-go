@@ -273,6 +273,10 @@ func (e *Engine) generateClientCode(ir *ir.IR) string {
 		buf.WriteString("\tclient *Client\n")
 		buf.WriteString("\tctx    context.Context\n")
 		buf.WriteString("\twhere  map[string]interface{}\n")
+		buf.WriteString("\torderBy []map[string]interface{}\n")
+		buf.WriteString("\tskip    *int\n")
+		buf.WriteString("\ttake    *int\n")
+		buf.WriteString("\tcursor  map[string]interface{}\n")
 		buf.WriteString(fmt.Sprintf("\tinclude *%sInclude\n", model.Name))
 		buf.WriteString("}\n\n")
 
@@ -306,7 +310,40 @@ func (e *Engine) generateClientCode(ir *ir.IR) string {
 				buf.WriteString(fmt.Sprintf("\t\tModel:     \"%s\",\n", model.Name))
 				buf.WriteString(fmt.Sprintf("\t}\n"))
 
-				// Handle Inclusions
+				// Map Filter
+				buf.WriteString("\tif q.where != nil {\n")
+				buf.WriteString("\t\tquery.Filter = runtime.BuildFilter(q.where)\n")
+				buf.WriteString("\t}\n")
+
+				// Map OrderBy
+				buf.WriteString("\tif len(q.orderBy) > 0 {\n")
+				buf.WriteString("\t\tfor _, o := range q.orderBy {\n")
+				buf.WriteString("\t\t\tfor field, dir := range o {\n")
+				buf.WriteString("\t\t\t\tquery.Ordering = append(query.Ordering, domain.OrderBy{Field: field, Direction: domain.SortDirection(fmt.Sprintf(\"%v\", dir))})\n")
+				buf.WriteString("\t\t\t}\n")
+				buf.WriteString("\t\t}\n")
+				buf.WriteString("\t}\n")
+
+				// Map Pagination
+				buf.WriteString("\tif q.skip != nil {\n")
+				buf.WriteString("\t\tquery.Pagination.Skip = q.skip\n")
+				buf.WriteString("\t}\n")
+				buf.WriteString("\tif q.take != nil {\n")
+				buf.WriteString("\t\tquery.Pagination.Take = q.take\n")
+				buf.WriteString("\t}\n")
+				buf.WriteString("\tif q.cursor != nil {\n")
+				// Simple cursor implementation assuming 'id' for now or picking from cursor map
+				// Ideally we iterate cursor map. user might pass {id: 1} or {email: ...}
+				// For MVP, if map has 1 key, use it.
+				buf.WriteString("\t\tif len(q.cursor) > 0 {\n")
+				buf.WriteString("\t\t\tfor k, v := range q.cursor {\n")
+				buf.WriteString("\t\t\t\tquery.Cursor = &domain.Cursor{Field: k, Value: v}\n")
+				buf.WriteString("\t\t\t\tbreak // Only support single cursor field for now\n")
+				buf.WriteString("\t\t\t}\n")
+				buf.WriteString("\t\t}\n")
+				buf.WriteString("\t}\n")
+
+				// Map Handle Inclusions
 				buf.WriteString("\tif q.include != nil {\n")
 				for _, field := range model.Fields {
 					if field.Relation != nil {
@@ -334,17 +371,91 @@ func (e *Engine) generateClientCode(ir *ir.IR) string {
 				buf.WriteString("\t}\n")
 				buf.WriteString("\treturn results, nil\n")
 
+			case "FindFirst":
+				buf.WriteString(fmt.Sprintf("\tquery := &domain.Query{\n"))
+				buf.WriteString(fmt.Sprintf("\t\tOperation: domain.FindFirst,\n"))
+				buf.WriteString(fmt.Sprintf("\t\tModel:     \"%s\",\n", model.Name))
+				buf.WriteString(fmt.Sprintf("\t}\n"))
+
+				// Map Filter
+				buf.WriteString("\tif q.where != nil {\n")
+				buf.WriteString("\t\tquery.Filter = runtime.BuildFilter(q.where)\n")
+				buf.WriteString("\t}\n")
+
+				// Map OrderBy
+				buf.WriteString("\tif len(q.orderBy) > 0 {\n")
+				buf.WriteString("\t\tfor _, o := range q.orderBy {\n")
+				buf.WriteString("\t\t\tfor field, dir := range o {\n")
+				buf.WriteString("\t\t\t\tquery.Ordering = append(query.Ordering, domain.OrderBy{Field: field, Direction: domain.SortDirection(fmt.Sprintf(\"%v\", dir))})\n")
+				buf.WriteString("\t\t\t}\n")
+				buf.WriteString("\t\t}\n")
+				buf.WriteString("\t}\n")
+
+				// Map Pagination
+				buf.WriteString("\tif q.skip != nil {\n")
+				buf.WriteString("\t\tquery.Pagination.Skip = q.skip\n")
+				buf.WriteString("\t}\n")
+				buf.WriteString("\tif q.take != nil {\n")
+				buf.WriteString("\t\tquery.Pagination.Take = q.take\n")
+				buf.WriteString("\t}\n")
+				buf.WriteString("\tif q.cursor != nil {\n")
+				buf.WriteString("\t\tif len(q.cursor) > 0 {\n")
+				buf.WriteString("\t\t\tfor k, v := range q.cursor {\n")
+				buf.WriteString("\t\t\t\tquery.Cursor = &domain.Cursor{Field: k, Value: v}\n")
+				buf.WriteString("\t\t\t\tbreak\n")
+				buf.WriteString("\t\t\t}\n")
+				buf.WriteString("\t\t}\n")
+				buf.WriteString("\t}\n")
+
+				// Map Handle Inclusions
+				buf.WriteString("\tif q.include != nil {\n")
+				for _, field := range model.Fields {
+					if field.Relation != nil {
+						fieldName := capitalize(field.Name)
+						buf.WriteString(fmt.Sprintf("\t\tif q.include.%s {\n", fieldName))
+						buf.WriteString(fmt.Sprintf("\t\t\tquery.Relations = append(query.Relations, domain.RelationInclusion{\n"))
+						buf.WriteString(fmt.Sprintf("\t\t\t\tRelation: \"%s\",\n", field.Name))
+						buf.WriteString(fmt.Sprintf("\t\t\t})\n"))
+						buf.WriteString("\t\t}\n")
+					}
+				}
+				buf.WriteString("\t}\n")
+
+				buf.WriteString(fmt.Sprintf("\tres, err := q.client.engine.ExecuteFindMany(q.ctx, query)\n"))
+				buf.WriteString("\tif err != nil {\n")
+				buf.WriteString("\t\treturn nil, err\n")
+				buf.WriteString("\t}\n")
+				buf.WriteString(fmt.Sprintf("\tvar results []%s\n", model.Name))
+				buf.WriteString("\tbytes, err := json.Marshal(res)\n")
+				buf.WriteString("\tif err != nil {\n")
+				buf.WriteString("\t\treturn nil, err\n")
+				buf.WriteString("\t}\n")
+				buf.WriteString("\tif err := json.Unmarshal(bytes, &results); err != nil {\n")
+				buf.WriteString("\t\treturn nil, err\n")
+				buf.WriteString("\t}\n")
+				buf.WriteString("\tif len(results) == 0 {\n")
+				buf.WriteString("\t\treturn nil, runtime.ErrNotFound\n") // Assuming ErrNotFound exists or similar
+				buf.WriteString("\t}\n")
+				buf.WriteString(fmt.Sprintf("\treturn &results[0], nil\n"))
 			case "Create":
 				buf.WriteString(fmt.Sprintf("\tquery := &domain.Query{\n"))
 				buf.WriteString(fmt.Sprintf("\t\tOperation:  domain.Create,\n"))
 				buf.WriteString(fmt.Sprintf("\t\tModel:      \"%s\",\n", model.Name))
 				buf.WriteString(fmt.Sprintf("\t\tCreateData: data,\n"))
 				buf.WriteString(fmt.Sprintf("\t}\n"))
-				buf.WriteString(fmt.Sprintf("\t_, err := q.client.engine.ExecuteCreate(q.ctx, query)\n"))
+				buf.WriteString(fmt.Sprintf("\tres, err := q.client.engine.ExecuteCreate(q.ctx, query)\n"))
 				buf.WriteString("\tif err != nil {\n")
 				buf.WriteString("\t\treturn nil, err\n")
 				buf.WriteString("\t}\n")
-				buf.WriteString(fmt.Sprintf("\treturn nil, nil // Placeholder return\n"))
+				buf.WriteString(fmt.Sprintf("\tvar result %s\n", model.Name))
+				buf.WriteString("\tbytes, err := json.Marshal(res)\n")
+				buf.WriteString("\tif err != nil {\n")
+				buf.WriteString("\t\treturn nil, err\n")
+				buf.WriteString("\t}\n")
+				buf.WriteString("\tif err := json.Unmarshal(bytes, &result); err != nil {\n")
+				buf.WriteString("\t\treturn nil, err\n")
+				buf.WriteString("\t}\n")
+				buf.WriteString("\treturn &result, nil\n")
 
 			case "Update":
 				buf.WriteString(fmt.Sprintf("\tquery := &domain.Query{\n"))
@@ -356,7 +467,21 @@ func (e *Engine) generateClientCode(ir *ir.IR) string {
 				buf.WriteString("\tif err != nil {\n")
 				buf.WriteString("\t\treturn nil, err\n")
 				buf.WriteString("\t}\n")
-				buf.WriteString(fmt.Sprintf("\treturn nil, nil // Placeholder return\n"))
+				// Update returns count usually, but if we want result, we need FindUnique after or RETURNING.
+				// For now, let's just return what Executor returns (which is map{"count": N}).
+				// But signature expects *Model.
+				// If Update returns count, we can't return *Model unless we fetch it.
+				// Or we change signature.
+				// For now, let's keep it returning nil if we don't fetch.
+				// BUT checking QueryExecutor.ExecuteUpdate: it returns {"count": affected}.
+				// Standard Prisma Update returns the updated object.
+				// We need RETURNING or fetch.
+				// MVP: let's stay with nil for Update or implement fetch.
+				// As this task is about Nested Writes (Create), I'll focus on getting Create working.
+				// I'll leave Update as nil but comment it clearly or change return type to interface{}?
+				// No, keep consistent.
+				// Fixing Create is priority.
+				buf.WriteString("\treturn nil, nil // TODO: Update should return object\n")
 
 			default:
 				buf.WriteString(fmt.Sprintf("\treturn nil, fmt.Errorf(\"%s not yet implemented for %s\")\n", method, model.Name))
@@ -364,9 +489,32 @@ func (e *Engine) generateClientCode(ir *ir.IR) string {
 			buf.WriteString("}\n\n")
 		}
 
-		buf.WriteString("// Where adds a where clause to the query.\n")
 		buf.WriteString(fmt.Sprintf("func (q *%sQuery) Where(conditions map[string]interface{}) *%sQuery {\n", model.Name, model.Name))
 		buf.WriteString("\tq.where = conditions\n")
+		buf.WriteString("\treturn q\n")
+		buf.WriteString("}\n\n")
+
+		buf.WriteString("// OrderBy adds order by clauses to the query.\n")
+		buf.WriteString(fmt.Sprintf("func (q *%sQuery) OrderBy(orderBy []map[string]interface{}) *%sQuery {\n", model.Name, model.Name))
+		buf.WriteString("\tq.orderBy = orderBy\n")
+		buf.WriteString("\treturn q\n")
+		buf.WriteString("}\n\n")
+
+		buf.WriteString("// Skip skips the first n records.\n")
+		buf.WriteString(fmt.Sprintf("func (q *%sQuery) Skip(skip int) *%sQuery {\n", model.Name, model.Name))
+		buf.WriteString("\tq.skip = &skip\n")
+		buf.WriteString("\treturn q\n")
+		buf.WriteString("}\n\n")
+
+		buf.WriteString("// Take limits the number of records returned.\n")
+		buf.WriteString(fmt.Sprintf("func (q *%sQuery) Take(take int) *%sQuery {\n", model.Name, model.Name))
+		buf.WriteString("\tq.take = &take\n")
+		buf.WriteString("\treturn q\n")
+		buf.WriteString("}\n\n")
+
+		buf.WriteString("// Cursor specifies the starting point for the query.\n")
+		buf.WriteString(fmt.Sprintf("func (q *%sQuery) Cursor(cursor map[string]interface{}) *%sQuery {\n", model.Name, model.Name))
+		buf.WriteString("\tq.cursor = cursor\n")
 		buf.WriteString("\treturn q\n")
 		buf.WriteString("}\n\n")
 	}

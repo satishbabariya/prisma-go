@@ -72,7 +72,7 @@ func (c *SQLCompiler) compileAggregate(query *domain.Query) (domain.SQL, error) 
 
 	// WHERE clause
 	if len(query.Filter.Conditions) > 0 {
-		whereClause, whereArgs, err := c.buildWhereClause(query.Filter, &argIndex)
+		whereClause, whereArgs, err := c.buildWhereClause(query.Model, query.Filter, &argIndex)
 		if err != nil {
 			return domain.SQL{}, err
 		}

@@ -184,7 +184,7 @@ func (c *SQLCompiler) compileSelect(query *domain.Query) (domain.CompiledQuery, 
 
 		// Add regular filter conditions (including nested)
 		if len(query.Filter.Conditions) > 0 || len(query.Filter.NestedFilters) > 0 {
-			whereClause, args, err := c.buildWhereClause(query.Filter, &argIndex)
+			whereClause, args, err := c.buildWhereClause(query.Model, query.Filter, &argIndex)
 			if err != nil {
 				return domain.CompiledQuery{}, err
 			}
@@ -271,29 +271,26 @@ func (c *SQLCompiler) compileSelect(query *domain.Query) (domain.CompiledQuery, 
 	}, nil
 }
 
-// buildWhereClause builds the WHERE clause with support for nested filters.
-// Handles both direct conditions and nested filter groups recursively.
-func (c *SQLCompiler) buildWhereClause(filter domain.Filter, argIndex *int) (string, []interface{}, error) {
-	if len(filter.Conditions) == 0 && len(filter.NestedFilters) == 0 {
-		return "", nil, nil
-	}
-
+// buildWhereClause builds the WHERE clause from a filter.
+func (c *SQLCompiler) buildWhereClause(modelName string, filter domain.Filter, argIndex *int) (string, []interface{}, error) {
 	var parts []string
 	var args []interface{}
 
-	// Process direct conditions
+	// Handle direct conditions
 	for _, condition := range filter.Conditions {
-		clause, condArgs, err := c.buildCondition(condition, argIndex)
+		clause, condArgs, err := c.buildCondition(modelName, condition, argIndex)
 		if err != nil {
 			return "", nil, err
 		}
-		parts = append(parts, clause)
-		args = append(args, condArgs...)
+		if clause != "" {
+			parts = append(parts, clause)
+			args = append(args, condArgs...)
+		}
 	}
 
-	// Process nested filters recursively
-	for _, nestedFilter := range filter.NestedFilters {
-		nestedClause, nestedArgs, err := c.buildWhereClause(nestedFilter, argIndex)
+	// Handle nested filters (AND, OR, NOT groups)
+	for _, nested := range filter.NestedFilters {
+		nestedClause, nestedArgs, err := c.buildWhereClause(modelName, nested, argIndex)
 		if err != nil {
 			return "", nil, err
 		}
@@ -324,31 +321,123 @@ func (c *SQLCompiler) buildWhereClause(filter domain.Filter, argIndex *int) (str
 }
 
 // buildCondition builds a single condition.
-func (c *SQLCompiler) buildCondition(condition domain.Condition, argIndex *int) (string, []interface{}, error) {
+func (c *SQLCompiler) buildCondition(modelName string, condition domain.Condition, argIndex *int) (string, []interface{}, error) {
 	var clause string
 	var args []interface{}
 
 	switch condition.Operator {
-	case domain.Equals:
-		// Handle nil values specially - SQL requires IS NULL, not = NULL
-		if condition.Value == nil {
-			clause = fmt.Sprintf("%s IS NULL", condition.Field)
+	case domain.Some, domain.Every, domain.None:
+		// Relation filters
+		relMeta, err := c.registry.GetRelation(modelName, condition.Field)
+		if err != nil {
+			return "", nil, fmt.Errorf("relation not found for filter %s.%s: %w", modelName, condition.Field, err)
+		}
+
+		inverseRel, err := c.registry.GetInverseRelation(relMeta)
+		if err != nil {
+			return "", nil, fmt.Errorf("inverse relation not found for filter %s.%s: %w", modelName, condition.Field, err)
+		}
+
+		// Determine FK linking related table back to current table
+		var relatedTable, relatedColumn, parentColumn string
+
+		if relMeta.RelationType == domain.OneToMany || (relMeta.RelationType == domain.OneToOne && len(inverseRel.FromFields) > 0) {
+			relatedTable = inverseRel.FromModel
+			if len(inverseRel.FromFields) == 0 {
+				return "", nil, fmt.Errorf("missing FK fields on inverse relation %s", inverseRel.Name)
+			}
+			relatedColumn = inverseRel.FromFields[0]
+			if len(inverseRel.ToFields) == 0 {
+				parentColumn = "id"
+			} else {
+				parentColumn = inverseRel.ToFields[0]
+			}
+		} else if relMeta.RelationType == domain.ManyToOne || (relMeta.RelationType == domain.OneToOne && len(relMeta.FromFields) > 0) {
+			relatedTable = relMeta.ToModel
+			if len(relMeta.FromFields) == 0 {
+				return "", nil, fmt.Errorf("missing FK fields on relation %s", relMeta.Name)
+			}
+			parentColumn = relMeta.FromFields[0]
+			if len(relMeta.ToFields) == 0 {
+				relatedColumn = "id"
+			} else {
+				relatedColumn = relMeta.ToFields[0]
+			}
 		} else {
-			clause = fmt.Sprintf("%s = %s", condition.Field, c.placeholder(argIndex))
+			return "", nil, fmt.Errorf("many-to-many filters not yet supported")
+		}
+
+		subFilter, ok := condition.Value.(domain.Filter)
+		if !ok {
+			return "", nil, fmt.Errorf("invalid value for relation filter, expected domain.Filter")
+		}
+
+		subWhere, subArgs, err := c.buildWhereClause(relatedTable, subFilter, argIndex)
+		if err != nil {
+			return "", nil, err
+		}
+
+		subQuery := fmt.Sprintf(
+			"SELECT 1 FROM %s WHERE %s.%s = %s.%s",
+			c.QuoteIdentifier(relatedTable),
+			c.QuoteIdentifier(relatedTable), c.QuoteIdentifier(relatedColumn),
+			c.QuoteIdentifier(modelName), c.QuoteIdentifier(parentColumn),
+		)
+
+		if subWhere != "" {
+			subQuery += " AND (" + subWhere + ")"
+			args = append(args, subArgs...)
+		}
+
+		switch condition.Operator {
+		case domain.Some:
+			clause = fmt.Sprintf("EXISTS (%s)", subQuery)
+		case domain.None:
+			clause = fmt.Sprintf("NOT EXISTS (%s)", subQuery)
+		case domain.Every:
+			// EVERY logic: NOT EXISTS ( ... AND NOT (cond) )
+			// Manually construct NOT filter for subquery
+			notFilter := domain.Filter{
+				Operator:      domain.NOT,
+				NestedFilters: []domain.Filter{subFilter},
+			}
+
+			notWhere, notArgs, err := c.buildWhereClause(relatedTable, notFilter, argIndex)
+			if err != nil {
+				return "", nil, err
+			}
+
+			subQueryEvery := fmt.Sprintf(
+				"SELECT 1 FROM %s WHERE %s.%s = %s.%s",
+				c.QuoteIdentifier(relatedTable),
+				c.QuoteIdentifier(relatedTable), c.QuoteIdentifier(relatedColumn),
+				c.QuoteIdentifier(modelName), c.QuoteIdentifier(parentColumn),
+			)
+			if notWhere != "" {
+				subQueryEvery += " AND (" + notWhere + ")"
+				args = append(args, notArgs...)
+			}
+
+			clause = fmt.Sprintf("NOT EXISTS (%s)", subQueryEvery)
+		}
+
+	case domain.Equals:
+		if condition.Value == nil {
+			clause = fmt.Sprintf("%s.%s IS NULL", c.QuoteIdentifier(modelName), c.QuoteIdentifier(condition.Field))
+		} else {
+			clause = fmt.Sprintf("%s.%s = %s", c.QuoteIdentifier(modelName), c.QuoteIdentifier(condition.Field), c.placeholder(argIndex))
 			args = append(args, condition.Value)
 		}
 
 	case domain.NotEquals:
-		// Handle nil values specially - SQL requires IS NOT NULL, not != NULL
 		if condition.Value == nil {
-			clause = fmt.Sprintf("%s IS NOT NULL", condition.Field)
+			clause = fmt.Sprintf("%s.%s IS NOT NULL", c.QuoteIdentifier(modelName), c.QuoteIdentifier(condition.Field))
 		} else {
-			clause = fmt.Sprintf("%s != %s", condition.Field, c.placeholder(argIndex))
+			clause = fmt.Sprintf("%s.%s != %s", c.QuoteIdentifier(modelName), c.QuoteIdentifier(condition.Field), c.placeholder(argIndex))
 			args = append(args, condition.Value)
 		}
 
 	case domain.In:
-		// Handle various slice types via reflection
 		values, err := toInterfaceSlice(condition.Value)
 		if err != nil {
 			return "", nil, fmt.Errorf("IN operator: %w", err)
@@ -358,10 +447,9 @@ func (c *SQLCompiler) buildCondition(condition domain.Condition, argIndex *int) 
 			placeholders[i] = c.placeholder(argIndex)
 			args = append(args, values[i])
 		}
-		clause = fmt.Sprintf("%s IN (%s)", condition.Field, strings.Join(placeholders, ", "))
+		clause = fmt.Sprintf("%s.%s IN (%s)", c.QuoteIdentifier(modelName), c.QuoteIdentifier(condition.Field), strings.Join(placeholders, ", "))
 
 	case domain.NotIn:
-		// Handle various slice types via reflection
 		values, err := toInterfaceSlice(condition.Value)
 		if err != nil {
 			return "", nil, fmt.Errorf("NOT IN operator: %w", err)
@@ -371,75 +459,70 @@ func (c *SQLCompiler) buildCondition(condition domain.Condition, argIndex *int) 
 			placeholders[i] = c.placeholder(argIndex)
 			args = append(args, values[i])
 		}
-		clause = fmt.Sprintf("%s NOT IN (%s)", condition.Field, strings.Join(placeholders, ", "))
+		clause = fmt.Sprintf("%s.%s NOT IN (%s)", c.QuoteIdentifier(modelName), c.QuoteIdentifier(condition.Field), strings.Join(placeholders, ", "))
 
 	case domain.Lt:
-		clause = fmt.Sprintf("%s < %s", condition.Field, c.placeholder(argIndex))
+		clause = fmt.Sprintf("%s.%s < %s", c.QuoteIdentifier(modelName), c.QuoteIdentifier(condition.Field), c.placeholder(argIndex))
 		args = append(args, condition.Value)
 
 	case domain.Lte:
-		clause = fmt.Sprintf("%s <= %s", condition.Field, c.placeholder(argIndex))
+		clause = fmt.Sprintf("%s.%s <= %s", c.QuoteIdentifier(modelName), c.QuoteIdentifier(condition.Field), c.placeholder(argIndex))
 		args = append(args, condition.Value)
 
 	case domain.Gt:
-		clause = fmt.Sprintf("%s > %s", condition.Field, c.placeholder(argIndex))
+		clause = fmt.Sprintf("%s.%s > %s", c.QuoteIdentifier(modelName), c.QuoteIdentifier(condition.Field), c.placeholder(argIndex))
 		args = append(args, condition.Value)
 
 	case domain.Gte:
-		clause = fmt.Sprintf("%s >= %s", condition.Field, c.placeholder(argIndex))
+		clause = fmt.Sprintf("%s.%s >= %s", c.QuoteIdentifier(modelName), c.QuoteIdentifier(condition.Field), c.placeholder(argIndex))
 		args = append(args, condition.Value)
 
 	case domain.Contains:
 		if condition.Mode == domain.ModeInsensitive {
-			clause = fmt.Sprintf("LOWER(%s) LIKE LOWER(%s)", condition.Field, c.placeholder(argIndex))
+			clause = fmt.Sprintf("LOWER(%s.%s) LIKE LOWER(%s)", c.QuoteIdentifier(modelName), c.QuoteIdentifier(condition.Field), c.placeholder(argIndex))
 		} else {
-			clause = fmt.Sprintf("%s LIKE %s", condition.Field, c.placeholder(argIndex))
+			clause = fmt.Sprintf("%s.%s LIKE %s", c.QuoteIdentifier(modelName), c.QuoteIdentifier(condition.Field), c.placeholder(argIndex))
 		}
 		args = append(args, fmt.Sprintf("%%%v%%", condition.Value))
 
 	case domain.StartsWith:
 		if condition.Mode == domain.ModeInsensitive {
-			clause = fmt.Sprintf("LOWER(%s) LIKE LOWER(%s)", condition.Field, c.placeholder(argIndex))
+			clause = fmt.Sprintf("LOWER(%s.%s) LIKE LOWER(%s)", c.QuoteIdentifier(modelName), c.QuoteIdentifier(condition.Field), c.placeholder(argIndex))
 		} else {
-			clause = fmt.Sprintf("%s LIKE %s", condition.Field, c.placeholder(argIndex))
+			clause = fmt.Sprintf("%s.%s LIKE %s", c.QuoteIdentifier(modelName), c.QuoteIdentifier(condition.Field), c.placeholder(argIndex))
 		}
 		args = append(args, fmt.Sprintf("%v%%", condition.Value))
 
 	case domain.EndsWith:
 		if condition.Mode == domain.ModeInsensitive {
-			clause = fmt.Sprintf("LOWER(%s) LIKE LOWER(%s)", condition.Field, c.placeholder(argIndex))
+			clause = fmt.Sprintf("LOWER(%s.%s) LIKE LOWER(%s)", c.QuoteIdentifier(modelName), c.QuoteIdentifier(condition.Field), c.placeholder(argIndex))
 		} else {
-			clause = fmt.Sprintf("%s LIKE %s", condition.Field, c.placeholder(argIndex))
+			clause = fmt.Sprintf("%s.%s LIKE %s", c.QuoteIdentifier(modelName), c.QuoteIdentifier(condition.Field), c.placeholder(argIndex))
 		}
 		args = append(args, fmt.Sprintf("%%%v", condition.Value))
 
 	case domain.IsEmpty:
-		// IsEmpty checks if array is empty or null
-		// Value should be a bool: true = empty, false = not empty
 		if isEmpty, ok := condition.Value.(bool); ok {
 			if isEmpty {
-				clause = fmt.Sprintf("(COALESCE(array_length(%s, 1), 0) = 0)", condition.Field)
+				clause = fmt.Sprintf("(COALESCE(array_length(%s.%s, 1), 0) = 0)", c.QuoteIdentifier(modelName), c.QuoteIdentifier(condition.Field))
 			} else {
-				clause = fmt.Sprintf("(array_length(%s, 1) > 0)", condition.Field)
+				clause = fmt.Sprintf("(array_length(%s.%s, 1) > 0)", c.QuoteIdentifier(modelName), c.QuoteIdentifier(condition.Field))
 			}
 		} else {
 			return "", nil, fmt.Errorf("isEmpty operator requires a boolean value")
 		}
 
 	case domain.Has:
-		// Has checks if array contains a single value (PostgreSQL @> operator)
 		switch c.dialect {
 		case domain.PostgreSQL:
-			clause = fmt.Sprintf("%s @> ARRAY[%s]", condition.Field, c.placeholder(argIndex))
+			clause = fmt.Sprintf("%s.%s @> ARRAY[%s]", c.QuoteIdentifier(modelName), c.QuoteIdentifier(condition.Field), c.placeholder(argIndex))
 			args = append(args, condition.Value)
 		default:
-			// For MySQL/SQLite, use JSON_CONTAINS or similar
-			clause = fmt.Sprintf("JSON_CONTAINS(%s, %s)", condition.Field, c.placeholder(argIndex))
+			clause = fmt.Sprintf("JSON_CONTAINS(%s.%s, %s)", c.QuoteIdentifier(modelName), c.QuoteIdentifier(condition.Field), c.placeholder(argIndex))
 			args = append(args, condition.Value)
 		}
 
 	case domain.HasEvery:
-		// HasEvery checks if array contains ALL values (PostgreSQL @> operator with array)
 		values, ok := condition.Value.([]interface{})
 		if !ok {
 			return "", nil, fmt.Errorf("hasEvery operator requires a slice of values")
@@ -451,13 +534,12 @@ func (c *SQLCompiler) buildCondition(condition domain.Condition, argIndex *int) 
 				placeholders[i] = c.placeholder(argIndex)
 				args = append(args, values[i])
 			}
-			clause = fmt.Sprintf("%s @> ARRAY[%s]", condition.Field, strings.Join(placeholders, ", "))
+			clause = fmt.Sprintf("%s.%s @> ARRAY[%s]", c.QuoteIdentifier(modelName), c.QuoteIdentifier(condition.Field), strings.Join(placeholders, ", "))
 		default:
 			return "", nil, fmt.Errorf("hasEvery operator not supported for dialect: %s", c.dialect)
 		}
 
 	case domain.HasSome:
-		// HasSome checks if array contains ANY of the values (PostgreSQL && operator)
 		values, ok := condition.Value.([]interface{})
 		if !ok {
 			return "", nil, fmt.Errorf("hasSome operator requires a slice of values")
@@ -469,36 +551,32 @@ func (c *SQLCompiler) buildCondition(condition domain.Condition, argIndex *int) 
 				placeholders[i] = c.placeholder(argIndex)
 				args = append(args, values[i])
 			}
-			clause = fmt.Sprintf("%s && ARRAY[%s]", condition.Field, strings.Join(placeholders, ", "))
+			clause = fmt.Sprintf("%s.%s && ARRAY[%s]", c.QuoteIdentifier(modelName), c.QuoteIdentifier(condition.Field), strings.Join(placeholders, ", "))
 		default:
 			return "", nil, fmt.Errorf("hasSome operator not supported for dialect: %s", c.dialect)
 		}
 
 	case domain.IsNull:
-		// IsNull checks if field is null
-		// Value should be a bool: true = IS NULL, false = IS NOT NULL
 		if isNull, ok := condition.Value.(bool); ok {
 			if isNull {
-				clause = fmt.Sprintf("%s IS NULL", condition.Field)
+				clause = fmt.Sprintf("%s.%s IS NULL", c.QuoteIdentifier(modelName), c.QuoteIdentifier(condition.Field))
 			} else {
-				clause = fmt.Sprintf("%s IS NOT NULL", condition.Field)
+				clause = fmt.Sprintf("%s.%s IS NOT NULL", c.QuoteIdentifier(modelName), c.QuoteIdentifier(condition.Field))
 			}
 		} else {
 			return "", nil, fmt.Errorf("isNull operator requires a boolean value")
 		}
 
 	case domain.Search:
-		// Search performs fulltext search (PostgreSQL to_tsvector/to_tsquery)
 		switch c.dialect {
 		case domain.PostgreSQL:
-			clause = fmt.Sprintf("to_tsvector(%s) @@ to_tsquery(%s)", condition.Field, c.placeholder(argIndex))
+			clause = fmt.Sprintf("to_tsvector(%s.%s) @@ to_tsquery(%s)", c.QuoteIdentifier(modelName), c.QuoteIdentifier(condition.Field), c.placeholder(argIndex))
 			args = append(args, condition.Value)
 		case domain.MySQL:
-			clause = fmt.Sprintf("MATCH(%s) AGAINST(%s IN NATURAL LANGUAGE MODE)", condition.Field, c.placeholder(argIndex))
+			clause = fmt.Sprintf("MATCH(%s.%s) AGAINST(%s IN NATURAL LANGUAGE MODE)", c.QuoteIdentifier(modelName), c.QuoteIdentifier(condition.Field), c.placeholder(argIndex))
 			args = append(args, condition.Value)
 		default:
-			// Fallback to LIKE for SQLite
-			clause = fmt.Sprintf("%s LIKE %s", condition.Field, c.placeholder(argIndex))
+			clause = fmt.Sprintf("%s.%s LIKE %s", c.QuoteIdentifier(modelName), c.QuoteIdentifier(condition.Field), c.placeholder(argIndex))
 			args = append(args, fmt.Sprintf("%%%v%%", condition.Value))
 		}
 
@@ -546,7 +624,7 @@ func (c *SQLCompiler) compileGroupBy(query *domain.Query) (domain.SQL, error) {
 
 	// WHERE clause
 	if len(query.Filter.Conditions) > 0 {
-		whereClause, whereArgs, err := c.buildWhereClause(query.Filter, &argIndex)
+		whereClause, whereArgs, err := c.buildWhereClause(query.Model, query.Filter, &argIndex)
 		if err != nil {
 			return domain.SQL{}, err
 		}
@@ -566,7 +644,7 @@ func (c *SQLCompiler) compileGroupBy(query *domain.Query) (domain.SQL, error) {
 
 	// HAVING clause
 	if len(query.Having.Conditions) > 0 {
-		havingClause, havingArgs, err := c.buildWhereClause(query.Having, &argIndex)
+		havingClause, havingArgs, err := c.buildWhereClause(query.Model, query.Having, &argIndex)
 		if err != nil {
 			return domain.SQL{}, err
 		}
@@ -658,7 +736,7 @@ func (c *SQLCompiler) CompileNestedWrites(parentTable string, parentID interface
 				nw.Relation, fkField, c.placeholder(&argIndex))
 			args = append(args, parentID)
 
-			whereClause, whereArgs, err := c.buildWhereClause(domain.Filter{Conditions: nw.Where}, &argIndex)
+			whereClause, whereArgs, err := c.buildWhereClause(nw.Relation, domain.Filter{Conditions: nw.Where}, &argIndex)
 			if err != nil {
 				return nil, err
 			}
@@ -674,7 +752,7 @@ func (c *SQLCompiler) CompileNestedWrites(parentTable string, parentID interface
 			fkField := strings.ToLower(parentTable) + "_id"
 			sql = fmt.Sprintf("UPDATE %s SET %s = NULL", nw.Relation, fkField)
 
-			whereClause, whereArgs, err := c.buildWhereClause(domain.Filter{Conditions: nw.Where}, &argIndex)
+			whereClause, whereArgs, err := c.buildWhereClause(nw.Relation, domain.Filter{Conditions: nw.Where}, &argIndex)
 			if err != nil {
 				return nil, err
 			}
@@ -702,7 +780,7 @@ func (c *SQLCompiler) CompileNestedWrites(parentTable string, parentID interface
 
 			// Add additional conditions
 			if len(nw.Where) > 0 {
-				whereClause, whereArgs, err := c.buildWhereClause(domain.Filter{Conditions: nw.Where}, &argIndex)
+				whereClause, whereArgs, err := c.buildWhereClause(nw.Relation, domain.Filter{Conditions: nw.Where}, &argIndex)
 				if err != nil {
 					return nil, err
 				}
@@ -717,7 +795,7 @@ func (c *SQLCompiler) CompileNestedWrites(parentTable string, parentID interface
 			args = append(args, parentID)
 
 			if len(nw.Where) > 0 {
-				whereClause, whereArgs, err := c.buildWhereClause(domain.Filter{Conditions: nw.Where}, &argIndex)
+				whereClause, whereArgs, err := c.buildWhereClause(nw.Relation, domain.Filter{Conditions: nw.Where}, &argIndex)
 				if err != nil {
 					return nil, err
 				}
@@ -747,7 +825,7 @@ func (c *SQLCompiler) CompileNestedWrites(parentTable string, parentID interface
 					nw.Relation, fkField, c.placeholder(&argIndex))
 				connectArgs := []interface{}{parentID}
 
-				whereClause, whereArgs, err := c.buildWhereClause(domain.Filter{Conditions: nw.Where}, &argIndex)
+				whereClause, whereArgs, err := c.buildWhereClause(nw.Relation, domain.Filter{Conditions: nw.Where}, &argIndex)
 				if err != nil {
 					return nil, err
 				}

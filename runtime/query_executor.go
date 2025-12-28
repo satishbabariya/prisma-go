@@ -99,6 +99,7 @@ func (e *QueryExecutor) ExecuteCreate(ctx context.Context, query *domain.Query) 
 		return nil, fmt.Errorf("failed to compile query: %w", err)
 	}
 
+	var createdItem map[string]interface{}
 	if e.dialect == domain.PostgreSQL {
 		// Postgres uses RETURNING
 		rows, err := e.db.QueryContext(ctx, compiled.SQL.Query, compiled.SQL.Args...)
@@ -114,20 +115,73 @@ func (e *QueryExecutor) ExecuteCreate(ctx context.Context, query *domain.Query) 
 		if len(results) == 0 {
 			return nil, fmt.Errorf("no result returned")
 		}
-		return results[0], nil
+		createdItem = results[0]
+	} else {
+		result, err := e.db.ExecContext(ctx, compiled.SQL.Query, compiled.SQL.Args...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to execute create: %w", err)
+		}
+
+		id, err := result.LastInsertId()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get insert ID: %w", err)
+		}
+		createdItem = map[string]interface{}{"id": id}
 	}
 
-	result, err := e.db.ExecContext(ctx, compiled.SQL.Query, compiled.SQL.Args...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute create: %w", err)
+	// 2. Process Nested Writes
+	if len(compiled.OriginalQuery.NestedWrites) > 0 {
+		for _, nw := range compiled.OriginalQuery.NestedWrites {
+			if nw.Operation == domain.NestedCreate {
+				// Resolve metadata for relation
+				parentModel := compiled.OriginalQuery.Model
+				relMeta, err := e.registry.GetRelation(parentModel, nw.Relation)
+				if err != nil {
+					return nil, fmt.Errorf("relation metadata not found for %s.%s: %w", parentModel, nw.Relation, err)
+				}
+
+				// Find inverse relation (to know FK field on child)
+				inverseRel, err := e.registry.GetInverseRelation(relMeta)
+				if err != nil {
+					return nil, fmt.Errorf("inverse relation not found for %s.%s: %w", parentModel, nw.Relation, err)
+				}
+
+				// Determine FK field
+				var fkField string
+				if len(inverseRel.FromFields) > 0 {
+					fkField = inverseRel.FromFields[0]
+				} else {
+					// Fallback to convention: relationName + "Id"
+					fkField = inverseRel.Name + "Id"
+				}
+
+				// Prepare child data
+				childData := make(map[string]interface{})
+				for k, v := range nw.Data {
+					childData[k] = v
+				}
+				// Inject FK
+				// TODO: generic PK support (currently assumes "id")
+				childData[fkField] = createdItem["id"]
+
+				// Create child query
+				childQuery := &domain.Query{
+					Model:      relMeta.ToModel,
+					Operation:  domain.Create,
+					CreateData: childData,
+				}
+
+				// Execute recursive create
+				// Note: using ExecuteCreate directly
+				_, err = e.ExecuteCreate(ctx, childQuery)
+				if err != nil {
+					return nil, fmt.Errorf("failed to execute nested create for %s: %w", relMeta.ToModel, err)
+				}
+			}
+		}
 	}
 
-	id, err := result.LastInsertId()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get insert ID: %w", err)
-	}
-
-	return map[string]interface{}{"id": id}, nil
+	return createdItem, nil
 }
 
 // ExecuteUpdate executes an Update query and returns an updated record.
