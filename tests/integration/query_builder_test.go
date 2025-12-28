@@ -10,7 +10,7 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/satishbabariya/prisma-go/internal/core/query/builder"
 	"github.com/satishbabariya/prisma-go/internal/core/query/compiler"
-	"github.com/satishbabariya/prisma-go/internal/core/query/domain"
+	"github.com/satishbabariya/prisma-go/pkg/domain"
 	"github.com/satishbabariya/prisma-go/runtime"
 )
 

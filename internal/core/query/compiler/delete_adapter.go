@@ -2,7 +2,7 @@
 package compiler
 
 import (
-	"github.com/satishbabariya/prisma-go/internal/core/query/domain"
+	"github.com/satishbabariya/prisma-go/pkg/domain"
 )
 
 // compileDelete compiles a DELETE query to domain.SQL format.

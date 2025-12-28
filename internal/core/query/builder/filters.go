@@ -1,7 +1,7 @@
 // Package builder implements filter construction helpers.
 package builder
 
-import "github.com/satishbabariya/prisma-go/internal/core/query/domain"
+import "github.com/satishbabariya/prisma-go/pkg/domain"
 
 // Filter helpers for building conditions with a fluent API.
 

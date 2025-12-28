@@ -3,7 +3,7 @@ package service
 import (
 	"testing"
 
-	"github.com/satishbabariya/prisma-go/internal/core/query/domain"
+	"github.com/satishbabariya/prisma-go/pkg/domain"
 	"github.com/stretchr/testify/assert"
 )
 

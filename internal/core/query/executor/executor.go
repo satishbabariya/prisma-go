@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/satishbabariya/prisma-go/internal/adapters/database"
-	"github.com/satishbabariya/prisma-go/internal/core/query/domain"
+	"github.com/satishbabariya/prisma-go/pkg/domain"
 	"github.com/satishbabariya/prisma-go/internal/core/query/mapper"
 	"github.com/satishbabariya/prisma-go/pkg/client"
 )

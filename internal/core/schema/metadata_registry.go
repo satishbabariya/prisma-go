@@ -247,3 +247,19 @@ func (r *MetadataRegistry) GetColumnName(modelName, fieldName string) (string, e
 	// Default to field name
 	return field.Name, nil
 }
+
+// RegisterRelation registers a relation manually.
+func (r *MetadataRegistry) RegisterRelation(modelName string, relation domain.Relation) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.relations[modelName] = append(r.relations[modelName], relation)
+}
+
+// RegisterModel registers a model manually.
+func (r *MetadataRegistry) RegisterModel(model *domain.Model) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.models[model.Name] = model
+}

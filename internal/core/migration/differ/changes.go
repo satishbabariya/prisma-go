@@ -7,6 +7,18 @@ import (
 	"github.com/satishbabariya/prisma-go/internal/core/migration/domain"
 )
 
+// quote quotes an identifier based on the dialect.
+func quote(ident string, dialect domain.SQLDialect) string {
+	switch dialect {
+	case domain.PostgreSQL, domain.SQLite:
+		return fmt.Sprintf("\"%s\"", ident)
+	case domain.MySQL:
+		return fmt.Sprintf("`%s`", ident)
+	default:
+		return ident
+	}
+}
+
 // CreateTableChange represents creating a new table.
 type CreateTableChange struct {
 	Table domain.Table
@@ -21,19 +33,62 @@ func (c *CreateTableChange) ToSQL(dialect domain.SQLDialect) ([]string, error) {
 	var sql string
 	switch dialect {
 	case domain.PostgreSQL, domain.MySQL, domain.SQLite:
-		sql = fmt.Sprintf("CREATE TABLE %s (", c.Table.Name)
+		sql = fmt.Sprintf("CREATE TABLE %s (", quote(c.Table.Name, dialect))
 		for i, col := range c.Table.Columns {
 			if i > 0 {
 				sql += ", "
 			}
-			sql += fmt.Sprintf("%s %s", col.Name, col.Type)
+
+			colType := col.Type
+			isAutoInc := false
+			defaultVal := ""
+			if col.DefaultValue != nil {
+				defaultVal = fmt.Sprintf("%v", col.DefaultValue)
+				if defaultVal == "autoincrement()" {
+					isAutoInc = true
+				}
+			}
+
+			// Handle type adjustments for autoincrement
+			if isAutoInc && dialect == domain.PostgreSQL {
+				if colType == "INTEGER" || colType == "INT" || colType == "Int" {
+					colType = "SERIAL"
+				} else if colType == "BIGINT" || colType == "BigInt" {
+					colType = "BIGSERIAL"
+				}
+			}
+
+			sql += fmt.Sprintf("%s %s", quote(col.Name, dialect), colType)
 			if !col.IsNullable {
 				sql += " NOT NULL"
 			}
-			if col.DefaultValue != nil {
+
+			// Handle default value and auto_increment suffix
+			if isAutoInc {
+				if dialect == domain.MySQL {
+					sql += " AUTO_INCREMENT"
+				} else if dialect == domain.SQLite {
+					// SQLite requires INTEGER PRIMARY KEY AUTOINCREMENT
+				}
+			} else if col.DefaultValue != nil {
 				sql += fmt.Sprintf(" DEFAULT %v", col.DefaultValue)
 			}
 		}
+
+		// Add Primary Keys
+		for _, constraint := range c.Table.Constraints {
+			if constraint.Type == domain.PrimaryKey {
+				pkCols := ""
+				for i, col := range constraint.Columns {
+					if i > 0 {
+						pkCols += ", "
+					}
+					pkCols += quote(col, dialect)
+				}
+				sql += fmt.Sprintf(", PRIMARY KEY (%s)", pkCols)
+			}
+		}
+
 		sql += ")"
 	default:
 		return nil, fmt.Errorf("unsupported dialect: %s", dialect)
@@ -52,7 +107,7 @@ func (c *DropTableChange) Description() string {
 }
 func (c *DropTableChange) IsDestructive() bool { return true }
 func (c *DropTableChange) ToSQL(dialect domain.SQLDialect) ([]string, error) {
-	return []string{fmt.Sprintf("DROP TABLE %s", c.TableName)}, nil
+	return []string{fmt.Sprintf("DROP TABLE %s", quote(c.TableName, dialect))}, nil
 }
 
 // AddColumnChange represents adding a column to a table.
@@ -67,7 +122,7 @@ func (c *AddColumnChange) Description() string {
 }
 func (c *AddColumnChange) IsDestructive() bool { return false }
 func (c *AddColumnChange) ToSQL(dialect domain.SQLDialect) ([]string, error) {
-	sql := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", c.TableName, c.Column.Name, c.Column.Type)
+	sql := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", quote(c.TableName, dialect), quote(c.Column.Name, dialect), c.Column.Type)
 	if !c.Column.IsNullable {
 		sql += " NOT NULL"
 	}
@@ -89,7 +144,7 @@ func (c *DropColumnChange) Description() string {
 }
 func (c *DropColumnChange) IsDestructive() bool { return true }
 func (c *DropColumnChange) ToSQL(dialect domain.SQLDialect) ([]string, error) {
-	return []string{fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", c.TableName, c.ColumnName)}, nil
+	return []string{fmt.Sprintf("ALTER TABLE %s DROP COLUMN %s", quote(c.TableName, dialect), quote(c.ColumnName, dialect))}, nil
 }
 
 // AlterColumnChange represents altering a column.
@@ -109,14 +164,16 @@ func (c *AlterColumnChange) Description() string {
 func (c *AlterColumnChange) IsDestructive() bool { return true }
 func (c *AlterColumnChange) ToSQL(dialect domain.SQLDialect) ([]string, error) {
 	var sqls []string
+	tbl := quote(c.TableName, dialect)
+	col := quote(c.ColumnName, dialect)
 
 	// Type change
 	if c.NewType != "" && c.OldType != c.NewType {
 		switch dialect {
 		case domain.PostgreSQL:
-			sqls = append(sqls, fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s TYPE %s", c.TableName, c.ColumnName, c.NewType))
+			sqls = append(sqls, fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s TYPE %s", tbl, col, c.NewType))
 		case domain.MySQL:
-			sqls = append(sqls, fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s %s", c.TableName, c.ColumnName, c.NewType))
+			sqls = append(sqls, fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s %s", tbl, col, c.NewType))
 		case domain.SQLite:
 			// SQLite doesn't support ALTER COLUMN, would need table recreation
 			return nil, fmt.Errorf("SQLite does not support ALTER COLUMN")
@@ -128,16 +185,16 @@ func (c *AlterColumnChange) ToSQL(dialect domain.SQLDialect) ([]string, error) {
 		switch dialect {
 		case domain.PostgreSQL:
 			if c.NewNullable {
-				sqls = append(sqls, fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s DROP NOT NULL", c.TableName, c.ColumnName))
+				sqls = append(sqls, fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s DROP NOT NULL", tbl, col))
 			} else {
-				sqls = append(sqls, fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s SET NOT NULL", c.TableName, c.ColumnName))
+				sqls = append(sqls, fmt.Sprintf("ALTER TABLE %s ALTER COLUMN %s SET NOT NULL", tbl, col))
 			}
 		case domain.MySQL:
 			nullable := "NOT NULL"
 			if c.NewNullable {
 				nullable = "NULL"
 			}
-			sqls = append(sqls, fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s %s %s", c.TableName, c.ColumnName, c.NewType, nullable))
+			sqls = append(sqls, fmt.Sprintf("ALTER TABLE %s MODIFY COLUMN %s %s %s", tbl, col, c.NewType, nullable))
 		}
 	}
 
@@ -165,9 +222,9 @@ func (c *CreateIndexChange) ToSQL(dialect domain.SQLDialect) ([]string, error) {
 		if i > 0 {
 			columns += ", "
 		}
-		columns += col
+		columns += quote(col, dialect)
 	}
-	return []string{fmt.Sprintf("CREATE %sINDEX %s ON %s (%s)", unique, c.Index.Name, c.TableName, columns)}, nil
+	return []string{fmt.Sprintf("CREATE %sINDEX %s ON %s (%s)", unique, quote(c.Index.Name, dialect), quote(c.TableName, dialect), columns)}, nil
 }
 
 // DropIndexChange represents dropping an index.
@@ -184,9 +241,9 @@ func (c *DropIndexChange) IsDestructive() bool { return false }
 func (c *DropIndexChange) ToSQL(dialect domain.SQLDialect) ([]string, error) {
 	switch dialect {
 	case domain.PostgreSQL, domain.SQLite:
-		return []string{fmt.Sprintf("DROP INDEX %s", c.IndexName)}, nil
+		return []string{fmt.Sprintf("DROP INDEX %s", quote(c.IndexName, dialect))}, nil
 	case domain.MySQL:
-		return []string{fmt.Sprintf("DROP INDEX %s ON %s", c.IndexName, c.TableName)}, nil
+		return []string{fmt.Sprintf("DROP INDEX %s ON %s", quote(c.IndexName, dialect), quote(c.TableName, dialect))}, nil
 	default:
 		return nil, fmt.Errorf("unsupported dialect: %s", dialect)
 	}

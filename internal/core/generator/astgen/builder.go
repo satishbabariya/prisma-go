@@ -85,7 +85,7 @@ func (b *Builder) BuildFile() *ast.File {
 	// Add required imports
 	b.imports["context"] = true
 	b.imports["github.com/satishbabariya/prisma-go/internal/service"] = true
-	b.imports["github.com/satishbabariya/prisma-go/internal/core/query/domain"] = true
+	b.imports["github.com/satishbabariya/prisma-go/pkg/domain"] = true
 
 	// Add imports at the beginning
 	if len(b.imports) > 0 {

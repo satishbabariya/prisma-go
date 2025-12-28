@@ -14,7 +14,7 @@ import (
 	"github.com/satishbabariya/prisma-go/internal/adapters/database"
 	"github.com/satishbabariya/prisma-go/internal/adapters/database/postgres"
 	"github.com/satishbabariya/prisma-go/internal/core/query/compiler"
-	"github.com/satishbabariya/prisma-go/internal/core/query/domain"
+	"github.com/satishbabariya/prisma-go/pkg/domain"
 	"github.com/satishbabariya/prisma-go/internal/core/query/executor"
 	"github.com/satishbabariya/prisma-go/internal/service"
 )

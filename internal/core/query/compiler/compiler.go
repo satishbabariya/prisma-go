@@ -7,8 +7,8 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/satishbabariya/prisma-go/internal/core/query/domain"
 	"github.com/satishbabariya/prisma-go/internal/core/schema"
+	"github.com/satishbabariya/prisma-go/pkg/domain"
 )
 
 // SQLCompiler compiles domain queries to SQL.
@@ -138,11 +138,11 @@ func (c *SQLCompiler) compileSelect(query *domain.Query) (domain.SQL, error) {
 	if len(query.Selection.Fields) > 0 {
 		// Select specific fields from base table
 		for _, field := range query.Selection.Fields {
-			columns = append(columns, fmt.Sprintf("%s.%s", query.Model, field))
+			columns = append(columns, fmt.Sprintf("%s.%s", c.QuoteIdentifier(query.Model), c.QuoteIdentifier(field)))
 		}
 	} else {
 		// Select all from base table
-		columns = append(columns, fmt.Sprintf("%s.*", query.Model))
+		columns = append(columns, fmt.Sprintf("%s.*", c.QuoteIdentifier(query.Model)))
 	}
 
 	// Add columns from joined relations
@@ -155,7 +155,7 @@ func (c *SQLCompiler) compileSelect(query *domain.Query) (domain.SQL, error) {
 
 	// FROM clause
 	sqlBuilder.WriteString(" FROM ")
-	sqlBuilder.WriteString(query.Model)
+	sqlBuilder.WriteString(c.QuoteIdentifier(query.Model))
 
 	// Add JOIN clauses
 	if len(joins) > 0 {
@@ -502,7 +502,7 @@ func (c *SQLCompiler) compileGroupBy(query *domain.Query) (domain.SQL, error) {
 
 	// FROM clause
 	sqlBuilder.WriteString(" FROM ")
-	sqlBuilder.WriteString(query.Model)
+	sqlBuilder.WriteString(c.QuoteIdentifier(query.Model))
 
 	// WHERE clause
 	if len(query.Filter.Conditions) > 0 {
@@ -790,6 +790,18 @@ func toInterfaceSlice(val interface{}) ([]interface{}, error) {
 		result[i] = rv.Index(i).Interface()
 	}
 	return result, nil
+}
+
+// QuoteIdentifier quotes an identifier based on the dialect.
+func (c *SQLCompiler) QuoteIdentifier(ident string) string {
+	switch c.dialect {
+	case domain.PostgreSQL, domain.SQLite:
+		return fmt.Sprintf("\"%s\"", ident)
+	case domain.MySQL:
+		return fmt.Sprintf("`%s`", ident)
+	default:
+		return ident
+	}
 }
 
 // Ensure SQLCompiler implements QueryCompiler interface.

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/satishbabariya/prisma-go/internal/core/query/domain"
+	"github.com/satishbabariya/prisma-go/pkg/domain"
 	"github.com/satishbabariya/prisma-go/internal/service"
 	"github.com/satishbabariya/prisma-go/tests/validation"
 	"github.com/stretchr/testify/assert"

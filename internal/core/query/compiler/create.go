@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/satishbabariya/prisma-go/internal/core/query/domain"
+	"github.com/satishbabariya/prisma-go/pkg/domain"
 )
 
 // CompileCreate compiles a CREATE query to INSERT SQL.
@@ -20,14 +20,14 @@ func (c *SQLCompiler) CompileCreate(query *domain.Query) (string, []interface{},
 
 	paramCount := 1
 	for col, val := range query.CreateData {
-		columns = append(columns, col)
+		columns = append(columns, c.QuoteIdentifier(col))
 		placeholders = append(placeholders, c.placeholder(&paramCount))
 		args = append(args, val)
 	}
 
 	sql := fmt.Sprintf(
 		"INSERT INTO %s (%s) VALUES (%s)",
-		query.Model,
+		c.QuoteIdentifier(query.Model),
 		strings.Join(columns, ", "),
 		strings.Join(placeholders, ", "),
 	)

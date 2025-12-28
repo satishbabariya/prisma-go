@@ -16,7 +16,7 @@ import (
 	"github.com/satishbabariya/prisma-go/internal/core/migration/introspector"
 	"github.com/satishbabariya/prisma-go/internal/core/migration/planner"
 	querycompiler "github.com/satishbabariya/prisma-go/internal/core/query/compiler"
-	querydomain "github.com/satishbabariya/prisma-go/internal/core/query/domain"
+	querydomain "github.com/satishbabariya/prisma-go/pkg/domain"
 	queryexecutor "github.com/satishbabariya/prisma-go/internal/core/query/executor"
 	"github.com/satishbabariya/prisma-go/internal/core/schema/formatter"
 	"github.com/satishbabariya/prisma-go/internal/core/schema/parser"

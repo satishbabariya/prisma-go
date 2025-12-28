@@ -13,14 +13,25 @@ import (
 // Client is the main Prisma client.
 type Client struct {
 	db     *sql.DB
-	engine *runtime.QueryEngine
+	engine *runtime.QueryExecutor
 }
 
 // NewClient creates a new Prisma client.
-func NewClient(db *sql.DB) *Client {
+func NewClient(db *sql.DB, dialect string) *Client {
+	var d runtime.SQLDialect
+	switch dialect {
+	case "postgresql":
+		d = runtime.PostgreSQL
+	case "mysql":
+		d = runtime.MySQL
+	case "sqlite":
+		d = runtime.SQLite
+	default:
+		d = runtime.PostgreSQL
+	}
 	return &Client{
 		db:     db,
-		engine: runtime.NewQueryEngine(db),
+		engine: runtime.NewQueryExecutor(db, d),
 	}
 }
 

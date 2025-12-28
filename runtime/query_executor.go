@@ -7,26 +7,30 @@ import (
 	"fmt"
 
 	"github.com/satishbabariya/prisma-go/internal/core/query/compiler"
-	"github.com/satishbabariya/prisma-go/internal/core/query/domain"
+	"github.com/satishbabariya/prisma-go/internal/core/schema"
+	"github.com/satishbabariya/prisma-go/pkg/domain"
 )
 
 // QueryExecutor provides query execution capabilities.
 type QueryExecutor struct {
-	db      *sql.DB
-	dialect domain.SQLDialect
+	db       *sql.DB
+	dialect  domain.SQLDialect
+	registry *schema.MetadataRegistry
 }
 
 // NewQueryExecutor creates a new query executor.
-func NewQueryExecutor(db *sql.DB, dialect domain.SQLDialect) *QueryExecutor {
+func NewQueryExecutor(db *sql.DB, dialect SQLDialect, registry *schema.MetadataRegistry) *QueryExecutor {
 	return &QueryExecutor{
-		db:      db,
-		dialect: dialect,
+		db:       db,
+		dialect:  dialect.toDomain(),
+		registry: registry,
 	}
 }
 
 // ExecuteFindMany executes a FindMany query and returns results.
 func (e *QueryExecutor) ExecuteFindMany(ctx context.Context, query *domain.Query) ([]map[string]interface{}, error) {
 	compiler := compiler.NewSQLCompiler(e.dialect)
+	compiler.SetRegistry(e.registry)
 	compiled, err := compiler.Compile(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compile query: %w", err)
@@ -83,9 +87,28 @@ func (e *QueryExecutor) ExecuteFindUnique(ctx context.Context, query *domain.Que
 // ExecuteCreate executes a Create query and returns a created record.
 func (e *QueryExecutor) ExecuteCreate(ctx context.Context, query *domain.Query) (map[string]interface{}, error) {
 	compiler := compiler.NewSQLCompiler(e.dialect)
+	compiler.SetRegistry(e.registry)
 	compiled, err := compiler.Compile(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compile query: %w", err)
+	}
+
+	if e.dialect == domain.PostgreSQL {
+		// Postgres uses RETURNING
+		rows, err := e.db.QueryContext(ctx, compiled.SQL.Query, compiled.SQL.Args...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to execute create: %w", err)
+		}
+		defer rows.Close()
+
+		results, err := e.scanRowsToMaps(rows)
+		if err != nil {
+			return nil, err
+		}
+		if len(results) == 0 {
+			return nil, fmt.Errorf("no result returned")
+		}
+		return results[0], nil
 	}
 
 	result, err := e.db.ExecContext(ctx, compiled.SQL.Query, compiled.SQL.Args...)
@@ -104,6 +127,7 @@ func (e *QueryExecutor) ExecuteCreate(ctx context.Context, query *domain.Query) 
 // ExecuteUpdate executes an Update query and returns an updated record.
 func (e *QueryExecutor) ExecuteUpdate(ctx context.Context, query *domain.Query) (map[string]interface{}, error) {
 	compiler := compiler.NewSQLCompiler(e.dialect)
+	compiler.SetRegistry(e.registry)
 	compiled, err := compiler.Compile(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compile query: %w", err)
@@ -125,6 +149,7 @@ func (e *QueryExecutor) ExecuteUpdate(ctx context.Context, query *domain.Query) 
 // ExecuteDelete executes a Delete query and returns deleted record info.
 func (e *QueryExecutor) ExecuteDelete(ctx context.Context, query *domain.Query) (map[string]interface{}, error) {
 	compiler := compiler.NewSQLCompiler(e.dialect)
+	compiler.SetRegistry(e.registry)
 	compiled, err := compiler.Compile(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compile query: %w", err)
@@ -146,6 +171,7 @@ func (e *QueryExecutor) ExecuteDelete(ctx context.Context, query *domain.Query) 
 // ExecuteUpsert executes an Upsert query and returns a created/updated record.
 func (e *QueryExecutor) ExecuteUpsert(ctx context.Context, query *domain.Query) (map[string]interface{}, error) {
 	compiler := compiler.NewSQLCompiler(e.dialect)
+	compiler.SetRegistry(e.registry)
 	compiled, err := compiler.Compile(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compile query: %w", err)
@@ -182,6 +208,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, compiled *domain.CompiledQu
 		}
 
 		compiler := compiler.NewSQLCompiler(e.dialect)
+		compiler.SetRegistry(e.registry)
 		firstCompiled, err := compiler.Compile(ctx, &queryCopy)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compile find first query: %w", err)
@@ -234,6 +261,7 @@ func (e *QueryExecutor) Execute(ctx context.Context, compiled *domain.CompiledQu
 // ExecuteAggregate executes an Aggregate query and returns aggregation results.
 func (e *QueryExecutor) ExecuteAggregate(ctx context.Context, query *domain.Query) (map[string]interface{}, error) {
 	compiler := compiler.NewSQLCompiler(e.dialect)
+	compiler.SetRegistry(e.registry)
 	compiled, err := compiler.Compile(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compile query: %w", err)
