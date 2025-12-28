@@ -52,7 +52,7 @@ type CreateMigrationInput struct {
 // CreateMigration creates a new migration based on schema changes.
 func (s *MigrationService) CreateMigration(ctx context.Context, input CreateMigrationInput) (*migrationdomain.Migration, error) {
 	// 1. Load schema
-	_, err := s.schemaRepo.Load(ctx, input.SchemaPath)
+	schema, err := s.schemaRepo.Load(ctx, input.SchemaPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load schema: %w", err)
 	}
@@ -71,9 +71,91 @@ func (s *MigrationService) CreateMigration(ctx context.Context, input CreateMigr
 	}
 
 	// 3. Convert schema to desired database state
-	// This is a simplified version - in reality, you'd convert schema.Models to Tables
 	desiredState := &migrationdomain.DatabaseState{
-		Tables: []migrationdomain.Table{},
+		Tables: make([]migrationdomain.Table, 0, len(schema.Models)),
+	}
+
+	for _, model := range schema.Models {
+		table := migrationdomain.Table{
+			Name:    model.Name,
+			Columns: []migrationdomain.Column{},
+		}
+
+		for _, field := range model.Fields {
+			// Skip scalar lists for now as they require a separate table or specific array support
+			if field.IsList {
+				continue
+			}
+
+			// Skip relations for now (foreign keys handled separately usually, or need Relation field support)
+			// But for now we just map standard fields
+			// Quick hack: Map Basic types.
+			colType := "TEXT"
+			if field.Type.IsBuiltin {
+				switch field.Type.Name {
+				case "Int":
+					colType = "INTEGER"
+				case "BigInt":
+					colType = "BIGINT"
+				case "String":
+					colType = "TEXT"
+				case "Boolean":
+					colType = "BOOLEAN"
+				case "DateTime":
+					colType = "TIMESTAMP"
+				case "Float":
+					colType = "DOUBLE PRECISION"
+				case "Decimal":
+					colType = "DECIMAL"
+				case "Json":
+					colType = "JSONB"
+				case "Bytes":
+					colType = "BYTEA"
+				}
+			} else if field.Type.IsEnum {
+				colType = "TEXT" // Store enums as text for now
+			} else {
+				// Model types (Relations) - skip for column generation in this simplified version
+				continue
+			}
+
+			col := migrationdomain.Column{
+				Name:       field.Name,
+				Type:       colType,
+				IsNullable: !field.IsRequired,
+			}
+
+			// Handle attributes
+			// Note: domain.Field has IsUnique, but we need to check constraints closer
+			// For simplified version:
+			if field.Name == "id" { // Naive PK check or need to check Attributes
+				// But wait, domain.Field doesn't have IsPrimaryKey boolean directly?
+				// Let's check attributes
+				for _, attr := range field.Attributes {
+					if attr.Name == "id" {
+						col.IsPrimaryKey = true
+					}
+				}
+			}
+			// Or check model indexes for PK?
+			// For now, let's look at attributes on the field
+			for _, attr := range field.Attributes {
+				if attr.Name == "id" {
+					col.IsPrimaryKey = true
+				}
+				if attr.Name == "default" {
+					if len(attr.Arguments) > 0 {
+						col.DefaultValue = fmt.Sprintf("%v", attr.Arguments[0])
+					}
+				}
+			}
+			if field.IsUnique {
+				col.IsUnique = true
+			}
+
+			table.Columns = append(table.Columns, col)
+		}
+		desiredState.Tables = append(desiredState.Tables, table)
 	}
 
 	// 4. Compare states and generate changes

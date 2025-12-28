@@ -66,6 +66,7 @@ func loadConfig() *config.Config {
 			Provider:       "postgresql",
 			URL:            os.Getenv("DATABASE_URL"),
 			MaxConnections: 10,
+			ConnectTimeout: 30,
 		},
 		Generator: config.GeneratorConfig{
 			Output:  "./generated",

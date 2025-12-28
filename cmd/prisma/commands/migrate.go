@@ -4,6 +4,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/satishbabariya/prisma-go/internal/service"
 	"github.com/satishbabariya/prisma-go/internal/utils/container"
@@ -73,6 +74,9 @@ func newMigrateStatusCommand(c *container.Container) *cobra.Command {
 }
 
 func runMigrateDev(c *container.Container, schemaPath, name string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
 	fmt.Println("Creating migration...")
 
 	migrationService := c.MigrationService()
@@ -80,8 +84,13 @@ func runMigrateDev(c *container.Container, schemaPath, name string) error {
 		return fmt.Errorf("migration service not initialized")
 	}
 
+	// Ensure database connection
+	if err := c.Connect(ctx); err != nil {
+		return fmt.Errorf("failed to connect to database: %w", err)
+	}
+
 	// Create migration
-	migration, err := migrationService.CreateMigration(context.Background(), service.CreateMigrationInput{
+	migration, err := migrationService.CreateMigration(ctx, service.CreateMigrationInput{
 		Name:       name,
 		SchemaPath: schemaPath,
 	})

@@ -151,6 +151,14 @@ func (c *Container) QueryService() *service.QueryService {
 	return c.queryService
 }
 
+// Connect establishes database connection.
+func (c *Container) Connect(ctx context.Context) error {
+	if c.dbAdapter != nil {
+		return c.dbAdapter.Connect(ctx)
+	}
+	return nil
+}
+
 // Close cleans up resources.
 func (c *Container) Close(ctx context.Context) error {
 	if c.dbAdapter != nil {

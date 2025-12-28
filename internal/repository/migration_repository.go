@@ -194,12 +194,35 @@ func (r *MigrationRepositoryImpl) loadMigration(path string) (*domain.Migration,
 		return nil, fmt.Errorf("failed to read migration file: %w", err)
 	}
 
-	var migration domain.Migration
-	if err := json.Unmarshal(data, &migration); err != nil {
+	// Define DTO to handle interface unmarshalling
+	type jsonMigration struct {
+		ID          string
+		Name        string
+		CreatedAt   time.Time
+		AppliedAt   *time.Time
+		Changes     []interface{} // Skip concrete type restoration for now
+		SQL         []string
+		RollbackSQL []string
+		Checksum    string
+		Status      domain.MigrationStatus
+	}
+
+	var dto jsonMigration
+	if err := json.Unmarshal(data, &dto); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal migration: %w", err)
 	}
 
-	return &migration, nil
+	return &domain.Migration{
+		ID:          dto.ID,
+		Name:        dto.Name,
+		CreatedAt:   dto.CreatedAt,
+		AppliedAt:   dto.AppliedAt,
+		Changes:     nil, // We don't restore changes yet
+		SQL:         dto.SQL,
+		RollbackSQL: dto.RollbackSQL,
+		Checksum:    dto.Checksum,
+		Status:      dto.Status,
+	}, nil
 }
 
 // Ensure MigrationRepositoryImpl implements MigrationRepository interface.

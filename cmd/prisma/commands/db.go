@@ -14,6 +14,7 @@ import (
 	"github.com/satishbabariya/prisma-go/internal/core/migration/executor"
 	"github.com/satishbabariya/prisma-go/internal/core/migration/introspector"
 	pslparser "github.com/satishbabariya/prisma-go/internal/psl"
+	"github.com/satishbabariya/prisma-go/internal/psl/ast"
 	"github.com/spf13/cobra"
 )
 
@@ -387,28 +388,80 @@ func schemaToState(pslAst interface{}) *domain.DatabaseState {
 		Tables: []domain.Table{},
 	}
 
-	// Use type assertion to access Models() method
-	type modelsProvider interface {
-		Models() interface{}
-	}
-
-	if mp, ok := pslAst.(modelsProvider); ok {
-		models := mp.Models()
-		// Handle different model types based on the AST structure
-		if modelSlice, ok := models.([]interface{}); ok {
-			for _, m := range modelSlice {
-				if model, ok := m.(interface{ GetName() string }); ok {
-					table := domain.Table{
-						Name:    model.GetName(),
-						Columns: []domain.Column{},
-					}
-					state.Tables = append(state.Tables, table)
-				}
+	if schema, ok := pslAst.(*ast.SchemaAst); ok {
+		for _, model := range schema.Models() {
+			table := domain.Table{
+				Name:    model.GetName(),
+				Columns: []domain.Column{},
 			}
+
+			for _, field := range model.Fields {
+				col := domain.Column{
+					Name:       field.GetName(),
+					Type:       astTypeToSQLType(field.Type),
+					IsNullable: field.Arity.IsOptional(),
+				}
+
+				// Check attributes
+				for _, attr := range field.Attributes {
+					switch attr.GetName() {
+					case "id":
+						col.IsPrimaryKey = true
+					case "unique":
+						col.IsUnique = true
+					case "default":
+						if attr.Arguments != nil && len(attr.Arguments.Arguments) > 0 {
+							// Simplified default value extraction
+							if val, ok := attr.Arguments.Arguments[0].Value.(*ast.ConstantValue); ok {
+								col.DefaultValue = val.Value
+							} else if val, ok := attr.Arguments.Arguments[0].Value.(*ast.NumericValue); ok {
+								col.DefaultValue = val.Value
+							} else if val, ok := attr.Arguments.Arguments[0].Value.(*ast.StringValue); ok {
+								col.DefaultValue = fmt.Sprintf("'%s'", val.Value)
+							} else if val, ok := attr.Arguments.Arguments[0].Value.(*ast.FunctionCall); ok {
+								col.DefaultValue = val.Name + "()"
+							}
+						}
+					}
+				}
+
+				table.Columns = append(table.Columns, col)
+			}
+
+			state.Tables = append(state.Tables, table)
 		}
 	}
 
 	return state
+}
+
+func astTypeToSQLType(ft *ast.FieldType) string {
+	if ft == nil {
+		return "VARCHAR(255)"
+	}
+	switch ft.Name {
+	case "Int":
+		return "INTEGER"
+	case "BigInt":
+		return "BIGINT"
+	case "String":
+		return "TEXT"
+	case "Boolean":
+		return "BOOLEAN"
+	case "DateTime":
+		return "TIMESTAMP"
+	case "Float":
+		return "DOUBLE PRECISION"
+	case "Decimal":
+		return "DECIMAL"
+	case "Json":
+		return "JSONB"
+	case "Bytes":
+		return "BYTEA"
+	default:
+		// Fallback for enums or unsupported types
+		return "TEXT"
+	}
 }
 
 // calculateChanges calculates the changes needed between current and desired state.
