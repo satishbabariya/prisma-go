@@ -1,5 +1,5 @@
-// Package schemaast provides a parser for Prisma Schema Language using Participle.
-package schema
+// Package psl provides a parser for Prisma Schema Language using Participle.
+package psl
 
 import (
 	"io"
@@ -8,7 +8,7 @@ import (
 	"github.com/alecthomas/participle/v2"
 	"github.com/alecthomas/participle/v2/lexer"
 
-	"github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
+	"github.com/satishbabariya/prisma-go/internal/psl/ast"
 )
 
 // RawSchema is the raw parse tree structure that matches the grammar.

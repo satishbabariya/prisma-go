@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/satishbabariya/prisma-go/internal/core/generator/ir"
-	pslparser "github.com/satishbabariya/prisma-go/psl/parsing/v2"
+	pslparser "github.com/satishbabariya/prisma-go/internal/psl"
 )
 
 func TestAnalyze_Relations(t *testing.T) {

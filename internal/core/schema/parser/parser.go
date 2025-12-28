@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/satishbabariya/prisma-go/internal/core/schema/domain"
-	pslparser "github.com/satishbabariya/prisma-go/psl/parsing/v2"
+	pslparser "github.com/satishbabariya/prisma-go/internal/psl"
 )
 
 // Parser implements the SchemaParser interface.

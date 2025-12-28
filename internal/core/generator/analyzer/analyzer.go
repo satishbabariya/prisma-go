@@ -6,7 +6,7 @@ import (
 
 	"github.com/satishbabariya/prisma-go/internal/core/generator/ir"
 	"github.com/satishbabariya/prisma-go/internal/core/generator/types"
-	pslast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
+	pslast "github.com/satishbabariya/prisma-go/internal/psl/ast"
 )
 
 // SchemaAnalyzer analyzes PSL schemas.

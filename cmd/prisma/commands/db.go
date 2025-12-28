@@ -13,7 +13,7 @@ import (
 	"github.com/satishbabariya/prisma-go/internal/core/migration/domain"
 	"github.com/satishbabariya/prisma-go/internal/core/migration/executor"
 	"github.com/satishbabariya/prisma-go/internal/core/migration/introspector"
-	pslparser "github.com/satishbabariya/prisma-go/psl/parsing/v2"
+	pslparser "github.com/satishbabariya/prisma-go/internal/psl"
 	"github.com/spf13/cobra"
 )
 

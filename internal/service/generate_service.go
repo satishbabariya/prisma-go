@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	generatorSvc "github.com/satishbabariya/prisma-go/internal/core/generator/service"
+	pslparser "github.com/satishbabariya/prisma-go/internal/psl"
 	"github.com/satishbabariya/prisma-go/internal/repository"
-	pslparser "github.com/satishbabariya/prisma-go/psl/parsing/v2"
 )
 
 // GenerateService handles code generation.

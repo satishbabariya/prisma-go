@@ -10,7 +10,7 @@ import (
 
 	"github.com/satishbabariya/prisma-go/internal/core/generator/analyzer"
 	"github.com/satishbabariya/prisma-go/internal/core/generator/template"
-	pslast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
+	pslast "github.com/satishbabariya/prisma-go/internal/psl/ast"
 )
 
 // Generator generates Go code from Prisma schemas.

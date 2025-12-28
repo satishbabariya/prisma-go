@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/satishbabariya/prisma-go/internal/core/schema/domain"
-	pslast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
+	pslast "github.com/satishbabariya/prisma-go/internal/psl/ast"
 )
 
 // AttributeParser handles parsing of Prisma attributes.

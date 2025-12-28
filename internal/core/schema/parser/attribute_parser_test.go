@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/satishbabariya/prisma-go/internal/core/schema/domain"
-	pslparser "github.com/satishbabariya/prisma-go/psl/parsing/v2"
-	pslast "github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
+	pslparser "github.com/satishbabariya/prisma-go/internal/psl"
+	pslast "github.com/satishbabariya/prisma-go/internal/psl/ast"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

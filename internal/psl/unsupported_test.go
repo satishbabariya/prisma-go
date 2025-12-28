@@ -1,9 +1,9 @@
-package schema
+package psl
 
 import (
 	"testing"
 
-	"github.com/satishbabariya/prisma-go/psl/parsing/v2/ast"
+	"github.com/satishbabariya/prisma-go/internal/psl/ast"
 )
 
 func TestUnsupportedType(t *testing.T) {
