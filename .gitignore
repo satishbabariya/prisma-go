@@ -1,4 +1,5 @@
-# Binaries for programs and plugins
+# Binaries
+bin/
 *.exe
 *.exe~
 *.dll
@@ -8,22 +9,15 @@
 # Test binary, built with `go test -c`
 *.test
 
-# Output of the go coverage tool, specifically when used with LiteIDE
+# Output of the go coverage tool
 *.out
+coverage.out
 
-# Dependency directories (remove the comment below to include it)
+# Dependency directories
 vendor/
 
 # Go workspace file
 go.work
-
-# Build artifacts
-prisma-go
-/cli/prisma-go
-
-# Generated code
-generated/
-/examples/*/generated/
 
 # IDE
 .idea/
@@ -36,43 +30,14 @@ generated/
 .DS_Store
 Thumbs.db
 
-# Test files
-*.db
-*.sqlite
-*.sqlite3
-
-# Logs
-*.log
+# Generated code (can be regenerated)
+**/generated/
+*.gen.go
 
 # Temporary files
 tmp/
 temp/
-*.tmp
 
-# Prisma engines (if downloaded)
-prisma-engines/
-
-# Node modules (if any)
-node_modules/
-
-# Environment variables
-.env
-.env.local
-.env.*.local
-
-*.prisma
-STATUS.md
-ARCHITECTURE.md
-DEMO.md
-TEST_RESULTS.md
-SUMMARY.md
-PROGRESS.md
-QUERY_BUILDER.md
-QUERY_EXECUTION.md
-QUERY_COMPILATION.md
-QUERY_COMPILATION.md
-
-generated/
-examples/*/generated/
-
-examples/
+# Build artifacts
+dist/
+build/
