@@ -107,9 +107,31 @@ func (c *SQLCompiler) buildRelationJoins(
 				columns = append(columns, fmt.Sprintf("%s.%s AS %s", alias, c.dialect.Quote(colName), c.dialect.Quote(fmt.Sprintf("%s_%s", rel.Relation, field))))
 			}
 		} else {
-			// Select all fields
-			// Note: * cannot be quoted
-			columns = append(columns, fmt.Sprintf("%s.*", alias))
+			// Select all scalar fields
+			model, err := registry.GetModel(relationMeta.ToModel)
+			if err == nil {
+				for _, field := range model.Fields {
+					// Skip relation fields (non-scalar)
+					if isRelationField(field, registry) {
+						continue
+					}
+
+					// Get actual column name
+					colName, err := registry.GetColumnName(relationMeta.ToModel, field.Name)
+					if err != nil {
+						colName = field.Name
+					}
+
+					// Alias format: RelationName_FieldName
+					// This matches hydrateResults expectation
+					aliasName := fmt.Sprintf("%s_%s", rel.Relation, field.Name)
+
+					columns = append(columns, fmt.Sprintf("%s.%s AS %s", alias, c.dialect.Quote(colName), c.dialect.Quote(aliasName)))
+				}
+			} else {
+				// Fallback if model not found (shouldn't happen with valid registry)
+				columns = append(columns, fmt.Sprintf("%s.*", alias))
+			}
 		}
 
 		join := RelationJoin{
@@ -161,4 +183,22 @@ func getJoinColumns(joins []RelationJoin) []string {
 		columns = append(columns, join.Columns...)
 	}
 	return columns
+}
+
+// isRelationField checks if a field is a relation.
+func isRelationField(field domain.Field, registry *schema.MetadataRegistry) bool {
+	// Simple check based on basic types
+	scalars := map[string]bool{
+		"String": true, "Boolean": true, "Int": true, "BigInt": true,
+		"Float": true, "Decimal": true, "DateTime": true,
+		"Json": true, "Bytes": true,
+	}
+	if scalars[field.Type.Name] {
+		return false
+	}
+	// Check if enum
+	if registry.IsEnum(field.Type.Name) {
+		return false
+	}
+	return true
 }

@@ -393,7 +393,15 @@ func (e *Engine) generateSchemaCode(ir *ir.IR) string {
 		buf.WriteString(fmt.Sprintf("\t// Model: %s\n", model.Name))
 		buf.WriteString(fmt.Sprintf("\tregistry.RegisterModel(&domain.Model{\n"))
 		buf.WriteString(fmt.Sprintf("\t\tName: \"%s\",\n", model.Name))
-		buf.WriteString("\t\t// Fields would go here if needed for full reflection\n")
+		buf.WriteString("\t\tFields: []domain.Field{\n")
+		for _, field := range model.Fields {
+			buf.WriteString("\t\t\t{\n")
+			buf.WriteString(fmt.Sprintf("\t\t\t\tName: \"%s\",\n", field.Name))
+			buf.WriteString(fmt.Sprintf("\t\t\t\tType: domain.FieldType{Name: \"%s\"},\n", field.Type.PrismaType))
+			// Only populate simple type name for now, detailed type info if needed
+			buf.WriteString("\t\t\t},\n")
+		}
+		buf.WriteString("\t\t},\n")
 		buf.WriteString("\t})\n\n")
 
 		// Register Relations

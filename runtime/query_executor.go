@@ -37,7 +37,6 @@ func (e *QueryExecutor) ExecuteFindMany(ctx context.Context, query *domain.Query
 		return nil, fmt.Errorf("failed to compile query: %w", err)
 	}
 
-	fmt.Printf("DEBUG SQL: %s args: %v\n", compiled.SQL.Query, compiled.SQL.Args)
 	rows, err := e.db.QueryContext(ctx, compiled.SQL.Query, compiled.SQL.Args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute query: %w", err)
