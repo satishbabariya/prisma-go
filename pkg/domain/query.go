@@ -1,7 +1,10 @@
 // Package domain contains the core business entities and interfaces for the Query domain.
 package domain
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // Query represents a query aggregate root.
 type Query struct {
@@ -278,6 +281,18 @@ const (
 	SQLite SQLDialect = "sqlite"
 )
 
+// Quote quotes an identifier based on the dialect.
+func (d SQLDialect) Quote(identifier string) string {
+	switch d {
+	case PostgreSQL, SQLite:
+		return fmt.Sprintf("\"%s\"", identifier)
+	case MySQL:
+		return fmt.Sprintf("`%s`", identifier)
+	default:
+		return fmt.Sprintf("\"%s\"", identifier)
+	}
+}
+
 // CompiledQuery represents a compiled query ready for execution.
 type CompiledQuery struct {
 	SQL           SQL
@@ -306,18 +321,6 @@ type RelationMapping struct {
 	Type     RelationType
 	Mapping  *ResultMapping
 }
-
-// RelationType represents the type of relation.
-type RelationType string
-
-const (
-	// OneToOne represents a one-to-one relation.
-	OneToOne RelationType = "OneToOne"
-	// OneToMany represents a one-to-many relation.
-	OneToMany RelationType = "OneToMany"
-	// ManyToMany represents a many-to-many relation.
-	ManyToMany RelationType = "ManyToMany"
-)
 
 // QueryBuilder defines the interface for building queries.
 type QueryBuilder interface {

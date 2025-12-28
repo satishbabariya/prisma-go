@@ -6,8 +6,7 @@ import (
 	"strings"
 
 	"github.com/satishbabariya/prisma-go/pkg/domain"
-	"github.com/satishbabariya/prisma-go/internal/core/schema"
-	schemadomain "github.com/satishbabariya/prisma-go/internal/core/schema/domain"
+	"github.com/satishbabariya/prisma-go/pkg/schema"
 )
 
 // RelationJoin represents a JOIN for a relation.
@@ -48,36 +47,49 @@ func (c *SQLCompiler) buildRelationJoins(
 		}
 
 		// Generate alias for this join
-		alias := fmt.Sprintf("%s_%s", baseAlias, rel.Relation)
+		alias := c.dialect.Quote(fmt.Sprintf("%s_%s", baseAlias, rel.Relation))
+		quotedBaseAlias := c.dialect.Quote(baseAlias)
+		// Check if baseAlias was already quoted in caller?
+		// Caller `compileSelect` passes `query.Model` as baseAlias. `compileSelect` quotes it in FROM clause.
+		// But passes raw string.
+		// So we should quote it here.
+		// Wait, if alias is composed of quoted strings it breaks.
 
 		// Build JOIN condition based on relation type and metadata
 		var onCondition string
-		if relationMeta.RelationType == schemadomain.OneToMany {
+		if relationMeta.RelationType == domain.OneToMany {
 			// For one-to-many: related_table.foreign_key = base_table.referenced_key
-			foreignKeyCol := relationMeta.FromFields[0] // Should have at least one
-			refKeyCol := relationMeta.ToFields[0]
-			onCondition = fmt.Sprintf("%s.%s = %s.%s", alias, foreignKeyCol, baseAlias, refKeyCol)
-		} else if relationMeta.RelationType == schemadomain.ManyToOne {
+			// We need to look up the inverse relation (ManyToOne) to find the FKs
+			inverse, err := registry.GetInverseRelation(relationMeta)
+			if err == nil && len(inverse.FromFields) > 0 && len(inverse.ToFields) > 0 {
+				foreignKeyCol := inverse.FromFields[0]
+				refKeyCol := inverse.ToFields[0]
+				onCondition = fmt.Sprintf("%s.%s = %s.%s", alias, c.dialect.Quote(foreignKeyCol), quotedBaseAlias, c.dialect.Quote(refKeyCol))
+			} else {
+				// Fallback
+				onCondition = fmt.Sprintf("%s.%s = %s.%s", alias, c.dialect.Quote(strings.ToLower(relationMeta.FromModel)+"_id"), quotedBaseAlias, c.dialect.Quote("id"))
+			}
+		} else if relationMeta.RelationType == domain.ManyToOne {
 			// For many-to-one: related_table.referenced_key = base_table.foreign_key
 			if len(relationMeta.FromFields) > 0 && len(relationMeta.ToFields) > 0 {
 				foreignKeyCol := relationMeta.FromFields[0]
 				refKeyCol := relationMeta.ToFields[0]
-				onCondition = fmt.Sprintf("%s.%s = %s.%s", alias, refKeyCol, baseAlias, foreignKeyCol)
+				onCondition = fmt.Sprintf("%s.%s = %s.%s", alias, c.dialect.Quote(refKeyCol), quotedBaseAlias, c.dialect.Quote(foreignKeyCol))
 			} else {
 				// Fallback to convention
-				onCondition = fmt.Sprintf("%s.id = %s.%s_id", alias, baseAlias, strings.ToLower(relationMeta.ToModel))
+				onCondition = fmt.Sprintf("%s.%s = %s.%s", alias, c.dialect.Quote("id"), quotedBaseAlias, c.dialect.Quote(strings.ToLower(relationMeta.ToModel)+"_id"))
 			}
-		} else if relationMeta.RelationType == schemadomain.ManyToMany {
-			// Many-to-many requires a junction table (not yet implemented)
+		} else if relationMeta.RelationType == domain.ManyToMany {
+			// ...
 			return nil, fmt.Errorf("many-to-many relations not yet supported")
 		} else {
 			// OneToOne - similar to ManyToOne
 			if len(relationMeta.FromFields) > 0 && len(relationMeta.ToFields) > 0 {
 				foreignKeyCol := relationMeta.FromFields[0]
 				refKeyCol := relationMeta.ToFields[0]
-				onCondition = fmt.Sprintf("%s.%s = %s.%s", alias, refKeyCol, baseAlias, foreignKeyCol)
+				onCondition = fmt.Sprintf("%s.%s = %s.%s", alias, c.dialect.Quote(refKeyCol), quotedBaseAlias, c.dialect.Quote(foreignKeyCol))
 			} else {
-				onCondition = fmt.Sprintf("%s.id = %s.%s_id", alias, baseAlias, strings.ToLower(relationMeta.ToModel))
+				onCondition = fmt.Sprintf("%s.%s = %s.%s", alias, c.dialect.Quote("id"), quotedBaseAlias, c.dialect.Quote(strings.ToLower(relationMeta.ToModel)+"_id"))
 			}
 		}
 
@@ -92,16 +104,17 @@ func (c *SQLCompiler) buildRelationJoins(
 				if err != nil {
 					colName = field // Fallback to field name
 				}
-				columns = append(columns, fmt.Sprintf("%s.%s AS %s_%s", alias, colName, rel.Relation, field))
+				columns = append(columns, fmt.Sprintf("%s.%s AS %s", alias, c.dialect.Quote(colName), c.dialect.Quote(fmt.Sprintf("%s_%s", rel.Relation, field))))
 			}
 		} else {
 			// Select all fields
+			// Note: * cannot be quoted
 			columns = append(columns, fmt.Sprintf("%s.*", alias))
 		}
 
 		join := RelationJoin{
-			JoinType:     "LEFT JOIN", // Always LEFT JOIN to handle optional relations
-			Table:        relatedTable,
+			JoinType:     "LEFT JOIN",
+			Table:        c.dialect.Quote(relatedTable),
 			Alias:        alias,
 			OnConditions: []string{onCondition},
 			Columns:      columns,

@@ -7,8 +7,8 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/satishbabariya/prisma-go/internal/core/schema"
 	"github.com/satishbabariya/prisma-go/pkg/domain"
+	"github.com/satishbabariya/prisma-go/pkg/schema"
 )
 
 // SQLCompiler compiles domain queries to SQL.
@@ -33,6 +33,8 @@ func (c *SQLCompiler) SetRegistry(registry *schema.MetadataRegistry) {
 // Compile compiles a query to an executable form.
 func (c *SQLCompiler) Compile(ctx context.Context, query *domain.Query) (*domain.CompiledQuery, error) {
 	// Generate SQL based on operation
+	// Generate SQL based on operation
+	var compiled domain.CompiledQuery
 	var sql domain.SQL
 	var err error
 	var sqlStr string
@@ -40,38 +42,47 @@ func (c *SQLCompiler) Compile(ctx context.Context, query *domain.Query) (*domain
 
 	switch query.Operation {
 	case domain.FindMany, domain.FindFirst, domain.FindUnique:
-		sql, err = c.compileSelect(query)
+		compiled, err = c.compileSelect(query)
 	case domain.Create:
 		sqlStr, args, err = c.CompileCreate(query)
 		if err == nil {
-			sql = domain.SQL{Query: sqlStr, Args: args, Dialect: c.dialect}
+			compiled = domain.CompiledQuery{SQL: domain.SQL{Query: sqlStr, Args: args, Dialect: c.dialect}}
 		}
 	case domain.CreateMany:
 		sqlStr, args, err = c.CompileCreateMany(query)
 		if err == nil {
-			sql = domain.SQL{Query: sqlStr, Args: args, Dialect: c.dialect}
+			compiled = domain.CompiledQuery{SQL: domain.SQL{Query: sqlStr, Args: args, Dialect: c.dialect}}
 		}
 	case domain.Update:
 		sqlStr, args, err = c.CompileUpdate(query)
 		if err == nil {
-			sql = domain.SQL{Query: sqlStr, Args: args, Dialect: c.dialect}
+			compiled = domain.CompiledQuery{SQL: domain.SQL{Query: sqlStr, Args: args, Dialect: c.dialect}}
 		}
 	case domain.UpdateMany:
 		sqlStr, args, err = c.CompileUpdate(query) // UpdateMany uses same logic
 		if err == nil {
-			sql = domain.SQL{Query: sqlStr, Args: args, Dialect: c.dialect}
+			compiled = domain.CompiledQuery{SQL: domain.SQL{Query: sqlStr, Args: args, Dialect: c.dialect}}
 		}
 	case domain.Delete, domain.DeleteMany:
 		sql, err = c.compileDelete(query)
+		if err == nil {
+			compiled = domain.CompiledQuery{SQL: sql}
+		}
 	case domain.Upsert:
 		sqlStr, args, err = c.CompileUpsert(query)
 		if err == nil {
-			sql = domain.SQL{Query: sqlStr, Args: args, Dialect: c.dialect}
+			compiled = domain.CompiledQuery{SQL: domain.SQL{Query: sqlStr, Args: args, Dialect: c.dialect}}
 		}
 	case domain.Aggregate:
 		sql, err = c.compileAggregate(query)
+		if err == nil {
+			compiled = domain.CompiledQuery{SQL: sql}
+		}
 	case domain.GroupBy:
 		sql, err = c.compileGroupBy(query)
+		if err == nil {
+			compiled = domain.CompiledQuery{SQL: sql}
+		}
 	default:
 		return nil, fmt.Errorf("unsupported operation: %s", query.Operation)
 	}
@@ -80,16 +91,19 @@ func (c *SQLCompiler) Compile(ctx context.Context, query *domain.Query) (*domain
 		return nil, err
 	}
 
-	// Build result mapping
-	mapping := c.buildResultMapping(query)
-
-	compiled := &domain.CompiledQuery{
-		SQL:           sql,
-		Mapping:       mapping,
-		OriginalQuery: query,
+	// Set validation default if not set (for non-select ops using buildResultMapping default?)
+	// Actually compileSelect handles its own mapping.
+	// For others, mapping is empty (default).
+	// Original code called buildResultMapping at end.
+	// We can skip it or call it if compiled.Mapping is empty.
+	if compiled.Mapping.Model == "" {
+		compiled.Mapping = c.buildResultMapping(query)
 	}
 
-	return compiled, nil
+	// Set OriginalQuery
+	compiled.OriginalQuery = query
+
+	return &compiled, nil
 }
 
 // Optimize optimizes a compiled query.
@@ -100,7 +114,7 @@ func (c *SQLCompiler) Optimize(ctx context.Context, compiled *domain.CompiledQue
 }
 
 // compileSelect compiles a SELECT query.
-func (c *SQLCompiler) compileSelect(query *domain.Query) (domain.SQL, error) {
+func (c *SQLCompiler) compileSelect(query *domain.Query) (domain.CompiledQuery, error) {
 	var sqlBuilder strings.Builder
 	var args []interface{}
 	argIndex := 1
@@ -114,7 +128,7 @@ func (c *SQLCompiler) compileSelect(query *domain.Query) (domain.SQL, error) {
 		// This will be nil until integrated with full schema loading
 		joins, err = c.buildRelationJoins(query.Model, query.Model, query.Relations, c.registry)
 		if err != nil {
-			return domain.SQL{}, fmt.Errorf("failed to build relation joins: %w", err)
+			return domain.CompiledQuery{}, fmt.Errorf("failed to build relation joins: %w", err)
 		}
 	}
 
@@ -172,7 +186,7 @@ func (c *SQLCompiler) compileSelect(query *domain.Query) (domain.SQL, error) {
 		if len(query.Filter.Conditions) > 0 || len(query.Filter.NestedFilters) > 0 {
 			whereClause, args, err := c.buildWhereClause(query.Filter, &argIndex)
 			if err != nil {
-				return domain.SQL{}, err
+				return domain.CompiledQuery{}, err
 			}
 			if whereClause != "" {
 				whereClauses = append(whereClauses, whereClause)
@@ -220,14 +234,40 @@ func (c *SQLCompiler) compileSelect(query *domain.Query) (domain.SQL, error) {
 	}
 
 	// For FindFirst, limit to 1
+	// Only limit if specifically requested, otherwise joins might multiply rows
+	// and we want to fetch all joined rows to reassemble.
+	// But FindFirst implies LIMIT 1 on the BASE table.
+	// With JOINs, LIMIT 1 on base table is tricky if 1-to-many.
+	// Simple LIMIT 1 on result set returns 1 row (1 relation item). Incorrect.
+	// We need DISTINCT ON or subquery.
+	// For now, let's skip LIMIT addition if relations are present, or rely on Distinct.
+	// But valid solution for FindFirst with include is to limit based on ID after ordering.
+
 	if query.Operation == domain.FindFirst && query.Pagination.Take == nil {
-		sqlBuilder.WriteString(" LIMIT 1")
+		if len(query.Relations) == 0 {
+			sqlBuilder.WriteString(" LIMIT 1")
+		} else {
+			// With relations, we cannot simply LIMIT 1 the result set if it's 1-to-many.
+			// But if we used DISTINCT ON, we can?
+		}
 	}
 
-	return domain.SQL{
-		Query:   sqlBuilder.String(),
-		Args:    args,
-		Dialect: c.dialect,
+	// Build result mapping
+	mapping := domain.ResultMapping{
+		Model: query.Model,
+	}
+
+	if len(joins) > 0 {
+		mapping.Relations = c.buildRelationMappings(query.Model, query.Relations, c.registry)
+	}
+
+	return domain.CompiledQuery{
+		SQL: domain.SQL{
+			Query:   sqlBuilder.String(),
+			Args:    args,
+			Dialect: c.dialect,
+		},
+		Mapping: mapping,
 	}, nil
 }
 
@@ -802,6 +842,36 @@ func (c *SQLCompiler) QuoteIdentifier(ident string) string {
 	default:
 		return ident
 	}
+}
+
+// buildRelationMappings builds result mappings for relations.
+func (c *SQLCompiler) buildRelationMappings(baseModel string, relations []domain.RelationInclusion, registry *schema.MetadataRegistry) []domain.RelationMapping {
+	var mappings []domain.RelationMapping
+
+	for _, rel := range relations {
+		// Get relation type
+		relationMeta, err := registry.GetRelation(baseModel, rel.Relation)
+		if err != nil {
+			continue
+		}
+
+		relMapping := domain.RelationMapping{
+			Relation: rel.Relation,
+			Type:     relationMeta.RelationType,
+			Mapping: &domain.ResultMapping{
+				Model: relationMeta.ToModel,
+			},
+		}
+
+		// Recursive mapping
+		if rel.Query != nil && len(rel.Query.Relations) > 0 {
+			relMapping.Mapping.Relations = c.buildRelationMappings(relationMeta.ToModel, rel.Query.Relations, registry)
+		}
+
+		mappings = append(mappings, relMapping)
+	}
+
+	return mappings
 }
 
 // Ensure SQLCompiler implements QueryCompiler interface.

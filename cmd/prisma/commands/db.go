@@ -389,6 +389,12 @@ func schemaToState(pslAst interface{}) *domain.DatabaseState {
 	}
 
 	if schema, ok := pslAst.(*ast.SchemaAst); ok {
+		// Collect enum names
+		enums := make(map[string]bool)
+		for _, enum := range schema.Enums() {
+			enums[enum.Name.Name] = true
+		}
+
 		for _, model := range schema.Models() {
 			table := domain.Table{
 				Name:    model.GetName(),
@@ -396,6 +402,21 @@ func schemaToState(pslAst interface{}) *domain.DatabaseState {
 			}
 
 			for _, field := range model.Fields {
+				// Skip list fields
+				if field.Arity.IsList() {
+					continue
+				}
+
+				// Check if type is scalar or enum
+				typeName := field.Type.Name
+				isScalar := isScalarType(typeName)
+				isEnum := enums[typeName]
+
+				if !isScalar && !isEnum {
+					// It's a relation field, skip
+					continue
+				}
+
 				col := domain.Column{
 					Name:       field.GetName(),
 					Type:       astTypeToSQLType(field.Type),
@@ -433,6 +454,15 @@ func schemaToState(pslAst interface{}) *domain.DatabaseState {
 	}
 
 	return state
+}
+
+func isScalarType(typeName string) bool {
+	switch typeName {
+	case "String", "Boolean", "Int", "BigInt", "Float", "Decimal", "DateTime", "Json", "Bytes":
+		return true
+	default:
+		return false
+	}
 }
 
 func astTypeToSQLType(ft *ast.FieldType) string {

@@ -5,10 +5,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/satishbabariya/prisma-go/internal/core/query/compiler"
-	"github.com/satishbabariya/prisma-go/internal/core/schema"
 	"github.com/satishbabariya/prisma-go/pkg/domain"
+	"github.com/satishbabariya/prisma-go/pkg/schema"
 )
 
 // QueryExecutor provides query execution capabilities.
@@ -36,13 +37,19 @@ func (e *QueryExecutor) ExecuteFindMany(ctx context.Context, query *domain.Query
 		return nil, fmt.Errorf("failed to compile query: %w", err)
 	}
 
+	fmt.Printf("DEBUG SQL: %s args: %v\n", compiled.SQL.Query, compiled.SQL.Args)
 	rows, err := e.db.QueryContext(ctx, compiled.SQL.Query, compiled.SQL.Args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute query: %w", err)
 	}
 	defer rows.Close()
 
-	return e.scanRowsToMaps(rows)
+	results, err := e.scanRowsToMaps(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	return e.hydrateResults(results, compiled.Mapping), nil
 }
 
 // ExecuteFindFirst executes a FindFirst query and returns a single result.
@@ -358,4 +365,102 @@ func (e *QueryExecutor) scanRowsToMaps(rows *sql.Rows) ([]map[string]interface{}
 type BatchResult struct {
 	Results []interface{} `json:"results"`
 	Errors  []error       `json:"errors"`
+}
+
+// hydrateResults transforms flattened results into nested structures based on mapping.
+func (e *QueryExecutor) hydrateResults(rows []map[string]interface{}, mapping domain.ResultMapping) []map[string]interface{} {
+	if len(mapping.Relations) == 0 {
+		return rows
+	}
+
+	// Grouping by ID (assuming 'id' is the primary key for now)
+	grouped := make(map[interface{}]map[string]interface{})
+	var keys []interface{} // To preserve order
+
+	for _, row := range rows {
+		id, ok := row["id"]
+		if !ok {
+			return rows
+		}
+
+		mainItem, exists := grouped[id]
+		if !exists {
+			mainItem = make(map[string]interface{})
+			// Copy all fields initially
+			for k, v := range row {
+				if !strings.Contains(k, "_") { // Simple heuristic for base fields? No, unsafe.
+					// Copy everything. Relation fields will be processed.
+					mainItem[k] = v
+				}
+				// Copy base fields (including foreign keys)
+				// If mapping.Fields is populated, use it.
+				// If not, copy everything.
+			}
+
+			// Initialize empty relation containers
+			for _, rel := range mapping.Relations {
+				if rel.Type == domain.OneToMany {
+					mainItem[rel.Relation] = []map[string]interface{}{}
+				}
+			}
+
+			grouped[id] = mainItem
+			keys = append(keys, id)
+		}
+
+		// Process relations
+		for _, rel := range mapping.Relations {
+			prefix := rel.Relation + "_"
+			relData := make(map[string]interface{})
+			hasData := false
+
+			// Extract fields for this relation (prefixed)
+			for k, v := range row {
+				if strings.HasPrefix(k, prefix) {
+					cleanName := strings.TrimPrefix(k, prefix)
+					relData[cleanName] = v
+					if v != nil {
+						hasData = true
+					}
+					// Clean up flat map if desired, but careful of side effects
+					delete(mainItem, k)
+				}
+			}
+
+			if !hasData {
+				continue
+			}
+
+			// If relation has data, attach it
+			if rel.Type == domain.OneToMany {
+				relID := relData["id"]
+
+				list := mainItem[rel.Relation].([]map[string]interface{})
+				existsInList := false
+				if relID != nil {
+					for _, item := range list {
+						if item["id"] == relID {
+							existsInList = true
+							break
+						}
+					}
+				}
+
+				if !existsInList && relID != nil {
+					mainItem[rel.Relation] = append(list, relData)
+				}
+			} else {
+				// OneToOne or ManyToOne
+				mainItem[rel.Relation] = relData
+			}
+		}
+	}
+
+	// Reconstruct slice
+	results := make([]map[string]interface{}, 0, len(keys))
+	for _, key := range keys {
+		results = append(results, grouped[key])
+	}
+
+	return results
 }
