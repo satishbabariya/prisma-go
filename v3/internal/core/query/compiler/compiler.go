@@ -4,6 +4,7 @@ package compiler
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/satishbabariya/prisma-go/v3/internal/core/query/domain"
@@ -297,10 +298,10 @@ func (c *SQLCompiler) buildCondition(condition domain.Condition, argIndex *int) 
 		args = append(args, condition.Value)
 
 	case domain.In:
-		// Assumes condition.Value is a slice
-		values, ok := condition.Value.([]interface{})
-		if !ok {
-			return "", nil, fmt.Errorf("IN operator requires a slice of values")
+		// Handle various slice types via reflection
+		values, err := toInterfaceSlice(condition.Value)
+		if err != nil {
+			return "", nil, fmt.Errorf("IN operator: %w", err)
 		}
 		placeholders := make([]string, len(values))
 		for i := range values {
@@ -310,9 +311,10 @@ func (c *SQLCompiler) buildCondition(condition domain.Condition, argIndex *int) 
 		clause = fmt.Sprintf("%s IN (%s)", condition.Field, strings.Join(placeholders, ", "))
 
 	case domain.NotIn:
-		values, ok := condition.Value.([]interface{})
-		if !ok {
-			return "", nil, fmt.Errorf("NOT IN operator requires a slice of values")
+		// Handle various slice types via reflection
+		values, err := toInterfaceSlice(condition.Value)
+		if err != nil {
+			return "", nil, fmt.Errorf("NOT IN operator: %w", err)
 		}
 		placeholders := make([]string, len(values))
 		for i := range values {
@@ -757,6 +759,27 @@ func (c *SQLCompiler) buildResultMapping(query *domain.Query) domain.ResultMappi
 	}
 
 	return mapping
+}
+
+// toInterfaceSlice converts any slice type to []interface{} using reflection.
+// This allows IN/NOT IN operators to accept []string, []int, []int64, etc.
+func toInterfaceSlice(val interface{}) ([]interface{}, error) {
+	// First try direct type assertion for common cases
+	if slice, ok := val.([]interface{}); ok {
+		return slice, nil
+	}
+
+	// Use reflection for other slice types
+	rv := reflect.ValueOf(val)
+	if rv.Kind() != reflect.Slice {
+		return nil, fmt.Errorf("requires a slice of values, got %T", val)
+	}
+
+	result := make([]interface{}, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		result[i] = rv.Index(i).Interface()
+	}
+	return result, nil
 }
 
 // Ensure SQLCompiler implements QueryCompiler interface.

@@ -58,8 +58,12 @@ func (c *SQLCompiler) compileAggregate(query *domain.Query) (domain.SQL, error) 
 			return domain.SQL{}, fmt.Errorf("unsupported aggregation function: %s", agg.Function)
 		}
 
-		// Add alias for the aggregation
-		sqlBuilder.WriteString(fmt.Sprintf(" AS %s_%s", agg.Function, agg.Field))
+		// Add alias for the aggregation - handle * specially
+		alias := agg.Field
+		if alias == "*" || alias == "" {
+			alias = "all"
+		}
+		sqlBuilder.WriteString(fmt.Sprintf(" AS %s_%s", agg.Function, alias))
 	}
 
 	// FROM clause

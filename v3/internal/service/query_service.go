@@ -381,6 +381,13 @@ func (s *QueryService) aggregate(ctx context.Context, model string, fn domain.Ag
 				return int64(v), nil
 			case float64:
 				return int64(v), nil
+			case string:
+				// PostgreSQL returns DECIMAL/NUMERIC as string via lib/pq
+				var parsed float64
+				if _, err := fmt.Sscanf(v, "%f", &parsed); err != nil {
+					return 0, fmt.Errorf("failed to parse aggregation result '%s': %w", v, err)
+				}
+				return int64(parsed), nil
 			default:
 				return 0, fmt.Errorf("unexpected aggregation result type: %T", val)
 			}
