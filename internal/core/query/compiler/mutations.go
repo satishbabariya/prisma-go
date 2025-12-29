@@ -26,7 +26,7 @@ func (c *SQLCompiler) CompileUpdate(query *domain.Query) (string, []interface{},
 	for col, val := range query.UpdateData {
 		setClauses = append(setClauses, fmt.Sprintf(
 			"%s = %s",
-			col,
+			c.QuoteIdentifier(col),
 			c.placeholder(&paramCount),
 		))
 		args = append(args, val)
@@ -34,7 +34,7 @@ func (c *SQLCompiler) CompileUpdate(query *domain.Query) (string, []interface{},
 
 	sql := fmt.Sprintf(
 		"UPDATE %s SET %s",
-		query.Model,
+		c.QuoteIdentifier(query.Model),
 		strings.Join(setClauses, ", "),
 	)
 
@@ -48,6 +48,11 @@ func (c *SQLCompiler) CompileUpdate(query *domain.Query) (string, []interface{},
 		args = append(args, whereArgs...)
 	}
 
+	// Add RETURNING * for Postgres
+	if c.dialect == domain.PostgreSQL {
+		sql += " RETURNING *"
+	}
+
 	return sql, args, nil
 }
 
@@ -57,7 +62,7 @@ func (c *SQLCompiler) CompileDelete(query *domain.Query) (string, []interface{},
 		return "", nil, fmt.Errorf("DELETE requires WHERE clause for safety")
 	}
 
-	sql := fmt.Sprintf("DELETE FROM %s", query.Model)
+	sql := fmt.Sprintf("DELETE FROM %s", c.QuoteIdentifier(query.Model))
 
 	paramCount := 1
 	// Add WHERE clause
@@ -67,6 +72,11 @@ func (c *SQLCompiler) CompileDelete(query *domain.Query) (string, []interface{},
 	}
 	if whereSQL != "" {
 		sql += " WHERE " + whereSQL
+	}
+
+	// Add RETURNING * for Postgres
+	if c.dialect == domain.PostgreSQL {
+		sql += " RETURNING *"
 	}
 
 	return sql, args, nil

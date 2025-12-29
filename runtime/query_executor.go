@@ -193,6 +193,25 @@ func (e *QueryExecutor) ExecuteUpdate(ctx context.Context, query *domain.Query) 
 		return nil, fmt.Errorf("failed to compile query: %w", err)
 	}
 
+	if e.dialect == domain.PostgreSQL {
+		// Postgres uses RETURNING
+		rows, err := e.db.QueryContext(ctx, compiled.SQL.Query, compiled.SQL.Args...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to execute update: %w", err)
+		}
+		defer rows.Close()
+
+		results, err := e.scanRowsToMaps(rows)
+		if err != nil {
+			return nil, err
+		}
+		if len(results) == 0 {
+			// Update might match 0 rows
+			return nil, fmt.Errorf("record not found")
+		}
+		return results[0], nil
+	}
+
 	result, err := e.db.ExecContext(ctx, compiled.SQL.Query, compiled.SQL.Args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute update: %w", err)
@@ -213,6 +232,24 @@ func (e *QueryExecutor) ExecuteDelete(ctx context.Context, query *domain.Query) 
 	compiled, err := compiler.Compile(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compile query: %w", err)
+	}
+
+	if e.dialect == domain.PostgreSQL {
+		// Postgres uses RETURNING
+		rows, err := e.db.QueryContext(ctx, compiled.SQL.Query, compiled.SQL.Args...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to execute delete: %w", err)
+		}
+		defer rows.Close()
+
+		results, err := e.scanRowsToMaps(rows)
+		if err != nil {
+			return nil, err
+		}
+		if len(results) == 0 {
+			return nil, fmt.Errorf("record not found")
+		}
+		return results[0], nil
 	}
 
 	result, err := e.db.ExecContext(ctx, compiled.SQL.Query, compiled.SQL.Args...)

@@ -292,7 +292,7 @@ func (e *Engine) generateClientCode(ir *ir.IR) string {
 			buf.WriteString(fmt.Sprintf("// %s %s %s records.\n", method, method, model.Name))
 			buf.WriteString(fmt.Sprintf("func (q *%sQuery) %s(", model.Name, method))
 
-			if method == "Create" || method == "Update" {
+			if method == "Create" || method == "Update" || method == "FindUnique" || method == "Delete" {
 				buf.WriteString("data map[string]interface{}")
 			}
 
@@ -457,31 +457,86 @@ func (e *Engine) generateClientCode(ir *ir.IR) string {
 				buf.WriteString("\t}\n")
 				buf.WriteString("\treturn &result, nil\n")
 
+			case "FindUnique":
+				buf.WriteString(fmt.Sprintf("\tquery := &domain.Query{\n"))
+				buf.WriteString(fmt.Sprintf("\t\tOperation: domain.FindUnique,\n"))
+				buf.WriteString(fmt.Sprintf("\t\tModel:     \"%s\",\n", model.Name))
+				buf.WriteString(fmt.Sprintf("\t}\n"))
+				// Unique filter (currently accepting generic map, should be unique input)
+				// For MVP: accept map
+				buf.WriteString(fmt.Sprintf("\tquery.Filter = runtime.BuildFilter(data)\n"))
+
+				buf.WriteString(fmt.Sprintf("\tres, err := q.client.engine.ExecuteFindUnique(q.ctx, query)\n"))
+				buf.WriteString("\tif err != nil {\n")
+				buf.WriteString("\t\treturn nil, err\n")
+				buf.WriteString("\t}\n")
+				buf.WriteString(fmt.Sprintf("\tvar result %s\n", model.Name))
+				buf.WriteString("\tbytes, err := json.Marshal(res)\n")
+				buf.WriteString("\tif err != nil {\n")
+				buf.WriteString("\t\treturn nil, err\n")
+				buf.WriteString("\t}\n")
+				buf.WriteString("\tif err := json.Unmarshal(bytes, &result); err != nil {\n")
+				buf.WriteString("\t\treturn nil, err\n")
+				buf.WriteString("\t}\n")
+				buf.WriteString("\treturn &result, nil\n")
+
 			case "Update":
 				buf.WriteString(fmt.Sprintf("\tquery := &domain.Query{\n"))
 				buf.WriteString(fmt.Sprintf("\t\tOperation:  domain.Update,\n"))
 				buf.WriteString(fmt.Sprintf("\t\tModel:      \"%s\",\n", model.Name))
 				buf.WriteString(fmt.Sprintf("\t\tUpdateData: data,\n"))
 				buf.WriteString(fmt.Sprintf("\t}\n"))
-				buf.WriteString(fmt.Sprintf("\t_, err := q.client.engine.ExecuteUpdate(q.ctx, query)\n"))
+				// Where clause for update. Currently Update takes 'data'.
+				// Standard Prisma: Update(data, where).
+				// Helping builder: UpdateOne has internal 'data' and uses 'where' from query?
+				// Actually UpdateOne builder calls Update(data).
+				// We need to pass WHERE.
+				// For now: rely on q.where being set?
+				// q.Where(...) sets q.where.
+				buf.WriteString("\tif q.where != nil {\n")
+				buf.WriteString("\t\tquery.Filter = runtime.BuildFilter(q.where)\n")
+				buf.WriteString("\t}\n")
+
+				buf.WriteString(fmt.Sprintf("\tres, err := q.client.engine.ExecuteUpdate(q.ctx, query)\n"))
 				buf.WriteString("\tif err != nil {\n")
 				buf.WriteString("\t\treturn nil, err\n")
 				buf.WriteString("\t}\n")
-				// Update returns count usually, but if we want result, we need FindUnique after or RETURNING.
-				// For now, let's just return what Executor returns (which is map{"count": N}).
-				// But signature expects *Model.
-				// If Update returns count, we can't return *Model unless we fetch it.
-				// Or we change signature.
-				// For now, let's keep it returning nil if we don't fetch.
-				// BUT checking QueryExecutor.ExecuteUpdate: it returns {"count": affected}.
-				// Standard Prisma Update returns the updated object.
-				// We need RETURNING or fetch.
-				// MVP: let's stay with nil for Update or implement fetch.
-				// As this task is about Nested Writes (Create), I'll focus on getting Create working.
-				// I'll leave Update as nil but comment it clearly or change return type to interface{}?
-				// No, keep consistent.
-				// Fixing Create is priority.
-				buf.WriteString("\treturn nil, nil // TODO: Update should return object\n")
+
+				// Unmarshal result (now returns object or count)
+				buf.WriteString(fmt.Sprintf("\tvar result %s\n", model.Name))
+				buf.WriteString("\tbytes, err := json.Marshal(res)\n")
+				buf.WriteString("\tif err != nil {\n")
+				buf.WriteString("\t\treturn nil, err\n")
+				buf.WriteString("\t}\n")
+				buf.WriteString("\tif err := json.Unmarshal(bytes, &result); err != nil {\n")
+				buf.WriteString("\t\treturn nil, err\n")
+				buf.WriteString("\t}\n")
+				// If count returned (non-postgres), formatting might fail or be empty.
+				// But we targeted Postgres RETURNING.
+				buf.WriteString("\treturn &result, nil\n")
+
+			case "Delete":
+				buf.WriteString(fmt.Sprintf("\tquery := &domain.Query{\n"))
+				buf.WriteString(fmt.Sprintf("\t\tOperation: domain.Delete,\n"))
+				buf.WriteString(fmt.Sprintf("\t\tModel:     \"%s\",\n", model.Name))
+				buf.WriteString(fmt.Sprintf("\t}\n"))
+				// Use data as filter (like FindUnique/Update)
+				buf.WriteString(fmt.Sprintf("\tquery.Filter = runtime.BuildFilter(data)\n"))
+
+				buf.WriteString(fmt.Sprintf("\tres, err := q.client.engine.ExecuteDelete(q.ctx, query)\n"))
+				buf.WriteString("\tif err != nil {\n")
+				buf.WriteString("\t\treturn nil, err\n")
+				buf.WriteString("\t}\n")
+
+				buf.WriteString(fmt.Sprintf("\tvar result %s\n", model.Name))
+				buf.WriteString("\tbytes, err := json.Marshal(res)\n")
+				buf.WriteString("\tif err != nil {\n")
+				buf.WriteString("\t\treturn nil, err\n")
+				buf.WriteString("\t}\n")
+				buf.WriteString("\tif err := json.Unmarshal(bytes, &result); err != nil {\n")
+				buf.WriteString("\t\treturn nil, err\n")
+				buf.WriteString("\t}\n")
+				buf.WriteString("\treturn &result, nil\n")
 
 			default:
 				buf.WriteString(fmt.Sprintf("\treturn nil, fmt.Errorf(\"%s not yet implemented for %s\")\n", method, model.Name))
