@@ -5,8 +5,7 @@ import (
 	"testing"
 
 	"github.com/satishbabariya/prisma-go/pkg/domain"
-	"github.com/satishbabariya/prisma-go/internal/core/schema"
-	schemadomain "github.com/satishbabariya/prisma-go/internal/core/schema/domain"
+	"github.com/satishbabariya/prisma-go/pkg/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -14,23 +13,23 @@ import (
 // TestRelationLoadingWithMetadata tests relation loading using real schema metadata.
 func TestRelationLoadingWithMetadata(t *testing.T) {
 	// Create a realistic schema with relations
-	testSchema := &schemadomain.Schema{
-		Models: []schemadomain.Model{
+	testSchema := &domain.Schema{
+		Models: []domain.Model{
 			{
 				Name: "User",
-				Fields: []schemadomain.Field{
-					{Name: "id", Type: schemadomain.FieldType{Name: "String"}, IsRequired: true, Attributes: []schemadomain.Attribute{{Name: "id"}}},
-					{Name: "email", Type: schemadomain.FieldType{Name: "String"}, IsRequired: true, Attributes: []schemadomain.Attribute{{Name: "unique"}}},
-					{Name: "name", Type: schemadomain.FieldType{Name: "String"}},
+				Fields: []domain.Field{
+					{Name: "id", Type: domain.FieldType{Name: "String"}, IsRequired: true, Attributes: []domain.Attribute{{Name: "id"}}},
+					{Name: "email", Type: domain.FieldType{Name: "String"}, IsRequired: true, Attributes: []domain.Attribute{{Name: "unique"}}},
+					{Name: "name", Type: domain.FieldType{Name: "String"}},
 				},
 			},
 			{
 				Name: "Post",
-				Fields: []schemadomain.Field{
-					{Name: "id", Type: schemadomain.FieldType{Name: "String"}, IsRequired: true, Attributes: []schemadomain.Attribute{{Name: "id"}}},
-					{Name: "title", Type: schemadomain.FieldType{Name: "String"}, IsRequired: true},
-					{Name: "authorId", Type: schemadomain.FieldType{Name: "String"}, IsRequired: true},
-					{Name: "published", Type: schemadomain.FieldType{Name: "Boolean"}, DefaultValue: false},
+				Fields: []domain.Field{
+					{Name: "id", Type: domain.FieldType{Name: "String"}, IsRequired: true, Attributes: []domain.Attribute{{Name: "id"}}},
+					{Name: "title", Type: domain.FieldType{Name: "String"}, IsRequired: true},
+					{Name: "authorId", Type: domain.FieldType{Name: "String"}, IsRequired: true},
+					{Name: "published", Type: domain.FieldType{Name: "Boolean"}, DefaultValue: false},
 				},
 			},
 		},
@@ -38,25 +37,25 @@ func TestRelationLoadingWithMetadata(t *testing.T) {
 
 	// Create metadata registry
 	registry := schema.NewMetadataRegistry()
-	err := registry.Load(testSchema)
+	err := registry.LoadFromSchema(testSchema)
 	require.NoError(t, err)
 
 	// Manually add relations to registry (since LoadFromSchema may not parse them all)
-	registry.AddRelation(schemadomain.Relation{
+	registry.RegisterRelation("User", domain.Relation{
 		Name:         "posts",
 		FromModel:    "User",
 		ToModel:      "Post",
 		FromFields:   []string{"id"},
 		ToFields:     []string{"authorId"},
-		RelationType: schemadomain.OneToMany,
+		RelationType: domain.OneToMany,
 	})
-	registry.AddRelation(schemadomain.Relation{
+	registry.RegisterRelation("Post", domain.Relation{
 		Name:         "author",
 		FromModel:    "Post",
 		ToModel:      "User",
 		FromFields:   []string{"authorId"},
 		ToFields:     []string{"id"},
-		RelationType: schemadomain.ManyToOne,
+		RelationType: domain.ManyToOne,
 	})
 
 	// Create compiler with registry
@@ -73,7 +72,7 @@ func TestRelationLoadingWithMetadata(t *testing.T) {
 		posts, err := registry.GetRelation("User", "posts")
 		require.NoError(t, err)
 		assert.Equal(t, "posts", posts.Name)
-		assert.Equal(t, schemadomain.OneToMany, posts.RelationType)
+		assert.Equal(t, domain.OneToMany, posts.RelationType)
 	})
 
 	t.Run("Simple OneToMany relation loading", func(t *testing.T) {
@@ -138,20 +137,20 @@ func TestRelationLoadingWithMetadata(t *testing.T) {
 
 // TestMetadataRegistryAPI tests the metadata registry API.
 func TestMetadataRegistryAPI(t *testing.T) {
-	schema := &schemadomain.Schema{
-		Models: []schemadomain.Model{
+	testSchema := &domain.Schema{
+		Models: []domain.Model{
 			{
 				Name: "User",
-				Fields: []schemadomain.Field{
-					{Name: "id", Type: schemadomain.FieldType{Name: "String"}},
-					{Name: "email", Type: schemadomain.FieldType{Name: "String"}},
+				Fields: []domain.Field{
+					{Name: "id", Type: domain.FieldType{Name: "String"}},
+					{Name: "email", Type: domain.FieldType{Name: "String"}},
 				},
 			},
 		},
 	}
 
 	registry := schema.NewMetadataRegistry()
-	err := registry.LoadFromSchema(schema)
+	err := registry.LoadFromSchema(testSchema)
 	require.NoError(t, err)
 
 	t.Run("Get model", func(t *testing.T) {

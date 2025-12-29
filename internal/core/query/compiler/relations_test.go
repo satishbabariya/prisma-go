@@ -100,11 +100,9 @@ func TestRelationLoading(t *testing.T) {
 			Relations: []domain.RelationInclusion{
 				{
 					Relation: "posts",
-					Include:  true,
 				},
 				{
 					Relation: "profile",
-					Include:  true,
 				},
 			},
 		}
@@ -126,15 +124,16 @@ func TestRelationLoading(t *testing.T) {
 			Relations: []domain.RelationInclusion{
 				{
 					Relation: "posts",
-					Include:  true,
-					NestedInclusions: []domain.RelationInclusion{
-						{
-							Relation: "comments",
-							Include:  true,
-							NestedInclusions: []domain.RelationInclusion{
-								{
-									Relation: "author",
-									Include:  true,
+					Query: &domain.Query{
+						Relations: []domain.RelationInclusion{
+							{
+								Relation: "comments",
+								Query: &domain.Query{
+									Relations: []domain.RelationInclusion{
+										{
+											Relation: "author",
+										},
+									},
 								},
 							},
 						},
@@ -168,7 +167,6 @@ func TestRelationLoading(t *testing.T) {
 			Relations: []domain.RelationInclusion{
 				{
 					Relation: "posts",
-					Include:  true,
 				},
 			},
 		}
@@ -190,7 +188,6 @@ func TestRelationJoinBuilding(t *testing.T) {
 		relations := []domain.RelationInclusion{
 			{
 				Relation: "posts",
-				Include:  true,
 			},
 		}
 
@@ -208,11 +205,11 @@ func TestRelationJoinBuilding(t *testing.T) {
 		relations := []domain.RelationInclusion{
 			{
 				Relation: "posts",
-				Include:  true,
-				NestedInclusions: []domain.RelationInclusion{
-					{
-						Relation: "comments",
-						Include:  true,
+				Query: &domain.Query{
+					Relations: []domain.RelationInclusion{
+						{
+							Relation: "comments",
+						},
 					},
 				},
 			},

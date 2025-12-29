@@ -3,7 +3,7 @@ package schema
 import (
 	"testing"
 
-	"github.com/satishbabariya/prisma-go/internal/core/schema/domain"
+	"github.com/satishbabariya/prisma-go/pkg/domain"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
