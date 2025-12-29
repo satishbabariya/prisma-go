@@ -32,7 +32,9 @@ func BenchmarkComplexWhere(b *testing.B) {
 	query := &domain.Query{
 		Model:     "User",
 		Operation: domain.FindMany,
-		Select:    []string{"id", "email"},
+		Selection: domain.Selection{
+			Fields: []string{"id", "email"},
+		},
 		Filter: domain.Filter{
 			Operator: domain.AND,
 			Conditions: []domain.Condition{
@@ -57,9 +59,9 @@ func BenchmarkAggregation(b *testing.B) {
 		Model:     "Order",
 		Operation: domain.Aggregate,
 		Aggregations: []domain.Aggregation{
-			{Function: domain.Count, Field: "id", Alias: "total_orders"},
-			{Function: domain.Sum, Field: "amount", Alias: "total_amount"},
-			{Function: domain.Avg, Field: "amount", Alias: "avg_amount"},
+			{Function: domain.Count, Field: "id"},
+			{Function: domain.Sum, Field: "amount"},
+			{Function: domain.Avg, Field: "amount"},
 		},
 		GroupBy: []string{"user_id"},
 	}
@@ -78,10 +80,12 @@ func BenchmarkJoinGeneration(b *testing.B) {
 	query := &domain.Query{
 		Model:     "Post",
 		Operation: domain.FindMany,
-		Select:    []string{"title", "content"},
+		Selection: domain.Selection{
+			Fields: []string{"title", "content"},
+		},
 		Relations: []domain.RelationInclusion{
-			{Relation: "author", Select: []string{"name", "email"}},
-			{Relation: "comments", Select: []string{"content"}},
+			{Relation: "author"},
+			{Relation: "comments"},
 		},
 	}
 
@@ -99,7 +103,7 @@ func BenchmarkInsert(b *testing.B) {
 	query := &domain.Query{
 		Model:     "User",
 		Operation: domain.Create,
-		Data: map[string]interface{}{
+		CreateData: map[string]interface{}{
 			"email":  "test@example.com",
 			"name":   "Test User",
 			"active": true,
@@ -120,7 +124,7 @@ func BenchmarkUpdate(b *testing.B) {
 	query := &domain.Query{
 		Model:     "User",
 		Operation: domain.Update,
-		Data: map[string]interface{}{
+		UpdateData: map[string]interface{}{
 			"name":   "Updated Name",
 			"active": false,
 		},
@@ -163,6 +167,8 @@ func BenchmarkComplexNestedQuery(b *testing.B) {
 	c := compiler.NewSQLCompiler(domain.PostgreSQL)
 	ctx := context.Background()
 
+	take := 50
+	skip := 0
 	query := &domain.Query{
 		Model:     "User",
 		Operation: domain.FindMany,
@@ -173,11 +179,13 @@ func BenchmarkComplexNestedQuery(b *testing.B) {
 				{Field: "role", Operator: domain.In, Value: []interface{}{"admin", "moderator"}},
 			},
 		},
-		OrderBy: []domain.OrderBy{
-			{Field: "created_at", Direction: domain.DESC},
+		Ordering: []domain.OrderBy{
+			{Field: "created_at", Direction: domain.Desc},
 		},
-		Take: 50,
-		Skip: 0,
+		Pagination: domain.Pagination{
+			Take: &take,
+			Skip: &skip,
+		},
 	}
 
 	b.ResetTimer()

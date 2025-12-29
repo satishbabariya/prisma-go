@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/satishbabariya/prisma-go/pkg/domain"
 	"github.com/satishbabariya/prisma-go/internal/service"
+	"github.com/satishbabariya/prisma-go/pkg/domain"
 	"github.com/satishbabariya/prisma-go/tests/validation"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -18,8 +18,7 @@ func TestOneToOneRelation(t *testing.T) {
 	ctx := context.Background()
 	svc := testCtx.Service
 
-	validation.CleanupTables(t, testCtx.DB)
-	validation.SeedTestData(t, testCtx.DB)
+	validation.CleanupAndSeed(t, testCtx.DB)
 
 	t.Run("FindUserWithProfile", func(t *testing.T) {
 		// Find user that has a profile
